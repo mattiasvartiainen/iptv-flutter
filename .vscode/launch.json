@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "iptv_flutter (Windows Debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "iptv_flutter (Windows Profile)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "iptv_flutter (Windows Safe UI)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "debug",
+      "toolArgs": [
+        "--dart-define=IPTV_DESKTOP_BACKEND=media_kit",
+        "--dart-define=IPTV_DISABLE_VIDEO_OUTPUT=true",
+        "--dart-define=IPTV_DISABLE_HW_ACCEL=true"
+      ]
+    }
+  ]
+}

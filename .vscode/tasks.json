@@ -1,0 +1,144 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Linux App (Safe UI)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "tool/run-linux.sh"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Linux App (media_kit Headless)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "tool/run-linux.sh",
+        "--dart-define=IPTV_DESKTOP_BACKEND=media_kit",
+        "--dart-define=IPTV_DISABLE_VIDEO_OUTPUT=true",
+        "--dart-define=IPTV_DISABLE_HW_ACCEL=true"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Linux App (media_kit Video Experimental)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "tool/run-linux.sh",
+        "--dart-define=IPTV_DESKTOP_BACKEND=media_kit",
+        "--dart-define=IPTV_DISABLE_VIDEO_OUTPUT=false",
+        "--dart-define=IPTV_DISABLE_HW_ACCEL=true"
+      ],
+      "options": {
+        "env": {
+          "LIBGL_ALWAYS_SOFTWARE": "1",
+          "MESA_LOADER_DRIVER_OVERRIDE": "llvmpipe"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Linux Playback Spike",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "bash .devcontainer/bootstrap-linux-plugins.sh && dart run tool/linux_playback_spike.dart"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build webOS IPK (Release)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "tool/build-webos.sh"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build webOS IPK (Debug)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "tool/build-webos.sh",
+        "--debug"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build Linux (Release)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["tool/build-linux.sh"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build Windows (Release)",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "tool/build-windows.ps1"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Deploy webOS IPK",
+      "type": "shell",
+      "command": "bash",
+      "args": ["tool/deploy-webos.sh", "--device", "${input:webosDevice}"],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "webosDevice",
+      "type": "promptString",
+      "description": "webOS CLI device name",
+      "default": "tv"
+    }
+  ]
+}
