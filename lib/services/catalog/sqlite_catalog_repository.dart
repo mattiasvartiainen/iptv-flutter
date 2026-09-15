@@ -64,8 +64,10 @@ class SqliteCatalogRepository
 
   final Set<String> _pausedIndexingPlaylists = {};
 
-  /// Default batch size for [processSearchIndexQueue].
-  static const int searchIndexBatchSize = 250;
+  /// Default batch size for [processSearchIndexQueue]. Each batch costs a
+  /// fixed handful of set-based statements, so it is sized to bound the
+  /// transaction rather than the statement count.
+  static const int searchIndexBatchSize = 2000;
 
   /// Upper bound on operations queued into a single `Batch` during import.
   /// Keeps peak Dart-side memory and the platform-channel message size
@@ -77,11 +79,34 @@ class SqliteCatalogRepository
   /// under SQLite's default bound parameter limit.
   static const int _deleteChunkSize = 500;
 
+  /// Staged rows per multi-row INSERT. With 24 columns this stays under the
+  /// 999-parameter limit of older SQLite builds, which some TV platforms
+  /// still ship.
+  static const int _stagingRowsPerStatement = 40;
+
   /// In-flight imports keyed by resolved playlist id. A second call for the
   /// same playlist while one is running joins it instead of racing a second
   /// writer transaction on the shared connection (that race is what caused
   /// the "database has been locked" warning during concurrent refreshes).
   final Map<String, Future<CatalogLoadResult>> _inFlightLoads = {};
+
+  /// When set, each reconcile stage prints its wall time. Used by
+  /// tool/benchmark_import.dart to attribute import cost to a statement.
+  static void Function(String stage, Duration elapsed)? onImportStageTiming;
+
+  /// Notified when the set-based reconcile fails and the import degrades to
+  /// the Dart-loop path. Correctness is preserved either way, but the slow
+  /// path is orders of magnitude more expensive, so this must not go unseen.
+  static void Function(Object error)? onStagingReconcileFallback;
+
+  static Future<T> _stage<T>(String name, Future<T> Function() body) async {
+    final report = onImportStageTiming;
+    if (report == null) return body();
+    final stopwatch = Stopwatch()..start();
+    final result = await body();
+    report(name, stopwatch.elapsed);
+    return result;
+  }
 
   @override
   Future<CatalogLoadResult> load({
@@ -776,6 +801,16 @@ WHERE id = ?
     required DateTime refreshStartedAt,
     CatalogImportProgressCallback? onProgress,
   }) async {
+    if (!useStagingImport) {
+      return _reconcileWithItemFallback(
+        db: db,
+        playlistId: playlistId,
+        now: now,
+        validated: validated,
+        refreshStartedAt: refreshStartedAt,
+      );
+    }
+
     try {
       final acceptedCount = await _reconcileViaStagingSqlWithinSavepoint(
         db: db,
@@ -791,6 +826,29 @@ WHERE id = ?
         rejections: validated.rejections,
       );
     } catch (error) {
+      onStagingReconcileFallback?.call(error);
+      // Before degrading to one savepoint per item — which is orders of
+      // magnitude slower and unusable at playlist scale — retry the whole
+      // playlist through the Dart-loop path. It only fails for a genuinely
+      // bad row, which is the only case worth paying per-item isolation for.
+      try {
+        final acceptedCount = await _reconcileWithinSavepoint(
+          db: db,
+          playlistId: playlistId,
+          now: now,
+          parsed: validated.items,
+          deleteStaleRows: validated.rejections.isEmpty,
+          refreshStartedAt: refreshStartedAt,
+          onProgress: onProgress,
+        );
+        return _ReconcileOutcome(
+          acceptedCount: acceptedCount,
+          rejections: validated.rejections,
+        );
+      } catch (_) {
+        // Fall through to per-item isolation.
+      }
+
       final acceptedItems = <ContentItem>[];
       final rejections = <String>[...validated.rejections];
 
@@ -821,6 +879,44 @@ WHERE id = ?
         rejections: List.unmodifiable(rejections),
       );
     }
+  }
+
+  Future<_ReconcileOutcome> _reconcileWithItemFallback({
+    required DatabaseExecutor db,
+    required String playlistId,
+    required String now,
+    required _ValidatedPlaylistItems validated,
+    required DateTime refreshStartedAt,
+  }) async {
+    final acceptedItems = <ContentItem>[];
+    final rejections = <String>[...validated.rejections];
+
+    for (final item in validated.items) {
+      try {
+        await _reconcileWithinSavepoint(
+          db: db,
+          playlistId: playlistId,
+          now: now,
+          parsed: [item],
+          deleteStaleRows: false,
+          refreshStartedAt: refreshStartedAt,
+        );
+        acceptedItems.add(item);
+      } catch (itemError) {
+        rejections.add(
+          'Entry ${item.sourceIndex + 1} was skipped: ${_conciseError(itemError)}',
+        );
+      }
+    }
+
+    if (acceptedItems.isEmpty) {
+      throw StateError('No playlist items could be written to the database.');
+    }
+
+    return _ReconcileOutcome(
+      acceptedCount: acceptedItems.length,
+      rejections: List.unmodifiable(rejections),
+    );
   }
 
   Future<int> _reconcileWithinSavepoint({
@@ -910,14 +1006,65 @@ WHERE id = ?
       whereArgs: [playlistId],
     );
 
-    var batch = db.batch();
-    var pendingOps = 0;
-    Future<void> flushBatch({bool force = false}) async {
-      if (pendingOps == 0) return;
-      if (!force && pendingOps < _importBatchChunkSize) return;
-      await batch.commit(noResult: true);
-      batch = db.batch();
-      pendingOps = 0;
+    // A first import has nothing to reconcile against, so every staged row
+    // can claim its own id up front and the resolve pass below is skipped.
+    final isColdImport =
+        await _countCachedItems(db, playlistId: playlistId) == 0;
+
+    // Queuing plain inserts lets the index worker skip the removal half of a
+    // reindex, but only if no index entry can already exist under a rowid
+    // these rows are about to reuse — e.g. entries orphaned by a kill between
+    // a catalog delete and the index drain.
+    final indexIsEmpty =
+        isColdImport &&
+        (await db.rawQuery('SELECT 1 FROM media_items_fts LIMIT 1')).isEmpty;
+
+    // Rows are appended to one multi-row INSERT rather than one statement
+    // per row: at playlist scale the per-statement overhead dominates the
+    // actual write. Column count is fixed, so the row cap keeps the bound
+    // parameter count well under SQLite's limit.
+    const columns = [
+      'playlist_id',
+      'source_index',
+      'id',
+      'content_type',
+      'title',
+      'sort_title',
+      'description',
+      'stream_url',
+      'group_title',
+      'logo_url',
+      'artwork_url',
+      'tvg_id',
+      'tvg_name',
+      'tvg_chno',
+      'xui_id',
+      'provider_item_hash',
+      'category_id',
+      'series_title',
+      'series_id',
+      'season_number',
+      'season_id',
+      'episode_number',
+      'episode_id',
+      'resolved_media_id',
+    ];
+    final rowPlaceholder = '(${_placeholders(columns.length)})';
+    final insertPrefix =
+        'INSERT OR REPLACE INTO import_staging_items '
+        '(${columns.join(', ')}) VALUES ';
+    final values = <Object?>[];
+    var pendingRows = 0;
+
+    Future<void> flushRows({bool force = false}) async {
+      if (pendingRows == 0) return;
+      if (!force && pendingRows < _stagingRowsPerStatement) return;
+      await db.rawInsert(
+        insertPrefix + List.filled(pendingRows, rowPlaceholder).join(', '),
+        values,
+      );
+      values.clear();
+      pendingRows = 0;
     }
 
     onProgress?.call(
@@ -929,6 +1076,7 @@ WHERE id = ?
       ),
     );
     const progressReportInterval = 200;
+    final stageStopwatch = Stopwatch()..start();
 
     for (var index = 0; index < parsed.length; index++) {
       final item = parsed[index];
@@ -968,49 +1116,56 @@ WHERE id = ?
         episodeId = _stableId('episode|$seasonId|$episodeNumber');
       }
 
-      batch.insert('import_staging_items', {
-        'playlist_id': playlistId,
-        'source_index': item.sourceIndex,
-        'id': item.id,
-        'content_type': contentType,
-        'title': item.title,
-        'sort_title': CatalogNormalizer.normalizeText(item.title),
-        'description': item.description,
-        'stream_url': item.streamUrl,
-        'group_title': group,
-        'logo_url': item.logoUrl,
-        'artwork_url': item.posterUrl,
-        'tvg_id': item.metadata['tvg-id'],
-        'tvg_name': item.metadata['tvg-name'],
-        'tvg_chno': item.metadata['tvg-chno'],
-        'xui_id': item.metadata['xui-id'],
-        'provider_item_hash': CatalogNormalizer.providerItemHash(
-          streamUrl: item.streamUrl,
-          title: item.title,
-          group: item.group,
-        ),
-        'media_signature': CatalogNormalizer.mediaSignature(
-          streamUrl: item.streamUrl,
-          title: item.title,
-          sourceIndex: item.sourceIndex,
-        ),
-        'category_id': categoryId,
-        'series_title': seriesTitle,
-        'series_id': seriesId,
-        'season_number': seasonNumber,
-        'season_id': seasonId,
-        'episode_number': episodeNumber,
-        'episode_id': episodeId,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-      pendingOps++;
-      await flushBatch();
+      values
+        ..add(playlistId)
+        ..add(item.sourceIndex)
+        ..add(item.id)
+        ..add(contentType)
+        ..add(item.title)
+        ..add(CatalogNormalizer.normalizeText(item.title))
+        ..add(item.description)
+        ..add(item.streamUrl)
+        ..add(group)
+        ..add(item.logoUrl)
+        ..add(item.posterUrl)
+        ..add(item.metadata['tvg-id'])
+        ..add(item.metadata['tvg-name'])
+        ..add(item.metadata['tvg-chno'])
+        ..add(item.metadata['xui-id'])
+        ..add(
+          CatalogNormalizer.providerItemHash(
+            streamUrl: item.streamUrl,
+            title: item.title,
+            group: item.group,
+          ),
+        )
+        ..add(categoryId)
+        ..add(seriesTitle)
+        ..add(seriesId)
+        ..add(seasonNumber)
+        ..add(seasonId)
+        ..add(episodeNumber)
+        ..add(episodeId)
+        ..add(isColdImport ? item.id : null);
+      pendingRows++;
+      await flushRows();
     }
-    await flushBatch(force: true);
+    await flushRows(force: true);
+    if (onImportStageTiming != null) {
+      onImportStageTiming!('stage-rows', stageStopwatch.elapsed);
+    }
 
     // One SQL statement resolves every row's target media_items.id instead
     // of three Dart-side full-table preloads + per-item hash-map lookups.
-    await db.rawUpdate(
-      '''
+    // Both branches are index lookups: the media_items primary key, then the
+    // UNIQUE (playlist_id, stream_url, title) identity constraint. Matching
+    // on url+title without source_index means a channel that merely moved
+    // position keeps its id, and so keeps its favorites and watch history.
+    if (!isColdImport) {
+      await _stage(
+        'resolve-identity',
+        () => db.rawUpdate(
+          '''
 UPDATE import_staging_items
 SET resolved_media_id = COALESCE(
   (SELECT m.id FROM media_items m
@@ -1018,22 +1173,20 @@ SET resolved_media_id = COALESCE(
        AND m.id = import_staging_items.id),
   (SELECT m.id FROM media_items m
      WHERE m.playlist_id = import_staging_items.playlist_id
-       AND m.provider_item_hash = import_staging_items.provider_item_hash
-     LIMIT 1),
-  (SELECT m.id FROM media_items m
-     WHERE m.playlist_id = import_staging_items.playlist_id
        AND m.stream_url = import_staging_items.stream_url
-       AND m.title = import_staging_items.title
-       AND m.source_index = import_staging_items.source_index
-     LIMIT 1),
+       AND m.title = import_staging_items.title),
   import_staging_items.id
 )
 WHERE import_staging_items.playlist_id = ?
 ''',
-      [playlistId],
-    );
-    await db.rawUpdate(
-      '''
+          [playlistId],
+        ),
+      );
+    }
+    await _stage(
+      'dedupe-resolved-id',
+      () => db.rawUpdate(
+        '''
 UPDATE import_staging_items
 SET resolved_media_id = NULL
 WHERE playlist_id = ? AND source_index NOT IN (
@@ -1043,10 +1196,13 @@ WHERE playlist_id = ? AND source_index NOT IN (
   GROUP BY resolved_media_id
 )
 ''',
-      [playlistId, playlistId],
+        [playlistId, playlistId],
+      ),
     );
-    await db.rawUpdate(
-      '''
+    await _stage(
+      'dedupe-url-title',
+      () => db.rawUpdate(
+        '''
 UPDATE import_staging_items
 SET resolved_media_id = NULL
 WHERE playlist_id = ? AND source_index NOT IN (
@@ -1056,11 +1212,14 @@ WHERE playlist_id = ? AND source_index NOT IN (
   GROUP BY stream_url, title
 )
 ''',
-      [playlistId, playlistId],
+        [playlistId, playlistId],
+      ),
     );
 
-    await db.rawInsert(
-      '''
+    await _stage(
+      'upsert-categories',
+      () => db.rawInsert(
+        '''
 INSERT INTO categories (
   id, playlist_id, provider_group_title, normalized_name, content_kind,
   created_at, updated_at
@@ -1075,11 +1234,14 @@ ON CONFLICT(id) DO UPDATE SET
   normalized_name = excluded.normalized_name,
   updated_at = excluded.updated_at
 ''',
-      [now, now, playlistId],
+        [now, now, playlistId],
+      ),
     );
 
-    await db.rawInsert(
-      '''
+    await _stage(
+      'upsert-series',
+      () => db.rawInsert(
+        '''
 INSERT INTO series (id, playlist_id, title, sort_title, artwork_url, created_at, updated_at)
 SELECT series_id, playlist_id, MAX(series_title), LOWER(TRIM(MAX(series_title))),
   MAX(artwork_url), ?, ?
@@ -1092,11 +1254,14 @@ ON CONFLICT(id) DO UPDATE SET
   artwork_url = excluded.artwork_url,
   updated_at = excluded.updated_at
 ''',
-      [now, now, playlistId],
+        [now, now, playlistId],
+      ),
     );
 
-    await db.rawInsert(
-      '''
+    await _stage(
+      'upsert-seasons',
+      () => db.rawInsert(
+        '''
 INSERT INTO seasons (id, series_id, season_number, created_at, updated_at)
 SELECT season_id, series_id, MAX(season_number), ?, ?
 FROM import_staging_items
@@ -1106,24 +1271,80 @@ ON CONFLICT(id) DO UPDATE SET
   season_number = excluded.season_number,
   updated_at = excluded.updated_at
 ''',
-      [now, now, playlistId],
+        [now, now, playlistId],
+      ),
     );
 
-    await db.rawInsert(
-      '''
+    // Runs before the media_items upsert below, while the previous title and
+    // group are still readable: on a refresh only genuinely changed rows need
+    // reindexing, which is what keeps a warm refresh from re-tokenising the
+    // whole catalog. sort_title is derived from title, so it adds nothing.
+    await _stage(
+      'queue-search-upserts',
+      () => db.rawInsert(
+        isColdImport
+            ? '''
+INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
+SELECT s.resolved_media_id, ?, '${indexIsEmpty ? 'insert' : 'upsert'}', ?
+FROM import_staging_items s
+WHERE s.playlist_id = ? AND s.resolved_media_id IS NOT NULL
+ON CONFLICT(media_item_id) DO UPDATE SET
+  operation = excluded.operation,
+  queued_at = excluded.queued_at
+'''
+            : '''
+INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
+SELECT s.resolved_media_id, ?, 'upsert', ?
+FROM import_staging_items s
+LEFT JOIN media_items m ON m.id = s.resolved_media_id
+WHERE s.playlist_id = ? AND s.resolved_media_id IS NOT NULL
+  AND (
+    m.id IS NULL
+    OR m.title <> s.title
+    OR IFNULL(m.group_title, '') <> IFNULL(s.group_title, '')
+  )
+ON CONFLICT(media_item_id) DO UPDATE SET
+  operation = excluded.operation,
+  queued_at = excluded.queued_at
+''',
+        [playlistId, now, playlistId],
+      ),
+    );
+
+    await _stage(
+      'upsert-media-items',
+      () => db.rawInsert(
+        '''
 INSERT INTO media_items (
   id, playlist_id, content_type, title, sort_title, description, artwork_url,
   logo_url, stream_url, category_id, group_title, tvg_id, tvg_name, tvg_chno,
   xui_id, source_index, provider_item_hash, created_at, updated_at
 )
-SELECT resolved_media_id, playlist_id, MAX(content_type), MAX(title),
-  LOWER(TRIM(MAX(title))), MAX(description), MAX(artwork_url), MAX(logo_url),
-  MAX(stream_url), MAX(category_id), MAX(group_title), MAX(tvg_id),
-  MAX(tvg_name), MAX(tvg_chno), MAX(xui_id), MAX(source_index),
-  MAX(provider_item_hash), ?, ?
-FROM import_staging_items
-WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
-GROUP BY resolved_media_id, playlist_id
+SELECT s.resolved_media_id, s.playlist_id, s.content_type, s.title,
+  s.sort_title, s.description, s.artwork_url, s.logo_url, s.stream_url,
+  s.category_id, s.group_title, s.tvg_id, s.tvg_name, s.tvg_chno, s.xui_id,
+  s.source_index, s.provider_item_hash, ?, ?
+FROM import_staging_items s
+WHERE s.playlist_id = ? AND s.resolved_media_id IS NOT NULL
+  ${isColdImport ? '' : '''
+  AND NOT EXISTS (
+    SELECT 1 FROM media_items m
+    WHERE m.id = s.resolved_media_id
+      AND m.content_type = s.content_type
+      AND m.title = s.title
+      AND m.stream_url = s.stream_url
+      AND m.source_index = s.source_index
+      AND IFNULL(m.group_title, '') = IFNULL(s.group_title, '')
+      AND IFNULL(m.category_id, '') = IFNULL(s.category_id, '')
+      AND IFNULL(m.description, '') = IFNULL(s.description, '')
+      AND IFNULL(m.artwork_url, '') = IFNULL(s.artwork_url, '')
+      AND IFNULL(m.logo_url, '') = IFNULL(s.logo_url, '')
+      AND IFNULL(m.tvg_id, '') = IFNULL(s.tvg_id, '')
+      AND IFNULL(m.tvg_name, '') = IFNULL(s.tvg_name, '')
+      AND IFNULL(m.tvg_chno, '') = IFNULL(s.tvg_chno, '')
+      AND IFNULL(m.xui_id, '') = IFNULL(s.xui_id, '')
+  )
+'''}
 ON CONFLICT(id) DO UPDATE SET
   content_type = excluded.content_type,
   title = excluded.title,
@@ -1142,41 +1363,40 @@ ON CONFLICT(id) DO UPDATE SET
   provider_item_hash = excluded.provider_item_hash,
   updated_at = excluded.updated_at
 ''',
-      [now, now, playlistId],
+        [now, now, playlistId],
+      ),
     );
 
-    await _upsertEpisodesFromStaging(db, playlistId: playlistId, now: now);
+    await _stage(
+      'upsert-episodes',
+      () => _upsertEpisodesFromStaging(db, playlistId: playlistId, now: now),
+    );
 
-    if (deleteStaleRows) {
-      // Queue-marking runs before the deletes below, while the stale rows
-      // still exist to select ids from.
-      await db.rawInsert(
-        '''
-INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
-SELECT id, ?, 'delete', ?
+    // Nothing can be stale on a first import, and the anti-joins below are
+    // full scans of the freshly written catalog.
+    if (deleteStaleRows && !isColdImport) {
+      await _stage('delete-stale', () async {
+        // Queue-marking runs before the deletes below, while the stale rows
+        // still exist to select ids from.
+        await db.rawInsert(
+          '''
+INSERT INTO search_index_queue (media_item_id, media_rowid, playlist_id, operation, queued_at)
+SELECT id, rowid, ?, 'delete', ?
 FROM media_items
 WHERE playlist_id = ? AND id NOT IN (
   SELECT resolved_media_id FROM import_staging_items
   WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
 )
 ON CONFLICT(media_item_id) DO UPDATE SET
+  media_rowid = excluded.media_rowid,
   operation = excluded.operation,
   queued_at = excluded.queued_at
 ''',
-        [playlistId, now, playlistId, playlistId],
-      );
+          [playlistId, now, playlistId, playlistId],
+        );
 
-      await db.rawDelete(
-        '''
-DELETE FROM episodes WHERE playlist_id = ? AND id NOT IN (
-  SELECT episode_id FROM import_staging_items
-  WHERE playlist_id = ? AND episode_id IS NOT NULL
-)
-''',
-        [playlistId, playlistId],
-      );
-      await db.rawDelete(
-        '''
+        await db.rawDelete(
+          '''
 DELETE FROM seasons WHERE id IN (
   SELECT se.id FROM seasons se
   INNER JOIN series s ON s.id = se.series_id
@@ -1186,53 +1406,56 @@ DELETE FROM seasons WHERE id IN (
   WHERE playlist_id = ? AND season_id IS NOT NULL
 )
 ''',
-        [playlistId, playlistId],
-      );
-      await db.rawDelete(
-        '''
+          [playlistId, playlistId],
+        );
+        await db.rawDelete(
+          '''
 DELETE FROM series WHERE playlist_id = ? AND id NOT IN (
   SELECT series_id FROM import_staging_items
   WHERE playlist_id = ? AND series_id IS NOT NULL
 )
 ''',
-        [playlistId, playlistId],
-      );
-      await db.rawDelete(
-        '''
+          [playlistId, playlistId],
+        );
+        await db.rawDelete(
+          '''
 DELETE FROM media_items WHERE playlist_id = ? AND id NOT IN (
   SELECT resolved_media_id FROM import_staging_items
   WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
 )
 ''',
-        [playlistId, playlistId],
-      );
-      await db.rawDelete(
-        '''
+          [playlistId, playlistId],
+        );
+        await db.rawDelete(
+          '''
 DELETE FROM categories WHERE playlist_id = ? AND id NOT IN (
   SELECT category_id FROM import_staging_items WHERE playlist_id = ?
 )
 ''',
-        [playlistId, playlistId],
+          [playlistId, playlistId],
+        );
+      });
+    }
+
+    final countRows = await db.rawQuery(
+      'SELECT COUNT(*) AS item_count FROM media_items WHERE playlist_id = ?',
+      [playlistId],
+    );
+    final committedCount =
+        (countRows.single['item_count'] as num?)?.toInt() ?? 0;
+    if (committedCount == 0) {
+      throw StateError(
+        'Playlist import staged rows but committed no media_items rows.',
       );
     }
 
-    await db.rawInsert(
-      '''
-INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
-SELECT DISTINCT resolved_media_id, ?, 'upsert', ?
-FROM import_staging_items
-WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
-ON CONFLICT(media_item_id) DO UPDATE SET
-  operation = excluded.operation,
-  queued_at = excluded.queued_at
-''',
-      [playlistId, now, playlistId],
-    );
-
-    await db.delete(
-      'import_staging_items',
-      where: 'playlist_id = ?',
-      whereArgs: [playlistId],
+    await _stage(
+      'clear-staging',
+      () => db.delete(
+        'import_staging_items',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      ),
     );
 
     onProgress?.call(
@@ -1243,7 +1466,7 @@ ON CONFLICT(media_item_id) DO UPDATE SET
         total: parsed.length,
       ),
     );
-    return parsed.length;
+    return committedCount;
   }
 
   Future<void> _upsertEpisodesFromStaging(
@@ -1775,6 +1998,20 @@ WHERE series.playlist_id = ?
     );
   }
 
+  /// Restarts indexing for playlists whose queue survived a previous run
+  /// (app killed mid-drain, or a schema migration that rebuilt the index).
+  Future<void> resumeSearchIndexing() async {
+    final db = await _databaseAdapter.database;
+    final rows = await db.query(
+      'playlists',
+      columns: const ['id'],
+      where: 'search_index_dirty = 1',
+    );
+    for (final row in rows) {
+      _startSearchIndexWorker(row['id']! as String);
+    }
+  }
+
   /// Drains queued FTS changes in bounded batches so a refresh never has to
   /// rebuild the whole index. Returns the number of rows processed.
   Future<int> processSearchIndexQueue({
@@ -1809,6 +2046,7 @@ WHERE series.playlist_id = ?
     final whereArgs = playlistId != null ? [playlistId] : null;
     final rows = await db.query(
       'search_index_queue',
+      columns: const ['media_item_id', 'media_rowid', 'operation'],
       where: where,
       whereArgs: whereArgs,
       limit: batchSize,
@@ -1818,37 +2056,96 @@ WHERE series.playlist_id = ?
       return 0;
     }
 
+    final queuedIds = <String>[];
+    final insertIds = <String>[];
+    final upsertIds = <String>[];
+    final staleRowids = <int>[];
+    final staleIdsWithoutRowid = <String>[];
+    for (final row in rows) {
+      final mediaItemId = row['media_item_id']! as String;
+      queuedIds.add(mediaItemId);
+      switch (row['operation']) {
+        case 'insert':
+          insertIds.add(mediaItemId);
+        case 'upsert':
+          upsertIds.add(mediaItemId);
+        default:
+          final rowid = row['media_rowid'] as int?;
+          if (rowid != null) {
+            staleRowids.add(rowid);
+          } else {
+            staleIdsWithoutRowid.add(mediaItemId);
+          }
+      }
+    }
+
     return _databaseAdapter.transaction((txn) async {
-      final batch = txn.batch();
-      for (final row in rows) {
-        final mediaItemId = row['media_item_id']! as String;
-        final operation = row['operation']! as String;
-        batch.delete(
-          'media_items_fts',
-          where: 'media_item_id = ?',
-          whereArgs: [mediaItemId],
-        );
-        if (operation == 'upsert') {
-          batch.rawInsert(
-            '''
-INSERT INTO media_items_fts (media_item_id, title, sort_title, group_title)
-SELECT id, title, sort_title, COALESCE(group_title, '')
-FROM media_items
-WHERE id = ?
-''',
-            [mediaItemId],
-          );
-        }
-        batch.delete(
-          'search_index_queue',
-          where: 'media_item_id = ?',
-          whereArgs: [mediaItemId],
+      // 'insert' means the row is known to have no index entry yet (first
+      // import of a playlist), so the removal half of a reindex — half the
+      // work on the largest import there is — can be skipped.
+      for (final chunk in _chunked(insertIds)) {
+        await _reindexChunk(txn, chunk, removeExisting: false);
+      }
+      for (final chunk in _chunked(upsertIds)) {
+        await _reindexChunk(txn, chunk, removeExisting: true);
+      }
+      for (final chunk in _chunked(staleRowids)) {
+        await txn.rawDelete(
+          'DELETE FROM media_items_fts WHERE rowid IN (${_placeholders(chunk.length)})',
+          chunk,
         );
       }
-      await batch.commit(noResult: true);
+      for (final chunk in _chunked(staleIdsWithoutRowid)) {
+        await txn.rawDelete(
+          'DELETE FROM media_items_fts WHERE media_item_id IN (${_placeholders(chunk.length)})',
+          chunk,
+        );
+      }
+      for (final chunk in _chunked(queuedIds)) {
+        await txn.rawDelete(
+          'DELETE FROM search_index_queue WHERE media_item_id IN (${_placeholders(chunk.length)})',
+          chunk,
+        );
+      }
       return rows.length;
     });
   }
+
+  /// The FTS table shares media_items' rowid, so a stale entry is removed by
+  /// an integer rowid lookup. Matching on the UNINDEXED media_item_id column
+  /// instead would scan the whole index once per row.
+  static Future<void> _reindexChunk(
+    DatabaseExecutor txn,
+    List<String> mediaItemIds, {
+    required bool removeExisting,
+  }) async {
+    final placeholders = _placeholders(mediaItemIds.length);
+    if (removeExisting) {
+      await txn.rawDelete(
+        'DELETE FROM media_items_fts WHERE rowid IN '
+        '(SELECT m.rowid FROM media_items m WHERE m.id IN ($placeholders))',
+        mediaItemIds,
+      );
+    }
+    await txn.rawInsert(
+      'INSERT INTO media_items_fts (rowid, media_item_id, title, group_title) '
+      "SELECT m.rowid, m.id, m.title, COALESCE(m.group_title, '') "
+      'FROM media_items m WHERE m.id IN ($placeholders)',
+      mediaItemIds,
+    );
+  }
+
+  static Iterable<List<T>> _chunked<T>(
+    List<T> values, {
+    int size = _deleteChunkSize,
+  }) sync* {
+    for (var start = 0; start < values.length; start += size) {
+      final end = start + size;
+      yield values.sublist(start, end > values.length ? values.length : end);
+    }
+  }
+
+  static String _placeholders(int count) => List.filled(count, '?').join(', ');
 
   Future<void> _clearSearchIndexDirtyIfEmpty(String playlistId) async {
     final db = await _databaseAdapter.database;

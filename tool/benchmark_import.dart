@@ -54,6 +54,7 @@ Future<void> runBenchmark(List<String> args) async {
   final repository = SqliteCatalogRepository(
     source: source,
     databaseAdapter: adapter,
+    autoStartSearchIndexWorker: false,
   );
 
   try {
@@ -104,6 +105,8 @@ class _RunResult {
     required this.totalElapsed,
     required this.downloadElapsed,
     required this.importElapsed,
+    required this.searchIndexElapsed,
+    required this.searchIndexRows,
     required this.rssAtStart,
     required this.rssAtEnd,
     required this.maxRss,
@@ -114,6 +117,8 @@ class _RunResult {
   final Duration totalElapsed;
   final Duration? downloadElapsed;
   final Duration? importElapsed;
+  final Duration searchIndexElapsed;
+  final int searchIndexRows;
   final int rssAtStart;
   final int rssAtEnd;
   final int maxRss;
@@ -127,6 +132,11 @@ Future<_RunResult> _runImport({
 }) async {
   final rssAtStart = ProcessInfo.currentRss;
   final stopwatch = Stopwatch()..start();
+
+  SqliteCatalogRepository.onImportStageTiming = (stage, elapsed) =>
+      stdout.writeln('     [$label] $stage: ${elapsed.inMilliseconds} ms');
+  SqliteCatalogRepository.onStagingReconcileFallback = (error) =>
+      stderr.writeln('     [$label] SET-BASED RECONCILE FAILED: $error');
 
   DateTime? downloadStartedAt;
   DateTime? importStartedAt;
@@ -148,7 +158,6 @@ Future<_RunResult> _runImport({
   );
 
   stopwatch.stop();
-  final rssAtEnd = ProcessInfo.currentRss;
 
   final downloadElapsed = (downloadStartedAt != null && importStartedAt != null)
       ? importStartedAt!.difference(downloadStartedAt!)
@@ -161,12 +170,25 @@ Future<_RunResult> _runImport({
     '  -> imported ${result.itemCount} items for playlist ${result.playlistId}',
   );
 
+  // The background index worker keeps running after load() returns, so its
+  // cost is invisible to the user as "import time" but very visible as a
+  // device that stays busy. Drain it here and report it separately.
+  final indexStopwatch = Stopwatch()..start();
+  final indexedRows = await repository.processSearchIndexQueue(
+    playlistId: result.playlistId,
+  );
+  indexStopwatch.stop();
+
+  final rssAtEnd = ProcessInfo.currentRss;
+
   return _RunResult(
     label: label,
     itemCount: result.itemCount,
     totalElapsed: stopwatch.elapsed,
     downloadElapsed: downloadElapsed,
     importElapsed: importElapsed,
+    searchIndexElapsed: indexStopwatch.elapsed,
+    searchIndexRows: indexedRows,
     rssAtStart: rssAtStart,
     rssAtEnd: rssAtEnd,
     maxRss: ProcessInfo.maxRss,
@@ -183,6 +205,10 @@ void _printRun(_RunResult run) {
   stdout.writeln('  total wall time:  ${fmtDuration(run.totalElapsed)}');
   stdout.writeln('  ~download+parse:  ${fmtDuration(run.downloadElapsed)}');
   stdout.writeln('  ~import (db):     ${fmtDuration(run.importElapsed)}');
+  stdout.writeln(
+    '  search index:     ${fmtDuration(run.searchIndexElapsed)} '
+    '(${run.searchIndexRows} rows)',
+  );
   stdout.writeln('  RSS before:       ${fmtMb(run.rssAtStart)}');
   stdout.writeln('  RSS after:        ${fmtMb(run.rssAtEnd)}');
   stdout.writeln('  RSS peak (proc):  ${fmtMb(run.maxRss)}');

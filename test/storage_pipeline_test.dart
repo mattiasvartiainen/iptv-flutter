@@ -13,6 +13,45 @@ import 'package:iptv_flutter/services/storage/storage_migrations.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 
 void main() {
+  test(
+    'a cold import and a refresh both reconcile via the set-based SQL path',
+    () async {
+      final adapter = SqfliteDatabaseAdapter(
+        fileName:
+            'iptv_test_set_based_${DateTime.now().microsecondsSinceEpoch}.sqlite',
+      );
+      addTearDown(adapter.close);
+      addTearDown(
+        () => SqliteCatalogRepository.onStagingReconcileFallback = null,
+      );
+
+      final fallbacks = <Object>[];
+      SqliteCatalogRepository.onStagingReconcileFallback = fallbacks.add;
+
+      final catalog = SqliteCatalogRepository(
+        source: const FakePlaylistSource('''#EXTM3U
+#EXTINF:-1 tvg-id="alpha" group-title="News",Alpha News
+https://stream.test/alpha.m3u8
+#EXTINF:-1 group-title="Series",Beta Show S01E02
+https://stream.test/beta-s01e02.m3u8
+'''),
+        databaseAdapter: adapter,
+        secretStore: InMemoryPlaylistSecretStore(),
+        autoStartSearchIndexWorker: false,
+      );
+
+      await catalog.load(playlistUrl: 'https://provider.test/playlist.m3u');
+      await catalog.load(
+        playlistUrl: 'https://provider.test/playlist.m3u',
+        policy: CatalogLoadPolicy.networkOnly,
+      );
+
+      // The Dart-loop fallback is correct but orders of magnitude slower, so
+      // silently degrading to it is a performance regression, not a detail.
+      expect(fallbacks, isEmpty);
+    },
+  );
+
   test('contracts and migrations initialize schema v1 tables', () async {
     final adapter = SqfliteDatabaseAdapter(
       fileName:
@@ -29,7 +68,7 @@ void main() {
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '6');
+    expect(rows.first['value'], '7');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(

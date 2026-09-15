@@ -460,3 +460,132 @@ const List<String> _v6Statements = <String>[
   'CREATE INDEX IF NOT EXISTS idx_staging_resolved_media ON import_staging_items(playlist_id, resolved_media_id)',
   'CREATE INDEX IF NOT EXISTS idx_staging_episode ON import_staging_items(playlist_id, episode_id)',
 ];
+
+/// Import throughput work for very large playlists (500k+ items).
+///
+/// Every secondary index on `import_staging_items` cost one b-tree insert
+/// per staged row without ever being chosen by the reconcile statements
+/// (which are full-set scans/group-bys), and two `media_items` indexes were
+/// redundant prefixes of wider ones. The FTS table is also rebuilt so its
+/// rowid matches `media_items.rowid`: index maintenance used to delete rows
+/// with `WHERE media_item_id = ?` on an UNINDEXED column, which is a full
+/// scan of the FTS content table per queued row.
+class ImportPerformanceV7Migration implements StorageMigration {
+  const ImportPerformanceV7Migration();
+
+  @override
+  int get version => 7;
+
+  @override
+  String get name => 'import_performance_v7';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    for (final statement in _v7DropStatements) {
+      await db.execute(statement);
+    }
+    // Scratch table: recreating is cheaper and simpler than ALTERing away
+    // the unused media_signature column.
+    await db.execute('DROP TABLE IF EXISTS import_staging_items');
+    await db.execute(_importStagingItemsSchema);
+
+    // Recreated rather than altered so it gains media_rowid and so 'insert'
+    // passes the operation CHECK. Losing pending entries is harmless:
+    // everything is re-queued below.
+    await db.execute('DROP TABLE IF EXISTS search_index_queue');
+    await db.execute(_searchIndexQueueSchema);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_search_index_queue_playlist '
+      'ON search_index_queue(playlist_id, operation)',
+    );
+
+    // The FTS rowid must line up with media_items.rowid, which existing
+    // rows do not, so the index is rebuilt from scratch in the background.
+    await db.execute('DROP TABLE IF EXISTS media_items_fts');
+    await db.execute(_mediaItemsFtsSchema);
+    final now = DateTime.now().toUtc().toIso8601String();
+    await db.rawInsert(
+      '''
+INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
+SELECT id, playlist_id, 'insert', ? FROM media_items
+WHERE true
+ON CONFLICT(media_item_id) DO UPDATE SET
+  operation = excluded.operation,
+  queued_at = excluded.queued_at
+''',
+      [now],
+    );
+    await db.execute('UPDATE playlists SET search_index_dirty = 1');
+  }
+}
+
+const List<String> _v7DropStatements = <String>[
+  // Prefix of idx_media_playlist_type_sort.
+  'DROP INDEX IF EXISTS idx_media_playlist_type',
+  // Prefix covered by the UNIQUE (playlist_id, stream_url, title) index.
+  'DROP INDEX IF EXISTS idx_media_playlist_signature',
+  'DROP INDEX IF EXISTS idx_staging_playlist_signature',
+  'DROP INDEX IF EXISTS idx_staging_playlist_hash',
+  'DROP INDEX IF EXISTS idx_staging_playlist_identity',
+  'DROP INDEX IF EXISTS idx_staging_category',
+  'DROP INDEX IF EXISTS idx_staging_series',
+  'DROP INDEX IF EXISTS idx_staging_season',
+  'DROP INDEX IF EXISTS idx_staging_episode_identity',
+  'DROP INDEX IF EXISTS idx_staging_resolved_media',
+  'DROP INDEX IF EXISTS idx_staging_episode',
+];
+
+const String _importStagingItemsSchema = '''
+CREATE TABLE IF NOT EXISTS import_staging_items (
+  playlist_id TEXT NOT NULL,
+  source_index INTEGER NOT NULL,
+  id TEXT,
+  content_type TEXT NOT NULL CHECK (
+    content_type IN ('live', 'movie', 'episode', 'unknown')
+  ),
+  title TEXT NOT NULL,
+  sort_title TEXT NOT NULL,
+  description TEXT,
+  stream_url TEXT NOT NULL,
+  group_title TEXT,
+  logo_url TEXT,
+  artwork_url TEXT,
+  tvg_id TEXT,
+  tvg_name TEXT,
+  tvg_chno TEXT,
+  xui_id TEXT,
+  provider_item_hash TEXT,
+  category_id TEXT,
+  series_title TEXT,
+  series_id TEXT,
+  season_number INTEGER,
+  season_id TEXT,
+  episode_number INTEGER,
+  episode_id TEXT,
+  resolved_media_id TEXT,
+  PRIMARY KEY (playlist_id, source_index),
+  FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+)
+''';
+
+const String _searchIndexQueueSchema = '''
+CREATE TABLE IF NOT EXISTS search_index_queue (
+  media_item_id TEXT PRIMARY KEY,
+  media_rowid INTEGER,
+  playlist_id TEXT NOT NULL,
+  operation TEXT NOT NULL CHECK (
+    operation IN ('insert', 'upsert', 'delete')
+  ),
+  queued_at TEXT NOT NULL,
+  FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+)
+''';
+
+const String _mediaItemsFtsSchema =
+    '''CREATE VIRTUAL TABLE IF NOT EXISTS media_items_fts USING fts5(
+  media_item_id UNINDEXED,
+  title,
+  group_title,
+  tokenize = 'unicode61 remove_diacritics 2'
+)
+''';

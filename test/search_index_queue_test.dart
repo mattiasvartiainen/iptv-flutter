@@ -87,7 +87,9 @@ ORDER BY f.title
         where: 'playlist_id = ?',
         whereArgs: [playlistId],
       );
-      expect(queued.every((row) => row['operation'] == 'upsert'), isTrue);
+      // A first import knows nothing is indexed yet, so it queues plain
+      // inserts and the worker skips the removal half of a reindex.
+      expect(queued.every((row) => row['operation'] == 'insert'), isTrue);
     },
   );
 

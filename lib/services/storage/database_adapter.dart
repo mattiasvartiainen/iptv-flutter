@@ -20,6 +20,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
              MediaItemXuiIdV4Migration(),
              PaginatedCatalogV5Migration(),
              ImportStagingSqlReconcileV6Migration(),
+             ImportPerformanceV7Migration(),
            ];
 
   final String fileName;
@@ -59,6 +60,15 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
       version: _targetVersion,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
+        // The catalog is a rebuildable cache, so trading the last few
+        // transactions on power loss for far fewer fsyncs is worth it.
+        // WAL is deliberately not enabled: a playlist import is one very
+        // large write transaction, and growing the WAL past the page cache
+        // makes every page read go through the wal-index instead.
+        await db.execute('PRAGMA synchronous = NORMAL');
+        // Negative values are KiB rather than pages; bounded so a TV with
+        // little free memory cannot be pushed into swap by an import.
+        await db.execute('PRAGMA cache_size = -8000');
       },
       onCreate: (db, version) async {
         await _runMigrations(db, fromVersion: 0, toVersion: version);

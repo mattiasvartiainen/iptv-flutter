@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/content_item.dart';
@@ -5,6 +7,7 @@ import '../services/errors/app_issue.dart';
 import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/catalog/catalog_repository.dart';
+import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/logging/app_logger.dart';
 import '../services/playback/playback_adapter.dart';
 import '../services/settings/settings_repository.dart';
@@ -109,6 +112,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> initialize() async {
     await AppStorageBootstrap.instance.initialize();
+    // Picks up index work left behind by a kill mid-import or by a schema
+    // migration that rebuilt the index; runs in the background.
+    final repository = _catalogRepository;
+    if (repository is SqliteCatalogRepository) {
+      unawaited(repository.resumeSearchIndexing());
+    }
     await refreshHomeSectionVisibility();
     await refreshVerboseRefreshInfoSetting();
     await refreshPlaylists();
