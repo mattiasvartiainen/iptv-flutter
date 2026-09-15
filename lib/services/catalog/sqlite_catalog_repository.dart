@@ -13,7 +13,6 @@ import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
 import 'catalog_query_service.dart';
 import 'catalog_repository.dart';
-import 'catalog_import_progress.dart';
 import 'id_identity.dart';
 import 'm3u_parser.dart';
 
@@ -63,6 +62,8 @@ class SqliteCatalogRepository
   /// second refresh from starting a competing worker for the same playlist.
   final Set<String> _indexingPlaylists = {};
 
+  final Set<String> _pausedIndexingPlaylists = {};
+
   /// Default batch size for [processSearchIndexQueue].
   static const int searchIndexBatchSize = 250;
 
@@ -96,6 +97,7 @@ class SqliteCatalogRepository
     final inFlight = _inFlightLoads[resolvedPlaylistId];
     if (inFlight != null) return inFlight;
 
+    _pausedIndexingPlaylists.add(resolvedPlaylistId);
     final future = _loadInternal(
       playlistUrl: playlistUrl,
       playlistId: resolvedPlaylistId,
@@ -104,11 +106,15 @@ class SqliteCatalogRepository
       onProgress: onProgress,
     );
     _inFlightLoads[resolvedPlaylistId] = future;
+    late final CatalogLoadResult result;
     try {
-      return await future;
+      result = await future;
     } finally {
       _inFlightLoads.remove(resolvedPlaylistId);
+      _pausedIndexingPlaylists.remove(resolvedPlaylistId);
     }
+    _startSearchIndexWorker(resolvedPlaylistId);
+    return result;
   }
 
   Future<CatalogLoadResult> _loadInternal({
@@ -306,7 +312,6 @@ WHERE id = ?
             throw error;
           });
 
-      _startSearchIndexWorker(resolvedPlaylistId);
       return updatedItems;
     } on AppIssueException {
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
@@ -772,7 +777,7 @@ WHERE id = ?
     CatalogImportProgressCallback? onProgress,
   }) async {
     try {
-      final acceptedCount = await _reconcileWithinSavepoint(
+      final acceptedCount = await _reconcileViaStagingSqlWithinSavepoint(
         db: db,
         playlistId: playlistId,
         now: now,
@@ -850,6 +855,424 @@ WHERE id = ?
   String _conciseError(Object error) {
     final text = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
     return text.length <= 160 ? text : '${text.substring(0, 157)}...';
+  }
+
+  Future<int> _reconcileViaStagingSqlWithinSavepoint({
+    required DatabaseExecutor db,
+    required String playlistId,
+    required String now,
+    required List<ContentItem> parsed,
+    required bool deleteStaleRows,
+    required DateTime refreshStartedAt,
+    CatalogImportProgressCallback? onProgress,
+  }) async {
+    await db.execute('SAVEPOINT catalog_import_staging');
+    try {
+      final acceptedCount = await _reconcileViaStagingSql(
+        db: db,
+        playlistId: playlistId,
+        now: now,
+        parsed: parsed,
+        deleteStaleRows: deleteStaleRows,
+        refreshStartedAt: refreshStartedAt,
+        onProgress: onProgress,
+      );
+      await db.execute('RELEASE SAVEPOINT catalog_import_staging');
+      return acceptedCount;
+    } catch (_) {
+      await db.execute('ROLLBACK TO SAVEPOINT catalog_import_staging');
+      await db.execute('RELEASE SAVEPOINT catalog_import_staging');
+      rethrow;
+    }
+  }
+
+  /// Set-based reconcile: stream parsed rows into `import_staging_items`,
+  /// resolve each row's target `media_items.id` with a single SQL COALESCE
+  /// join (existing id -> provider hash -> stream_url|title|source_index
+  /// signature -> new id), then upsert/delete every table with plain SQL
+  /// operating on the whole staging set. Replaces preloading the entire
+  /// existing catalog into Dart Sets/Maps — SQLite's own indexes do the
+  /// O(n) diff work instead of a Dart loop. On any error this throws and
+  /// the caller (`_reconcileResiliently`) falls back to the old per-item
+  /// Dart-loop path, so constraint-violation resilience is unchanged.
+  Future<int> _reconcileViaStagingSql({
+    required DatabaseExecutor db,
+    required String playlistId,
+    required String now,
+    required List<ContentItem> parsed,
+    required bool deleteStaleRows,
+    required DateTime refreshStartedAt,
+    CatalogImportProgressCallback? onProgress,
+  }) async {
+    await db.delete(
+      'import_staging_items',
+      where: 'playlist_id = ?',
+      whereArgs: [playlistId],
+    );
+
+    var batch = db.batch();
+    var pendingOps = 0;
+    Future<void> flushBatch({bool force = false}) async {
+      if (pendingOps == 0) return;
+      if (!force && pendingOps < _importBatchChunkSize) return;
+      await batch.commit(noResult: true);
+      batch = db.batch();
+      pendingOps = 0;
+    }
+
+    onProgress?.call(
+      CatalogImportProgress(
+        phase: CatalogImportPhase.importing,
+        startedAt: refreshStartedAt,
+        current: 0,
+        total: parsed.length,
+      ),
+    );
+    const progressReportInterval = 200;
+
+    for (var index = 0; index < parsed.length; index++) {
+      final item = parsed[index];
+      if (onProgress != null &&
+          index > 0 &&
+          index % progressReportInterval == 0) {
+        onProgress(
+          CatalogImportProgress(
+            phase: CatalogImportPhase.importing,
+            startedAt: refreshStartedAt,
+            current: index,
+            total: parsed.length,
+          ),
+        );
+      }
+
+      final group = CatalogNormalizer.canonicalGroup(item.group);
+      final categoryId = _stableId('category|$playlistId|$group');
+      var contentType = item.type == ContentType.live ? 'live' : 'movie';
+
+      String? seriesTitle;
+      String? seriesId;
+      String? seasonId;
+      String? episodeId;
+      int? seasonNumber;
+      int? episodeNumber;
+      final episodeMatch = CatalogNormalizer.parseSeriesEpisodeTitle(
+        item.title,
+      );
+      if (episodeMatch != null && episodeMatch.seriesTitle.isNotEmpty) {
+        contentType = 'episode';
+        seriesTitle = episodeMatch.seriesTitle;
+        seasonNumber = episodeMatch.seasonNumber;
+        episodeNumber = episodeMatch.episodeNumber;
+        seriesId = _stableId('series|$playlistId|$seriesTitle');
+        seasonId = _stableId('season|$seriesId|$seasonNumber');
+        episodeId = _stableId('episode|$seasonId|$episodeNumber');
+      }
+
+      batch.insert('import_staging_items', {
+        'playlist_id': playlistId,
+        'source_index': item.sourceIndex,
+        'id': item.id,
+        'content_type': contentType,
+        'title': item.title,
+        'sort_title': CatalogNormalizer.normalizeText(item.title),
+        'description': item.description,
+        'stream_url': item.streamUrl,
+        'group_title': group,
+        'logo_url': item.logoUrl,
+        'artwork_url': item.posterUrl,
+        'tvg_id': item.metadata['tvg-id'],
+        'tvg_name': item.metadata['tvg-name'],
+        'tvg_chno': item.metadata['tvg-chno'],
+        'xui_id': item.metadata['xui-id'],
+        'provider_item_hash': CatalogNormalizer.providerItemHash(
+          streamUrl: item.streamUrl,
+          title: item.title,
+          group: item.group,
+        ),
+        'media_signature': CatalogNormalizer.mediaSignature(
+          streamUrl: item.streamUrl,
+          title: item.title,
+          sourceIndex: item.sourceIndex,
+        ),
+        'category_id': categoryId,
+        'series_title': seriesTitle,
+        'series_id': seriesId,
+        'season_number': seasonNumber,
+        'season_id': seasonId,
+        'episode_number': episodeNumber,
+        'episode_id': episodeId,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      pendingOps++;
+      await flushBatch();
+    }
+    await flushBatch(force: true);
+
+    // One SQL statement resolves every row's target media_items.id instead
+    // of three Dart-side full-table preloads + per-item hash-map lookups.
+    await db.rawUpdate(
+      '''
+UPDATE import_staging_items
+SET resolved_media_id = COALESCE(
+  (SELECT m.id FROM media_items m
+     WHERE m.playlist_id = import_staging_items.playlist_id
+       AND m.id = import_staging_items.id),
+  (SELECT m.id FROM media_items m
+     WHERE m.playlist_id = import_staging_items.playlist_id
+       AND m.provider_item_hash = import_staging_items.provider_item_hash
+     LIMIT 1),
+  (SELECT m.id FROM media_items m
+     WHERE m.playlist_id = import_staging_items.playlist_id
+       AND m.stream_url = import_staging_items.stream_url
+       AND m.title = import_staging_items.title
+       AND m.source_index = import_staging_items.source_index
+     LIMIT 1),
+  import_staging_items.id
+)
+WHERE import_staging_items.playlist_id = ?
+''',
+      [playlistId],
+    );
+    await db.rawUpdate(
+      '''
+UPDATE import_staging_items
+SET resolved_media_id = NULL
+WHERE playlist_id = ? AND source_index NOT IN (
+  SELECT MIN(source_index)
+  FROM import_staging_items
+  WHERE playlist_id = ?
+  GROUP BY resolved_media_id
+)
+''',
+      [playlistId, playlistId],
+    );
+    await db.rawUpdate(
+      '''
+UPDATE import_staging_items
+SET resolved_media_id = NULL
+WHERE playlist_id = ? AND source_index NOT IN (
+  SELECT MIN(source_index)
+  FROM import_staging_items
+  WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
+  GROUP BY stream_url, title
+)
+''',
+      [playlistId, playlistId],
+    );
+
+    await db.rawInsert(
+      '''
+INSERT INTO categories (
+  id, playlist_id, provider_group_title, normalized_name, content_kind,
+  created_at, updated_at
+)
+SELECT category_id, playlist_id, MAX(group_title), LOWER(TRIM(MAX(group_title))),
+  'unknown', ?, ?
+FROM import_staging_items
+WHERE playlist_id = ?
+GROUP BY category_id, playlist_id
+ON CONFLICT(id) DO UPDATE SET
+  provider_group_title = excluded.provider_group_title,
+  normalized_name = excluded.normalized_name,
+  updated_at = excluded.updated_at
+''',
+      [now, now, playlistId],
+    );
+
+    await db.rawInsert(
+      '''
+INSERT INTO series (id, playlist_id, title, sort_title, artwork_url, created_at, updated_at)
+SELECT series_id, playlist_id, MAX(series_title), LOWER(TRIM(MAX(series_title))),
+  MAX(artwork_url), ?, ?
+FROM import_staging_items
+WHERE playlist_id = ? AND series_id IS NOT NULL
+GROUP BY series_id, playlist_id
+ON CONFLICT(id) DO UPDATE SET
+  title = excluded.title,
+  sort_title = excluded.sort_title,
+  artwork_url = excluded.artwork_url,
+  updated_at = excluded.updated_at
+''',
+      [now, now, playlistId],
+    );
+
+    await db.rawInsert(
+      '''
+INSERT INTO seasons (id, series_id, season_number, created_at, updated_at)
+SELECT season_id, series_id, MAX(season_number), ?, ?
+FROM import_staging_items
+WHERE playlist_id = ? AND season_id IS NOT NULL
+GROUP BY season_id, series_id
+ON CONFLICT(id) DO UPDATE SET
+  season_number = excluded.season_number,
+  updated_at = excluded.updated_at
+''',
+      [now, now, playlistId],
+    );
+
+    await db.rawInsert(
+      '''
+INSERT INTO media_items (
+  id, playlist_id, content_type, title, sort_title, description, artwork_url,
+  logo_url, stream_url, category_id, group_title, tvg_id, tvg_name, tvg_chno,
+  xui_id, source_index, provider_item_hash, created_at, updated_at
+)
+SELECT resolved_media_id, playlist_id, MAX(content_type), MAX(title),
+  LOWER(TRIM(MAX(title))), MAX(description), MAX(artwork_url), MAX(logo_url),
+  MAX(stream_url), MAX(category_id), MAX(group_title), MAX(tvg_id),
+  MAX(tvg_name), MAX(tvg_chno), MAX(xui_id), MAX(source_index),
+  MAX(provider_item_hash), ?, ?
+FROM import_staging_items
+WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
+GROUP BY resolved_media_id, playlist_id
+ON CONFLICT(id) DO UPDATE SET
+  content_type = excluded.content_type,
+  title = excluded.title,
+  sort_title = excluded.sort_title,
+  description = excluded.description,
+  artwork_url = excluded.artwork_url,
+  logo_url = excluded.logo_url,
+  stream_url = excluded.stream_url,
+  category_id = excluded.category_id,
+  group_title = excluded.group_title,
+  tvg_id = excluded.tvg_id,
+  tvg_name = excluded.tvg_name,
+  tvg_chno = excluded.tvg_chno,
+  xui_id = excluded.xui_id,
+  source_index = excluded.source_index,
+  provider_item_hash = excluded.provider_item_hash,
+  updated_at = excluded.updated_at
+''',
+      [now, now, playlistId],
+    );
+
+    await _upsertEpisodesFromStaging(db, playlistId: playlistId, now: now);
+
+    if (deleteStaleRows) {
+      // Queue-marking runs before the deletes below, while the stale rows
+      // still exist to select ids from.
+      await db.rawInsert(
+        '''
+INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
+SELECT id, ?, 'delete', ?
+FROM media_items
+WHERE playlist_id = ? AND id NOT IN (
+  SELECT resolved_media_id FROM import_staging_items
+  WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
+)
+ON CONFLICT(media_item_id) DO UPDATE SET
+  operation = excluded.operation,
+  queued_at = excluded.queued_at
+''',
+        [playlistId, now, playlistId, playlistId],
+      );
+
+      await db.rawDelete(
+        '''
+DELETE FROM episodes WHERE playlist_id = ? AND id NOT IN (
+  SELECT episode_id FROM import_staging_items
+  WHERE playlist_id = ? AND episode_id IS NOT NULL
+)
+''',
+        [playlistId, playlistId],
+      );
+      await db.rawDelete(
+        '''
+DELETE FROM seasons WHERE id IN (
+  SELECT se.id FROM seasons se
+  INNER JOIN series s ON s.id = se.series_id
+  WHERE s.playlist_id = ?
+) AND id NOT IN (
+  SELECT season_id FROM import_staging_items
+  WHERE playlist_id = ? AND season_id IS NOT NULL
+)
+''',
+        [playlistId, playlistId],
+      );
+      await db.rawDelete(
+        '''
+DELETE FROM series WHERE playlist_id = ? AND id NOT IN (
+  SELECT series_id FROM import_staging_items
+  WHERE playlist_id = ? AND series_id IS NOT NULL
+)
+''',
+        [playlistId, playlistId],
+      );
+      await db.rawDelete(
+        '''
+DELETE FROM media_items WHERE playlist_id = ? AND id NOT IN (
+  SELECT resolved_media_id FROM import_staging_items
+  WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
+)
+''',
+        [playlistId, playlistId],
+      );
+      await db.rawDelete(
+        '''
+DELETE FROM categories WHERE playlist_id = ? AND id NOT IN (
+  SELECT category_id FROM import_staging_items WHERE playlist_id = ?
+)
+''',
+        [playlistId, playlistId],
+      );
+    }
+
+    await db.rawInsert(
+      '''
+INSERT INTO search_index_queue (media_item_id, playlist_id, operation, queued_at)
+SELECT DISTINCT resolved_media_id, ?, 'upsert', ?
+FROM import_staging_items
+WHERE playlist_id = ? AND resolved_media_id IS NOT NULL
+ON CONFLICT(media_item_id) DO UPDATE SET
+  operation = excluded.operation,
+  queued_at = excluded.queued_at
+''',
+      [playlistId, now, playlistId],
+    );
+
+    await db.delete(
+      'import_staging_items',
+      where: 'playlist_id = ?',
+      whereArgs: [playlistId],
+    );
+
+    onProgress?.call(
+      CatalogImportProgress(
+        phase: CatalogImportPhase.importing,
+        startedAt: refreshStartedAt,
+        current: parsed.length,
+        total: parsed.length,
+      ),
+    );
+    return parsed.length;
+  }
+
+  Future<void> _upsertEpisodesFromStaging(
+    DatabaseExecutor db, {
+    required String playlistId,
+    required String now,
+  }) async {
+    await db.delete(
+      'episodes',
+      where: 'playlist_id = ?',
+      whereArgs: [playlistId],
+    );
+    await db.rawInsert(
+      '''
+INSERT OR IGNORE INTO episodes (
+  id, playlist_id, series_id, season_id, media_item_id, episode_number,
+  title, sort_title, artwork_url, created_at, updated_at
+)
+SELECT MIN(episode_id), playlist_id, MIN(series_id), season_id,
+       MIN(resolved_media_id), episode_number, MIN(title),
+       LOWER(TRIM(MIN(title))), MIN(artwork_url), ?, ?
+FROM import_staging_items
+WHERE playlist_id = ?
+  AND episode_id IS NOT NULL
+  AND resolved_media_id IS NOT NULL
+GROUP BY playlist_id, season_id, episode_number
+''',
+      [now, now, playlistId],
+    );
   }
 
   Future<int> _reconcilePlaylistContent({
@@ -1378,6 +1801,9 @@ WHERE series.playlist_id = ?
     required String? playlistId,
     required int batchSize,
   }) async {
+    if (playlistId != null && _pausedIndexingPlaylists.contains(playlistId)) {
+      return 0;
+    }
     final db = await _databaseAdapter.database;
     final where = playlistId != null ? 'playlist_id = ?' : null;
     final whereArgs = playlistId != null ? [playlistId] : null;
@@ -1388,6 +1814,9 @@ WHERE series.playlist_id = ?
       limit: batchSize,
     );
     if (rows.isEmpty) return 0;
+    if (playlistId != null && _pausedIndexingPlaylists.contains(playlistId)) {
+      return 0;
+    }
 
     return _databaseAdapter.transaction((txn) async {
       final batch = txn.batch();

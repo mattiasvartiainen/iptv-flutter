@@ -19,6 +19,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
              PlaylistScopedIdentityV3Migration(),
              MediaItemXuiIdV4Migration(),
              PaginatedCatalogV5Migration(),
+             ImportStagingSqlReconcileV6Migration(),
            ];
 
   final String fileName;

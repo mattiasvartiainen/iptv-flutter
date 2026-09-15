@@ -29,7 +29,7 @@ void main() {
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '5');
+    expect(rows.first['value'], '6');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(

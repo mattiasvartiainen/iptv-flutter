@@ -410,3 +410,53 @@ CREATE TABLE IF NOT EXISTS search_index_queue (
   'CREATE INDEX IF NOT EXISTS idx_staging_playlist_identity ON import_staging_items(playlist_id, stream_url, title)',
   'CREATE INDEX IF NOT EXISTS idx_search_index_queue_playlist ON search_index_queue(playlist_id, operation)',
 ];
+
+/// Turns `import_staging_items` into the real import boundary: adds the
+/// precomputed id columns a SQL set-based reconcile needs (Dart still owns
+/// hashing since SQLite has no callable SHA-256/legacy-hash function), plus
+/// the supporting indexes for the joins/anti-joins that replace the old
+/// full-table Dart Set/Map preload. See docs/improvements-1.md "Path B".
+class ImportStagingSqlReconcileV6Migration implements StorageMigration {
+  const ImportStagingSqlReconcileV6Migration();
+
+  @override
+  int get version => 6;
+
+  @override
+  String get name => 'import_staging_sql_reconcile_v6';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    for (final column in const [
+      'id',
+      'category_id',
+      'series_id',
+      'season_id',
+      'resolved_media_id',
+      'episode_id',
+    ]) {
+      await _addColumnIfMissing(
+        db,
+        table: 'import_staging_items',
+        column: column,
+        definition: 'TEXT',
+      );
+    }
+    for (final statement in _v6Statements) {
+      await db.execute(statement);
+    }
+  }
+}
+
+const List<String> _v6Statements = <String>[
+  // Supports the resolved_media_id COALESCE join's third (order-independent
+  // is only true for the provider-hash branch; this one still needs
+  // source_index) fallback branch.
+  'CREATE INDEX IF NOT EXISTS idx_media_playlist_signature ON media_items(playlist_id, stream_url, title, source_index)',
+  'CREATE INDEX IF NOT EXISTS idx_staging_category ON import_staging_items(playlist_id, category_id)',
+  'CREATE INDEX IF NOT EXISTS idx_staging_series ON import_staging_items(playlist_id, series_id)',
+  'CREATE INDEX IF NOT EXISTS idx_staging_season ON import_staging_items(playlist_id, season_id)',
+  'CREATE INDEX IF NOT EXISTS idx_staging_episode_identity ON import_staging_items(playlist_id, season_id, episode_number, source_index)',
+  'CREATE INDEX IF NOT EXISTS idx_staging_resolved_media ON import_staging_items(playlist_id, resolved_media_id)',
+  'CREATE INDEX IF NOT EXISTS idx_staging_episode ON import_staging_items(playlist_id, episode_id)',
+];
