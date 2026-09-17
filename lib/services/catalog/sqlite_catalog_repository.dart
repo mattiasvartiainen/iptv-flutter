@@ -9,12 +9,12 @@ import '../errors/app_issue.dart';
 import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
+import 'catalog_import_coordinator.dart';
 import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
 import 'catalog_query_service.dart';
 import 'catalog_repository.dart';
 import 'id_identity.dart';
-import 'm3u_parser.dart';
 
 class _ValidatedPlaylistItems {
   const _ValidatedPlaylistItems({
@@ -44,13 +44,16 @@ class SqliteCatalogRepository
     PlaylistSecretStore? secretStore,
     this.useStagingImport = true,
     this.autoStartSearchIndexWorker = true,
+    CatalogImportCoordinator? importCoordinator,
   }) : _source = source ?? const HttpPlaylistSource(),
        _databaseAdapter = databaseAdapter ?? SqfliteDatabaseAdapter(),
-       _secretStore = secretStore ?? InMemoryPlaylistSecretStore();
+       _secretStore = secretStore ?? InMemoryPlaylistSecretStore(),
+       _importCoordinator = importCoordinator ?? CatalogImportCoordinator();
 
   final PlaylistSource _source;
   final DatabaseAdapter _databaseAdapter;
   final PlaylistSecretStore _secretStore;
+  final CatalogImportCoordinator _importCoordinator;
   final bool useStagingImport;
 
   /// When false, a successful import only queues search-index changes and
@@ -84,12 +87,6 @@ class SqliteCatalogRepository
   /// still ship.
   static const int _stagingRowsPerStatement = 40;
 
-  /// In-flight imports keyed by resolved playlist id. A second call for the
-  /// same playlist while one is running joins it instead of racing a second
-  /// writer transaction on the shared connection (that race is what caused
-  /// the "database has been locked" warning during concurrent refreshes).
-  final Map<String, Future<CatalogLoadResult>> _inFlightLoads = {};
-
   /// When set, each reconcile stage prints its wall time. Used by
   /// tool/benchmark_import.dart to attribute import cost to a statement.
   static void Function(String stage, Duration elapsed)? onImportStageTiming;
@@ -108,6 +105,10 @@ class SqliteCatalogRepository
     return result;
   }
 
+  Future<void> cancelImport(String playlistId) {
+    return _importCoordinator.cancel(playlistId);
+  }
+
   @override
   Future<CatalogLoadResult> load({
     required String playlistUrl,
@@ -119,23 +120,22 @@ class SqliteCatalogRepository
     final resolvedPlaylistId =
         playlistId ?? await _resolvePlaylistId(playlistUrl);
 
-    final inFlight = _inFlightLoads[resolvedPlaylistId];
-    if (inFlight != null) return inFlight;
-
     _pausedIndexingPlaylists.add(resolvedPlaylistId);
-    final future = _loadInternal(
-      playlistUrl: playlistUrl,
-      playlistId: resolvedPlaylistId,
-      playlistName: playlistName,
-      policy: policy,
-      onProgress: onProgress,
-    );
-    _inFlightLoads[resolvedPlaylistId] = future;
     late final CatalogLoadResult result;
     try {
-      result = await future;
+      result = await _importCoordinator.run<CatalogLoadResult>(
+        playlistId: resolvedPlaylistId,
+        onProgress: onProgress,
+        operation: (reporter) => _loadInternal(
+          playlistUrl: playlistUrl,
+          playlistId: resolvedPlaylistId,
+          playlistName: playlistName,
+          policy: policy,
+          onProgress: reporter.emit,
+          reporter: reporter,
+        ),
+      );
     } finally {
-      _inFlightLoads.remove(resolvedPlaylistId);
       _pausedIndexingPlaylists.remove(resolvedPlaylistId);
     }
     _startSearchIndexWorker(resolvedPlaylistId);
@@ -148,6 +148,7 @@ class SqliteCatalogRepository
     String? playlistName,
     required CatalogLoadPolicy policy,
     CatalogImportProgressCallback? onProgress,
+    required CatalogImportReporter reporter,
   }) async {
     final resolvedPlaylistId = playlistId;
     final resolvedPlaylistName = playlistName ?? 'Primary Playlist';
@@ -192,7 +193,11 @@ class SqliteCatalogRepository
           ),
         ),
       );
-      final parsed = const M3uParser().parse(text, sourceUrl: playlistUrl);
+      final parsed = await _importCoordinator.parse(
+        text,
+        sourceUrl: playlistUrl,
+        reporter: reporter,
+      );
 
       if (parsed.isEmpty) {
         throw AppIssueException(
@@ -1073,6 +1078,9 @@ WHERE id = ?
         startedAt: refreshStartedAt,
         current: 0,
         total: parsed.length,
+        parsedItems: parsed.length,
+        rejectedItems: 0,
+        currentOperation: 'staging',
       ),
     );
     const progressReportInterval = 200;
@@ -1089,6 +1097,10 @@ WHERE id = ?
             startedAt: refreshStartedAt,
             current: index,
             total: parsed.length,
+            parsedItems: parsed.length,
+            stagedItems: index,
+            rejectedItems: 0,
+            currentOperation: 'staging',
           ),
         );
       }
@@ -1464,6 +1476,11 @@ DELETE FROM categories WHERE playlist_id = ? AND id NOT IN (
         startedAt: refreshStartedAt,
         current: parsed.length,
         total: parsed.length,
+        parsedItems: parsed.length,
+        stagedItems: parsed.length,
+        acceptedItems: committedCount,
+        rejectedItems: 0,
+        currentOperation: 'reconciled',
       ),
     );
     return committedCount;
@@ -1600,6 +1617,9 @@ WHERE series.playlist_id = ?
         startedAt: refreshStartedAt,
         current: 0,
         total: parsed.length,
+        parsedItems: parsed.length,
+        rejectedItems: 0,
+        currentOperation: 'staging',
       ),
     );
     const progressReportInterval = 200;
@@ -1807,6 +1827,10 @@ WHERE series.playlist_id = ?
         startedAt: refreshStartedAt,
         current: parsed.length,
         total: parsed.length,
+        parsedItems: parsed.length,
+        stagedItems: parsed.length,
+        acceptedItems: parsed.length,
+        currentOperation: 'reconciled',
       ),
     );
     return parsed.length;

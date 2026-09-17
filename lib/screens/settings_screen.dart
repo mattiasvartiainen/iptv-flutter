@@ -371,16 +371,27 @@ class _ImportProgressIndicatorState extends State<_ImportProgressIndicator> {
   Widget build(BuildContext context) {
     final progress = widget.progress;
     final label = switch (progress.phase) {
-      CatalogImportPhase.downloading => 'Downloading playlist…',
-      CatalogImportPhase.importing => 'Importing items…',
+      CatalogImportPhase.starting => 'Preparing playlistâ€¦',
+      CatalogImportPhase.downloading => 'Downloading playlistâ€¦',
+      CatalogImportPhase.parsing => 'Parsing playlistâ€¦',
+      CatalogImportPhase.importing => 'Importing itemsâ€¦',
+      CatalogImportPhase.indexing => 'Updating search indexâ€¦',
+      CatalogImportPhase.completed => 'Import complete',
+      CatalogImportPhase.cancelled => 'Import cancelled',
+      CatalogImportPhase.failed => 'Import failed',
     };
     final fraction = progress.fraction;
     final detail = switch (progress.phase) {
       CatalogImportPhase.downloading when progress.total != null =>
         '${_formatBytes(progress.current ?? 0)} / ${_formatBytes(progress.total!)}',
       CatalogImportPhase.downloading => _formatBytes(progress.current ?? 0),
+      CatalogImportPhase.parsing =>
+        '${progress.current ?? 0} / ${progress.total ?? '?'} items',
       CatalogImportPhase.importing =>
         '${progress.current ?? 0} / ${progress.total ?? '?'} items',
+      CatalogImportPhase.indexing =>
+        '${progress.indexedItems} indexed',
+      _ => progress.message ?? '',
     };
     final elapsed = _formatElapsed(progress.elapsed);
     return Column(
