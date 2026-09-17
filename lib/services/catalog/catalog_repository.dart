@@ -43,10 +43,62 @@ abstract interface class PlaylistSource {
   });
 }
 
-class HttpPlaylistSource implements PlaylistSource {
+class PlaylistSourceChunk {
+  const PlaylistSourceChunk({
+    required this.text,
+    required this.received,
+    required this.total,
+  });
+
+  final String text;
+  final int received;
+  final int? total;
+}
+
+abstract interface class StreamingPlaylistSource {
+  Stream<PlaylistSourceChunk> stream(
+    String url, {
+    void Function(int received, int? total)? onProgress,
+  });
+}
+
+class HttpPlaylistSource implements PlaylistSource, StreamingPlaylistSource {
   const HttpPlaylistSource({this.timeout = const Duration(seconds: 20)});
 
   final Duration timeout;
+
+  @override
+  Stream<PlaylistSourceChunk> stream(
+    String url, {
+    void Function(int received, int? total)? onProgress,
+  }) async* {
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse(url)).timeout(timeout);
+      request.headers.set(
+        HttpHeaders.acceptHeader,
+        'application/x-mpegURL, text/plain, */*',
+      );
+      request.headers.set(HttpHeaders.userAgentHeader, 'IPTV-Flutter/0.1');
+      final response = await request.close().timeout(timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          'Playlist request failed: ${response.statusCode}',
+          uri: Uri.parse(url),
+        );
+      }
+      final total = response.contentLength >= 0 ? response.contentLength : null;
+      var received = 0;
+      await for (final text
+          in response.transform(utf8.decoder).timeout(timeout)) {
+        received += utf8.encode(text).length;
+        onProgress?.call(received, total);
+        yield PlaylistSourceChunk(text: text, received: received, total: total);
+      }
+    } finally {
+      client.close();
+    }
+  }
 
   @override
   Future<String> fetch(
@@ -83,10 +135,23 @@ class HttpPlaylistSource implements PlaylistSource {
   }
 }
 
-class FakePlaylistSource implements PlaylistSource {
+class FakePlaylistSource implements PlaylistSource, StreamingPlaylistSource {
   const FakePlaylistSource(this.content);
 
   final String content;
+
+  @override
+  Stream<PlaylistSourceChunk> stream(
+    String url, {
+    void Function(int received, int? total)? onProgress,
+  }) async* {
+    onProgress?.call(content.length, content.length);
+    yield PlaylistSourceChunk(
+      text: content,
+      received: content.length,
+      total: content.length,
+    );
+  }
 
   @override
   Future<String> fetch(

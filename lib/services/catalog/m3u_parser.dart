@@ -1,6 +1,8 @@
 import '../../models/content_item.dart';
 import 'id_identity.dart';
 
+typedef M3uItemSink = void Function(ContentItem item);
+
 class M3uParser {
   const M3uParser();
 
@@ -11,10 +13,6 @@ class M3uParser {
     r'\b(vod|movie|movies|film|series|episode)\b',
   );
 
-  /// Attributes worth carrying on every [ContentItem]. A playlist can attach
-  /// dozens of provider-specific attributes per entry; at half a million
-  /// entries, retaining all of them costs more memory than the catalog rows
-  /// themselves, and only these four are ever read again.
   static const List<String> _retainedAttributes = [
     'tvg-id',
     'tvg-name',
@@ -81,6 +79,41 @@ class M3uParser {
     return items;
   }
 
+  ContentItem? _parseRecord({
+    required String metadataLine,
+    required String streamUrl,
+    required String? sourceUrl,
+    required int sourceIndex,
+  }) {
+    final attributes = _attributes(metadataLine);
+    final comma = metadataLine.indexOf(',');
+    final title = comma >= 0 && comma + 1 < metadataLine.length
+        ? metadataLine.substring(comma + 1).trim()
+        : '';
+    final resolvedUrl = _resolveUrl(streamUrl, sourceUrl);
+    final group =
+        _first(attributes, const ['group-title', 'group']) ?? 'Uncategorized';
+    final logo = _first(attributes, const ['tvg-logo', 'logo']);
+    final itemTitle = title.isEmpty
+        ? (attributes['tvg-name'] ?? resolvedUrl)
+        : title;
+    final identityNamespace = sourceUrl ?? '';
+
+    return ContentItem(
+      id: strongStableId(
+        'item',
+        '$identityNamespace|$resolvedUrl|$itemTitle|$sourceIndex',
+      ),
+      title: itemTitle,
+      type: _contentType(attributes, group, resolvedUrl),
+      streamUrl: resolvedUrl,
+      group: group.isEmpty ? 'Uncategorized' : group,
+      logoUrl: logo?.isEmpty == true ? null : logo,
+      metadata: _retain(attributes),
+      sourceIndex: sourceIndex,
+    );
+  }
+
   Map<String, String> _attributes(String line) {
     final result = <String, String>{};
     for (final match in _attributePattern.allMatches(line)) {
@@ -112,9 +145,6 @@ class M3uParser {
     String group,
     String url,
   ) {
-    // Tested piece by piece instead of concatenated into one lowercased
-    // string: the hints are whole words, so they can never straddle two
-    // pieces, and this avoids a long throwaway allocation per entry.
     for (final candidate in [
       attributes['type'],
       attributes['content-type'],
@@ -136,8 +166,6 @@ class M3uParser {
     return Uri.parse(sourceUrl).resolve(value).toString();
   }
 
-  /// Cheap `scheme:` probe so absolute URLs — the overwhelming majority of
-  /// playlist entries — skip a full [Uri] parse.
   static bool _hasScheme(String value) {
     for (var i = 0; i < value.length; i++) {
       final unit = value.codeUnitAt(i);
@@ -158,5 +186,76 @@ class M3uParser {
       }
     }
     return false;
+  }
+}
+
+/// Incrementally parses M3U text without retaining the complete playlist.
+///
+/// Chunks may end in the middle of a UTF-16 string line. The parser retains
+/// only that incomplete line, the current EXTINF metadata, and the caller's
+/// output batch.
+class M3uStreamingParser {
+  M3uStreamingParser({String? sourceUrl})
+    : _sourceUrl = sourceUrl,
+      _parser = const M3uParser();
+
+  final String? _sourceUrl;
+  final M3uParser _parser;
+  String _buffer = '';
+  String? _metadataLine;
+  int _sourceIndex = 0;
+  bool _finished = false;
+
+  int get parsedItemCount => _sourceIndex;
+
+  void addChunk(String chunk, M3uItemSink sink) {
+    if (_finished) {
+      throw StateError('Cannot add a chunk after finish().');
+    }
+    if (chunk.isEmpty) return;
+    _buffer += chunk;
+    _drainCompleteLines(sink);
+  }
+
+  void finish(M3uItemSink sink) {
+    if (_finished) return;
+    _finished = true;
+    if (_buffer.isNotEmpty) {
+      _consumeLine(_buffer, sink);
+      _buffer = '';
+    }
+  }
+
+  void _drainCompleteLines(M3uItemSink sink) {
+    while (true) {
+      final breakAt = _buffer.indexOf('\n');
+      if (breakAt < 0) return;
+      var line = _buffer.substring(0, breakAt);
+      _buffer = _buffer.substring(breakAt + 1);
+      if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
+      _consumeLine(line.trim(), sink);
+    }
+  }
+
+  void _consumeLine(String line, M3uItemSink sink) {
+    if (line.isEmpty || line.startsWith('#EXTM3U')) return;
+    if (line.startsWith('#EXTINF')) {
+      _metadataLine = line;
+      return;
+    }
+    if (line.startsWith('#')) return;
+    final metadataLine = _metadataLine;
+    if (metadataLine == null) return;
+
+    final item = _parser._parseRecord(
+      metadataLine: metadataLine,
+      streamUrl: line,
+      sourceUrl: _sourceUrl,
+      sourceIndex: _sourceIndex,
+    );
+    _metadataLine = null;
+    if (item == null) return;
+    _sourceIndex++;
+    sink(item);
   }
 }

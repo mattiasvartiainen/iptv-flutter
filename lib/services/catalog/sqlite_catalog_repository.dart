@@ -36,6 +36,16 @@ class _ReconcileOutcome {
   final List<String> rejections;
 }
 
+class _StreamingStageOutcome {
+  const _StreamingStageOutcome({
+    required this.acceptedCount,
+    required this.rejections,
+  });
+
+  final int acceptedCount;
+  final List<String> rejections;
+}
+
 class SqliteCatalogRepository
     implements CatalogRepository, CatalogQueryService {
   SqliteCatalogRepository({
@@ -182,47 +192,53 @@ class SqliteCatalogRepository
 
     try {
       final refreshStartedAt = DateTime.now();
-      final text = await _source.fetch(
-        playlistUrl,
-        onProgress: (received, total) => onProgress?.call(
-          CatalogImportProgress(
-            phase: CatalogImportPhase.downloading,
-            startedAt: refreshStartedAt,
-            current: received,
-            total: total,
-          ),
-        ),
-      );
-      final parsed = await _importCoordinator.parse(
-        text,
-        sourceUrl: playlistUrl,
-        reporter: reporter,
-      );
-
-      if (parsed.isEmpty) {
-        throw AppIssueException(
-          const AppIssue(
-            kind: AppIssueKind.playlistEmpty,
-            source: AppIssueSource.playlistImport,
-            title: 'Playlist is empty',
-            message: 'The playlist did not contain any playable items.',
-            retryable: false,
+      final streamingSource = _source is StreamingPlaylistSource
+          ? _source as StreamingPlaylistSource
+          : null;
+      _ValidatedPlaylistItems? validated;
+      if (streamingSource == null) {
+        final text = await _source.fetch(
+          playlistUrl,
+          onProgress: (received, total) => onProgress?.call(
+            CatalogImportProgress(
+              phase: CatalogImportPhase.downloading,
+              startedAt: refreshStartedAt,
+              current: received,
+              total: total,
+              currentOperation: 'downloading',
+            ),
           ),
         );
-      }
-      final validated = _validateItems(parsed);
-      if (validated.items.isEmpty) {
-        throw AppIssueException(
-          AppIssue(
-            kind: AppIssueKind.playlistFormatInvalid,
-            source: AppIssueSource.playlistImport,
-            title: 'Playlist contains no valid items',
-            message:
-                'Every playlist entry was missing a valid title or stream URL.',
-            details: validated.rejections.join('\n'),
-            retryable: false,
-          ),
+        final parsed = await _importCoordinator.parse(
+          text,
+          sourceUrl: playlistUrl,
+          reporter: reporter,
         );
+        if (parsed.isEmpty) {
+          throw AppIssueException(
+            AppIssue(
+              kind: AppIssueKind.playlistEmpty,
+              source: AppIssueSource.playlistImport,
+              title: 'Playlist is empty',
+              message: 'The playlist did not contain any playable items.',
+              retryable: false,
+            ),
+          );
+        }
+        validated = _validateItems(parsed);
+        if (validated.items.isEmpty) {
+          throw AppIssueException(
+            AppIssue(
+              kind: AppIssueKind.playlistFormatInvalid,
+              source: AppIssueSource.playlistImport,
+              title: 'Playlist contains no valid items',
+              message:
+                  'Every playlist entry was missing a valid title or stream URL.',
+              details: validated.rejections.join('\n'),
+              retryable: false,
+            ),
+          );
+        }
       }
 
       final storedSource = await _secretStore.read(key: secureStorageKey);
@@ -267,14 +283,68 @@ class SqliteCatalogRepository
               'updated_at': now,
             }, conflictAlgorithm: ConflictAlgorithm.ignore);
 
-            final outcome = await _reconcileResiliently(
-              db: db,
-              playlistId: resolvedPlaylistId,
-              now: now,
-              validated: validated,
-              refreshStartedAt: refreshStartedAt,
-              onProgress: onProgress,
-            );
+            late final _ReconcileOutcome outcome;
+            if (streamingSource != null) {
+              final staged = await _stageStreamingSource(
+                db: db,
+                source: streamingSource,
+                playlistUrl: playlistUrl,
+                playlistId: resolvedPlaylistId,
+                refreshStartedAt: refreshStartedAt,
+                reporter: reporter,
+                onProgress: onProgress,
+              );
+              if (staged.acceptedCount == 0) {
+                if (staged.rejections.isEmpty) {
+                  throw AppIssueException(
+                    AppIssue(
+                      kind: AppIssueKind.playlistEmpty,
+                      source: AppIssueSource.playlistImport,
+                      title: 'Playlist is empty',
+                      message:
+                          'The playlist did not contain any playable items.',
+                      retryable: false,
+                    ),
+                  );
+                }
+                throw AppIssueException(
+                  AppIssue(
+                    kind: AppIssueKind.playlistFormatInvalid,
+                    source: AppIssueSource.playlistImport,
+                    title: 'Playlist contains no valid items',
+                    message:
+                        'Every playlist entry was missing a valid title or stream URL.',
+                    details: staged.rejections.join('\n'),
+                    retryable: false,
+                  ),
+                );
+              }
+              final acceptedCount =
+                  await _reconcileViaStagingSqlWithinSavepoint(
+                    db: db,
+                    playlistId: resolvedPlaylistId,
+                    now: now,
+                    parsed: const <ContentItem>[],
+                    deleteStaleRows: staged.rejections.isEmpty,
+                    refreshStartedAt: refreshStartedAt,
+                    onProgress: onProgress,
+                    stagingAlreadyPrepared: true,
+                    stagedItemCount: staged.acceptedCount,
+                  );
+              outcome = _ReconcileOutcome(
+                acceptedCount: acceptedCount,
+                rejections: staged.rejections,
+              );
+            } else {
+              outcome = await _reconcileResiliently(
+                db: db,
+                playlistId: resolvedPlaylistId,
+                now: now,
+                validated: validated!,
+                refreshStartedAt: refreshStartedAt,
+                onProgress: onProgress,
+              );
+            }
 
             final stageComplete = DateTime.now().toUtc();
             stagedRows = outcome.acceptedCount;
@@ -771,25 +841,213 @@ WHERE id = ?
     );
   }
 
+  Future<_StreamingStageOutcome> _stageStreamingSource({
+    required DatabaseExecutor db,
+    required StreamingPlaylistSource source,
+    required String playlistUrl,
+    required String playlistId,
+    required DateTime refreshStartedAt,
+    required CatalogImportReporter reporter,
+    CatalogImportProgressCallback? onProgress,
+  }) async {
+    await db.delete(
+      'import_staging_items',
+      where: 'playlist_id = ?',
+      whereArgs: [playlistId],
+    );
+    final isColdImport =
+        await _countCachedItems(db, playlistId: playlistId) == 0;
+    var acceptedCount = 0;
+    final rejections = <String>[];
+    var parsedCount = 0;
+
+    await _importCoordinator.parseStream(
+      source.stream(
+        playlistUrl,
+        onProgress: (received, total) => onProgress?.call(
+          CatalogImportProgress(
+            phase: CatalogImportPhase.downloading,
+            startedAt: refreshStartedAt,
+            current: received,
+            total: total,
+            currentOperation: 'downloading',
+          ),
+        ),
+      ),
+      sourceUrl: playlistUrl,
+      reporter: reporter,
+      onBatch: (batch) async {
+        final validItems = <ContentItem>[];
+        for (final item in batch.items) {
+          final rejection = _validateItem(item);
+          if (rejection != null) {
+            rejections.add(rejection);
+          } else {
+            validItems.add(item);
+          }
+        }
+        parsedCount = batch.parsedItems;
+        if (validItems.isNotEmpty) {
+          await _insertStagingBatch(
+            db: db,
+            playlistId: playlistId,
+            items: validItems,
+            isColdImport: isColdImport,
+          );
+          acceptedCount += validItems.length;
+        }
+        onProgress?.call(
+          CatalogImportProgress(
+            phase: CatalogImportPhase.importing,
+            startedAt: refreshStartedAt,
+            current: parsedCount,
+            total: null,
+            parsedItems: parsedCount,
+            stagedItems: acceptedCount,
+            acceptedItems: acceptedCount,
+            rejectedItems: rejections.length,
+            currentOperation: 'staging',
+          ),
+        );
+      },
+    );
+
+    return _StreamingStageOutcome(
+      acceptedCount: acceptedCount,
+      rejections: List.unmodifiable(rejections),
+    );
+  }
+
+  Future<void> _insertStagingBatch({
+    required DatabaseExecutor db,
+    required String playlistId,
+    required List<ContentItem> items,
+    required bool isColdImport,
+  }) async {
+    if (items.length > _stagingRowsPerStatement) {
+      for (final chunk in _chunked(items, size: _stagingRowsPerStatement)) {
+        await _insertStagingBatch(
+          db: db,
+          playlistId: playlistId,
+          items: chunk,
+          isColdImport: isColdImport,
+        );
+      }
+      return;
+    }
+    const columns = [
+      'playlist_id',
+      'source_index',
+      'id',
+      'content_type',
+      'title',
+      'sort_title',
+      'description',
+      'stream_url',
+      'group_title',
+      'logo_url',
+      'artwork_url',
+      'tvg_id',
+      'tvg_name',
+      'tvg_chno',
+      'xui_id',
+      'provider_item_hash',
+      'category_id',
+      'series_title',
+      'series_id',
+      'season_number',
+      'season_id',
+      'episode_number',
+      'episode_id',
+      'resolved_media_id',
+    ];
+    final rowPlaceholder = '(${_placeholders(columns.length)})';
+    final insertPrefix =
+        'INSERT OR REPLACE INTO import_staging_items '
+        '(${columns.join(', ')}) VALUES ';
+    final values = <Object?>[];
+    for (final item in items) {
+      final group = CatalogNormalizer.canonicalGroup(item.group);
+      var contentType = item.type == ContentType.live ? 'live' : 'movie';
+      String? seriesTitle;
+      String? seriesId;
+      String? seasonId;
+      String? episodeId;
+      int? seasonNumber;
+      int? episodeNumber;
+      final episodeMatch = CatalogNormalizer.parseSeriesEpisodeTitle(
+        item.title,
+      );
+      if (episodeMatch != null && episodeMatch.seriesTitle.isNotEmpty) {
+        contentType = 'episode';
+        seriesTitle = episodeMatch.seriesTitle;
+        seasonNumber = episodeMatch.seasonNumber;
+        episodeNumber = episodeMatch.episodeNumber;
+        seriesId = _stableId('series|$playlistId|$seriesTitle');
+        seasonId = _stableId('season|$seriesId|$seasonNumber');
+        episodeId = _stableId('episode|$seasonId|$episodeNumber');
+      }
+      values
+        ..add(playlistId)
+        ..add(item.sourceIndex)
+        ..add(item.id)
+        ..add(contentType)
+        ..add(item.title)
+        ..add(CatalogNormalizer.normalizeText(item.title))
+        ..add(item.description)
+        ..add(item.streamUrl)
+        ..add(group)
+        ..add(item.logoUrl)
+        ..add(item.posterUrl)
+        ..add(item.metadata['tvg-id'])
+        ..add(item.metadata['tvg-name'])
+        ..add(item.metadata['tvg-chno'])
+        ..add(item.metadata['xui-id'])
+        ..add(
+          CatalogNormalizer.providerItemHash(
+            streamUrl: item.streamUrl,
+            title: item.title,
+            group: item.group,
+          ),
+        )
+        ..add(_stableId('category|$playlistId|$group'))
+        ..add(seriesTitle)
+        ..add(seriesId)
+        ..add(seasonNumber)
+        ..add(seasonId)
+        ..add(episodeNumber)
+        ..add(episodeId)
+        ..add(isColdImport ? item.id : null);
+    }
+    if (values.isEmpty) return;
+    await db.rawInsert(
+      insertPrefix + List.filled(items.length, rowPlaceholder).join(', '),
+      values,
+    );
+  }
+
+  String? _validateItem(ContentItem item) {
+    final title = item.title.trim();
+    final streamUrl = item.streamUrl.trim();
+    final streamUri = Uri.tryParse(streamUrl);
+    if (title.isEmpty) return 'Entry ${item.sourceIndex + 1} has no title';
+    if (streamUri == null || !streamUri.hasScheme) {
+      return 'Entry ${item.sourceIndex + 1} has an invalid stream URL';
+    }
+    return null;
+  }
+
   _ValidatedPlaylistItems _validateItems(List<ContentItem> parsed) {
     final validItems = <ContentItem>[];
     final rejections = <String>[];
 
     for (final item in parsed) {
-      final title = item.title.trim();
-      final streamUrl = item.streamUrl.trim();
-      final streamUri = Uri.tryParse(streamUrl);
-      if (title.isEmpty) {
-        rejections.add('Entry ${item.sourceIndex + 1} has no title');
-        continue;
+      final rejection = _validateItem(item);
+      if (rejection != null) {
+        rejections.add(rejection);
+      } else {
+        validItems.add(item);
       }
-      if (streamUri == null || !streamUri.hasScheme) {
-        rejections.add(
-          'Entry ${item.sourceIndex + 1} has an invalid stream URL',
-        );
-        continue;
-      }
-      validItems.add(item);
     }
 
     return _ValidatedPlaylistItems(
@@ -966,6 +1224,8 @@ WHERE id = ?
     required bool deleteStaleRows,
     required DateTime refreshStartedAt,
     CatalogImportProgressCallback? onProgress,
+    bool stagingAlreadyPrepared = false,
+    int stagedItemCount = 0,
   }) async {
     await db.execute('SAVEPOINT catalog_import_staging');
     try {
@@ -977,6 +1237,8 @@ WHERE id = ?
         deleteStaleRows: deleteStaleRows,
         refreshStartedAt: refreshStartedAt,
         onProgress: onProgress,
+        stagingAlreadyPrepared: stagingAlreadyPrepared,
+        stagedItemCount: stagedItemCount,
       );
       await db.execute('RELEASE SAVEPOINT catalog_import_staging');
       return acceptedCount;
@@ -1001,170 +1263,171 @@ WHERE id = ?
     required String playlistId,
     required String now,
     required List<ContentItem> parsed,
+    bool stagingAlreadyPrepared = false,
+    int stagedItemCount = 0,
     required bool deleteStaleRows,
     required DateTime refreshStartedAt,
     CatalogImportProgressCallback? onProgress,
   }) async {
-    await db.delete(
-      'import_staging_items',
-      where: 'playlist_id = ?',
-      whereArgs: [playlistId],
-    );
-
-    // A first import has nothing to reconcile against, so every staged row
-    // can claim its own id up front and the resolve pass below is skipped.
     final isColdImport =
         await _countCachedItems(db, playlistId: playlistId) == 0;
-
-    // Queuing plain inserts lets the index worker skip the removal half of a
-    // reindex, but only if no index entry can already exist under a rowid
-    // these rows are about to reuse — e.g. entries orphaned by a kill between
-    // a catalog delete and the index drain.
     final indexIsEmpty =
         isColdImport &&
         (await db.rawQuery('SELECT 1 FROM media_items_fts LIMIT 1')).isEmpty;
-
-    // Rows are appended to one multi-row INSERT rather than one statement
-    // per row: at playlist scale the per-statement overhead dominates the
-    // actual write. Column count is fixed, so the row cap keeps the bound
-    // parameter count well under SQLite's limit.
-    const columns = [
-      'playlist_id',
-      'source_index',
-      'id',
-      'content_type',
-      'title',
-      'sort_title',
-      'description',
-      'stream_url',
-      'group_title',
-      'logo_url',
-      'artwork_url',
-      'tvg_id',
-      'tvg_name',
-      'tvg_chno',
-      'xui_id',
-      'provider_item_hash',
-      'category_id',
-      'series_title',
-      'series_id',
-      'season_number',
-      'season_id',
-      'episode_number',
-      'episode_id',
-      'resolved_media_id',
-    ];
-    final rowPlaceholder = '(${_placeholders(columns.length)})';
-    final insertPrefix =
-        'INSERT OR REPLACE INTO import_staging_items '
-        '(${columns.join(', ')}) VALUES ';
-    final values = <Object?>[];
-    var pendingRows = 0;
-
-    Future<void> flushRows({bool force = false}) async {
-      if (pendingRows == 0) return;
-      if (!force && pendingRows < _stagingRowsPerStatement) return;
-      await db.rawInsert(
-        insertPrefix + List.filled(pendingRows, rowPlaceholder).join(', '),
-        values,
+    if (!stagingAlreadyPrepared) {
+      await db.delete(
+        'import_staging_items',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
       );
-      values.clear();
-      pendingRows = 0;
-    }
 
-    onProgress?.call(
-      CatalogImportProgress(
-        phase: CatalogImportPhase.importing,
-        startedAt: refreshStartedAt,
-        current: 0,
-        total: parsed.length,
-        parsedItems: parsed.length,
-        rejectedItems: 0,
-        currentOperation: 'staging',
-      ),
-    );
-    const progressReportInterval = 200;
-    final stageStopwatch = Stopwatch()..start();
+      // Queuing plain inserts lets the index worker skip the removal half of a
+      // reindex, but only if no index entry can already exist under a rowid
+      // these rows are about to reuse — e.g. entries orphaned by a kill between
+      // a catalog delete and the index drain.
 
-    for (var index = 0; index < parsed.length; index++) {
-      final item = parsed[index];
-      if (onProgress != null &&
-          index > 0 &&
-          index % progressReportInterval == 0) {
-        onProgress(
-          CatalogImportProgress(
-            phase: CatalogImportPhase.importing,
-            startedAt: refreshStartedAt,
-            current: index,
-            total: parsed.length,
-            parsedItems: parsed.length,
-            stagedItems: index,
-            rejectedItems: 0,
-            currentOperation: 'staging',
-          ),
+      // Rows are appended to one multi-row INSERT rather than one statement
+      // per row: at playlist scale the per-statement overhead dominates the
+      // actual write. Column count is fixed, so the row cap keeps the bound
+      // parameter count well under SQLite's limit.
+      const columns = [
+        'playlist_id',
+        'source_index',
+        'id',
+        'content_type',
+        'title',
+        'sort_title',
+        'description',
+        'stream_url',
+        'group_title',
+        'logo_url',
+        'artwork_url',
+        'tvg_id',
+        'tvg_name',
+        'tvg_chno',
+        'xui_id',
+        'provider_item_hash',
+        'category_id',
+        'series_title',
+        'series_id',
+        'season_number',
+        'season_id',
+        'episode_number',
+        'episode_id',
+        'resolved_media_id',
+      ];
+      final rowPlaceholder = '(${_placeholders(columns.length)})';
+      final insertPrefix =
+          'INSERT OR REPLACE INTO import_staging_items '
+          '(${columns.join(', ')}) VALUES ';
+      final values = <Object?>[];
+      var pendingRows = 0;
+
+      Future<void> flushRows({bool force = false}) async {
+        if (pendingRows == 0) return;
+        if (!force && pendingRows < _stagingRowsPerStatement) return;
+        await db.rawInsert(
+          insertPrefix + List.filled(pendingRows, rowPlaceholder).join(', '),
+          values,
         );
+        values.clear();
+        pendingRows = 0;
       }
 
-      final group = CatalogNormalizer.canonicalGroup(item.group);
-      final categoryId = _stableId('category|$playlistId|$group');
-      var contentType = item.type == ContentType.live ? 'live' : 'movie';
-
-      String? seriesTitle;
-      String? seriesId;
-      String? seasonId;
-      String? episodeId;
-      int? seasonNumber;
-      int? episodeNumber;
-      final episodeMatch = CatalogNormalizer.parseSeriesEpisodeTitle(
-        item.title,
+      onProgress?.call(
+        CatalogImportProgress(
+          phase: CatalogImportPhase.importing,
+          startedAt: refreshStartedAt,
+          current: 0,
+          total: parsed.length,
+          parsedItems: parsed.length,
+          rejectedItems: 0,
+          currentOperation: 'staging',
+        ),
       );
-      if (episodeMatch != null && episodeMatch.seriesTitle.isNotEmpty) {
-        contentType = 'episode';
-        seriesTitle = episodeMatch.seriesTitle;
-        seasonNumber = episodeMatch.seasonNumber;
-        episodeNumber = episodeMatch.episodeNumber;
-        seriesId = _stableId('series|$playlistId|$seriesTitle');
-        seasonId = _stableId('season|$seriesId|$seasonNumber');
-        episodeId = _stableId('episode|$seasonId|$episodeNumber');
-      }
+      const progressReportInterval = 200;
+      final stageStopwatch = Stopwatch()..start();
 
-      values
-        ..add(playlistId)
-        ..add(item.sourceIndex)
-        ..add(item.id)
-        ..add(contentType)
-        ..add(item.title)
-        ..add(CatalogNormalizer.normalizeText(item.title))
-        ..add(item.description)
-        ..add(item.streamUrl)
-        ..add(group)
-        ..add(item.logoUrl)
-        ..add(item.posterUrl)
-        ..add(item.metadata['tvg-id'])
-        ..add(item.metadata['tvg-name'])
-        ..add(item.metadata['tvg-chno'])
-        ..add(item.metadata['xui-id'])
-        ..add(
-          CatalogNormalizer.providerItemHash(
-            streamUrl: item.streamUrl,
-            title: item.title,
-            group: item.group,
-          ),
-        )
-        ..add(categoryId)
-        ..add(seriesTitle)
-        ..add(seriesId)
-        ..add(seasonNumber)
-        ..add(seasonId)
-        ..add(episodeNumber)
-        ..add(episodeId)
-        ..add(isColdImport ? item.id : null);
-      pendingRows++;
-      await flushRows();
-    }
-    await flushRows(force: true);
-    if (onImportStageTiming != null) {
-      onImportStageTiming!('stage-rows', stageStopwatch.elapsed);
+      for (var index = 0; index < parsed.length; index++) {
+        final item = parsed[index];
+        if (onProgress != null &&
+            index > 0 &&
+            index % progressReportInterval == 0) {
+          onProgress(
+            CatalogImportProgress(
+              phase: CatalogImportPhase.importing,
+              startedAt: refreshStartedAt,
+              current: index,
+              total: parsed.length,
+              parsedItems: parsed.length,
+              stagedItems: index,
+              rejectedItems: 0,
+              currentOperation: 'staging',
+            ),
+          );
+        }
+
+        final group = CatalogNormalizer.canonicalGroup(item.group);
+        final categoryId = _stableId('category|$playlistId|$group');
+        var contentType = item.type == ContentType.live ? 'live' : 'movie';
+
+        String? seriesTitle;
+        String? seriesId;
+        String? seasonId;
+        String? episodeId;
+        int? seasonNumber;
+        int? episodeNumber;
+        final episodeMatch = CatalogNormalizer.parseSeriesEpisodeTitle(
+          item.title,
+        );
+        if (episodeMatch != null && episodeMatch.seriesTitle.isNotEmpty) {
+          contentType = 'episode';
+          seriesTitle = episodeMatch.seriesTitle;
+          seasonNumber = episodeMatch.seasonNumber;
+          episodeNumber = episodeMatch.episodeNumber;
+          seriesId = _stableId('series|$playlistId|$seriesTitle');
+          seasonId = _stableId('season|$seriesId|$seasonNumber');
+          episodeId = _stableId('episode|$seasonId|$episodeNumber');
+        }
+
+        values
+          ..add(playlistId)
+          ..add(item.sourceIndex)
+          ..add(item.id)
+          ..add(contentType)
+          ..add(item.title)
+          ..add(CatalogNormalizer.normalizeText(item.title))
+          ..add(item.description)
+          ..add(item.streamUrl)
+          ..add(group)
+          ..add(item.logoUrl)
+          ..add(item.posterUrl)
+          ..add(item.metadata['tvg-id'])
+          ..add(item.metadata['tvg-name'])
+          ..add(item.metadata['tvg-chno'])
+          ..add(item.metadata['xui-id'])
+          ..add(
+            CatalogNormalizer.providerItemHash(
+              streamUrl: item.streamUrl,
+              title: item.title,
+              group: item.group,
+            ),
+          )
+          ..add(categoryId)
+          ..add(seriesTitle)
+          ..add(seriesId)
+          ..add(seasonNumber)
+          ..add(seasonId)
+          ..add(episodeNumber)
+          ..add(episodeId)
+          ..add(isColdImport ? item.id : null);
+        pendingRows++;
+        await flushRows();
+      }
+      await flushRows(force: true);
+      if (onImportStageTiming != null) {
+        onImportStageTiming!('stage-rows', stageStopwatch.elapsed);
+      }
     }
 
     // One SQL statement resolves every row's target media_items.id instead
@@ -1470,14 +1733,17 @@ DELETE FROM categories WHERE playlist_id = ? AND id NOT IN (
       ),
     );
 
+    final progressItemCount = stagedItemCount == 0
+        ? parsed.length
+        : stagedItemCount;
     onProgress?.call(
       CatalogImportProgress(
         phase: CatalogImportPhase.importing,
         startedAt: refreshStartedAt,
-        current: parsed.length,
-        total: parsed.length,
-        parsedItems: parsed.length,
-        stagedItems: parsed.length,
+        current: progressItemCount,
+        total: progressItemCount,
+        parsedItems: progressItemCount,
+        stagedItems: progressItemCount,
         acceptedItems: committedCount,
         rejectedItems: 0,
         currentOperation: 'reconciled',

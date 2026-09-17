@@ -48,7 +48,7 @@ Future<void> runBenchmark(List<String> args) async {
   final dbFileName =
       'iptv_benchmark_${DateTime.now().microsecondsSinceEpoch}.sqlite';
   final adapter = SqfliteDatabaseAdapter(fileName: dbFileName);
-  final source = options.useNetwork
+  final PlaylistSource source = options.useNetwork
       ? const HttpPlaylistSource()
       : FakePlaylistSource(playlistText);
   final repository = SqliteCatalogRepository(
