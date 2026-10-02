@@ -18,6 +18,7 @@ class CatalogImportProgress {
     this.message,
     this.jobId,
     this.playlistId,
+    this.importSessionId,
     this.updatedAt,
     this.parsedItems = 0,
     this.stagedItems = 0,
@@ -35,6 +36,7 @@ class CatalogImportProgress {
   final String? message;
   final String? jobId;
   final String? playlistId;
+  final int? importSessionId;
   final DateTime? updatedAt;
   final int parsedItems;
   final int stagedItems;
@@ -68,6 +70,7 @@ class CatalogImportProgress {
     String? message,
     String? jobId,
     String? playlistId,
+    int? importSessionId,
     DateTime? updatedAt,
     int? parsedItems,
     int? stagedItems,
@@ -85,6 +88,7 @@ class CatalogImportProgress {
       message: message ?? this.message,
       jobId: jobId ?? this.jobId,
       playlistId: playlistId ?? this.playlistId,
+      importSessionId: importSessionId ?? this.importSessionId,
       updatedAt: updatedAt ?? this.updatedAt,
       parsedItems: parsedItems ?? this.parsedItems,
       stagedItems: stagedItems ?? this.stagedItems,

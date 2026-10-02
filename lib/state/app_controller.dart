@@ -117,6 +117,7 @@ class AppController extends ChangeNotifier {
     final repository = _catalogRepository;
     if (repository is SqliteCatalogRepository) {
       unawaited(repository.resumeSearchIndexing());
+      await repository.recoverAbandonedImports();
     }
     await refreshHomeSectionVisibility();
     await refreshVerboseRefreshInfoSetting();

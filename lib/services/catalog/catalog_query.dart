@@ -97,14 +97,16 @@ class CatalogItemSummary {
 
   static CatalogItemSummary fromRow(Map<String, Object?> row) =>
       CatalogItemSummary(
-        id: row['id'] as String,
+        id: row['id'].toString(),
         title: row['title'] as String,
         sortTitle: (row['sort_title'] as String?) ?? row['title'] as String,
-        kind: CatalogItemKind.fromStorage(row['content_type'] as String?),
-        group: row['group_title'] as String?,
+        kind: row.containsKey('kind')
+            ? CatalogItemKind.values[(row['kind'] as int) - 1]
+            : CatalogItemKind.fromStorage(row['content_type'] as String?),
+        group: (row['group_title'] ?? row['group_title_v9']) as String?,
         logoUrl: row['logo_url'] as String?,
-        artworkUrl: row['artwork_url'] as String?,
-        sourceIndex: (row['source_index'] as int?) ?? 0,
+        artworkUrl: (row['artwork_url'] ?? row['logo_url']) as String?,
+        sourceIndex: (row['source_index'] ?? row['ord']) as int? ?? 0,
         episodeNumber: row['episode_number'] as int?,
       );
 
@@ -135,7 +137,7 @@ class SeriesSummary {
   final String? artworkUrl;
 
   static SeriesSummary fromRow(Map<String, Object?> row) => SeriesSummary(
-    id: row['id'] as String,
+    id: (row['id'] ?? row['series_key']).toString(),
     title: row['title'] as String,
     sortTitle: (row['sort_title'] as String?) ?? row['title'] as String,
     seasonCount: (row['season_count'] as int?) ?? 0,
@@ -165,8 +167,8 @@ class SeasonSummary {
   final int episodeCount;
 
   static SeasonSummary fromRow(Map<String, Object?> row) => SeasonSummary(
-    id: row['id'] as String,
-    seriesId: row['series_id'] as String,
+    id: row['id'].toString(),
+    seriesId: (row['series_id'] ?? row['series_key']).toString(),
     seasonNumber: (row['season_number'] as int?) ?? 0,
     episodeCount: (row['episode_count'] as int?) ?? 0,
   );
@@ -176,6 +178,21 @@ class SeasonSummary {
 
   @override
   int get hashCode => id.hashCode;
+}
+
+@immutable
+class CatalogPlaybackProgress {
+  const CatalogPlaybackProgress({
+    required this.itemKey,
+    required this.positionMs,
+    required this.updatedAt,
+    this.durationMs,
+  });
+
+  final int itemKey;
+  final int positionMs;
+  final int? durationMs;
+  final DateTime updatedAt;
 }
 
 /// Default number of rows fetched per catalog page.

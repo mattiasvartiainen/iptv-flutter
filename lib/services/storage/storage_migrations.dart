@@ -519,6 +519,263 @@ ON CONFLICT(media_item_id) DO UPDATE SET
   }
 }
 
+class ImportSessionsV8Migration implements StorageMigration {
+  const ImportSessionsV8Migration();
+
+  @override
+  int get version => 8;
+
+  @override
+  String get name => 'import_sessions_v8';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS import_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  state TEXT NOT NULL CHECK (
+    state IN ('running', 'reconciling', 'done', 'unchanged', 'failed', 'cancelled', 'aborted')
+  ),
+  tier TEXT,
+  bytes_total INTEGER,
+  bytes_received INTEGER NOT NULL DEFAULT 0,
+  items_parsed INTEGER NOT NULL DEFAULT 0,
+  items_rejected INTEGER NOT NULL DEFAULT 0,
+  items_new INTEGER,
+  items_changed INTEGER,
+  items_moved INTEGER,
+  items_removed INTEGER,
+  stage_timings TEXT NOT NULL DEFAULT '{}',
+  error TEXT
+)
+''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_import_sessions_playlist_started '
+      'ON import_sessions(playlist_id, started_at DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_import_sessions_state '
+      'ON import_sessions(state)',
+    );
+  }
+}
+
+class CatalogImportV9Migration implements StorageMigration {
+  const CatalogImportV9Migration();
+
+  @override
+  int get version => 9;
+
+  @override
+  String get name => 'catalog_import_v9';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    for (final column in const [
+      ('playlists', 'source_etag', 'TEXT'),
+      ('playlists', 'source_last_modified', 'TEXT'),
+      ('playlists', 'source_content_hash', 'INTEGER'),
+      ('playlists', 'source_content_length', 'INTEGER'),
+      ('playlists', 'last_checked_at', 'INTEGER'),
+      ('playlists', 'last_changed_at', 'INTEGER'),
+      (
+        'playlist_settings',
+        'min_refresh_interval_s',
+        'INTEGER NOT NULL DEFAULT 3600',
+      ),
+    ]) {
+      await _addColumnIfMissing(
+        db,
+        table: column.$1,
+        column: column.$2,
+        definition: column.$3,
+      );
+    }
+
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS import_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  state TEXT NOT NULL CHECK (
+    state IN ('running', 'reconciling', 'done', 'unchanged', 'failed', 'cancelled', 'aborted')
+  ),
+  tier TEXT,
+  bytes_total INTEGER,
+  bytes_received INTEGER NOT NULL DEFAULT 0,
+  items_parsed INTEGER NOT NULL DEFAULT 0,
+  items_rejected INTEGER NOT NULL DEFAULT 0,
+  items_new INTEGER,
+  items_changed INTEGER,
+  items_moved INTEGER,
+  items_removed INTEGER,
+  stage_timings TEXT NOT NULL DEFAULT '{}',
+  error TEXT
+)
+''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_import_sessions_playlist_started '
+      'ON import_sessions(playlist_id, started_at DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_import_sessions_state '
+      'ON import_sessions(state)',
+    );
+
+    for (final statement in _v9CatalogStatements) {
+      await db.execute(statement);
+    }
+  }
+}
+
+const List<String> _v9CatalogStatements = [
+  '''
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY,
+  playlist_id TEXT NOT NULL,
+  kind INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
+  title TEXT NOT NULL,
+  sort_title TEXT NOT NULL,
+  ord INTEGER NOT NULL,
+  item_count INTEGER NOT NULL DEFAULT 0 CHECK (item_count >= 0),
+  UNIQUE (playlist_id, kind, title)
+)
+''',
+  '''
+CREATE TABLE IF NOT EXISTS items (
+  id INTEGER PRIMARY KEY,
+  playlist_id TEXT NOT NULL,
+  item_key INTEGER NOT NULL,
+  content_hash INTEGER NOT NULL,
+  ord INTEGER NOT NULL,
+  kind INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
+  group_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  sort_title TEXT NOT NULL,
+  stream_url TEXT NOT NULL,
+  logo_url TEXT,
+  tvg_id TEXT,
+  tvg_name TEXT,
+  tvg_chno TEXT,
+  xui_id TEXT,
+  series_key INTEGER,
+  series_title TEXT,
+  season_number INTEGER,
+  episode_number INTEGER,
+  UNIQUE (playlist_id, item_key),
+  FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+)
+''',
+  'CREATE INDEX IF NOT EXISTS idx_items_group_ord ON items(group_id, ord)',
+  'CREATE INDEX IF NOT EXISTS idx_items_group_sort ON items(group_id, sort_title)',
+  '''
+CREATE INDEX IF NOT EXISTS idx_items_series_episode
+ON items(series_key, season_number, episode_number)
+WHERE series_key IS NOT NULL
+''',
+  'CREATE INDEX IF NOT EXISTS idx_items_playlist_ord ON items(playlist_id, ord)',
+  '''
+CREATE TABLE IF NOT EXISTS series_v8 (
+  series_key INTEGER PRIMARY KEY,
+  playlist_id TEXT NOT NULL,
+  group_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  sort_title TEXT NOT NULL,
+  artwork_url TEXT,
+  season_count INTEGER NOT NULL DEFAULT 0,
+  episode_count INTEGER NOT NULL DEFAULT 0,
+  ord INTEGER NOT NULL,
+  FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+)
+''',
+  'CREATE INDEX IF NOT EXISTS idx_series_v8_group_sort ON series_v8(group_id, sort_title)',
+  '''
+CREATE TABLE IF NOT EXISTS import_rows (
+  import_id INTEGER NOT NULL,
+  item_key INTEGER NOT NULL,
+  content_hash INTEGER NOT NULL,
+  ord INTEGER NOT NULL,
+  kind INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
+  group_kind INTEGER NOT NULL CHECK (group_kind IN (1, 2, 3)),
+  group_title TEXT NOT NULL,
+  title TEXT NOT NULL,
+  sort_title TEXT NOT NULL,
+  stream_url TEXT NOT NULL,
+  logo_url TEXT,
+  tvg_id TEXT,
+  tvg_name TEXT,
+  tvg_chno TEXT,
+  xui_id TEXT,
+  series_key INTEGER,
+  series_title TEXT,
+  season_number INTEGER,
+  episode_number INTEGER,
+  PRIMARY KEY (import_id, item_key)
+) WITHOUT ROWID
+''',
+  '''
+CREATE TABLE IF NOT EXISTS import_seen (
+  import_id INTEGER NOT NULL,
+  item_key INTEGER NOT NULL,
+  new_ord INTEGER,
+  PRIMARY KEY (import_id, item_key)
+) WITHOUT ROWID
+''',
+  '''
+CREATE TABLE IF NOT EXISTS favorites_v8 (
+  profile_id TEXT NOT NULL,
+  playlist_id TEXT NOT NULL,
+  item_key INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (profile_id, playlist_id, item_key)
+) WITHOUT ROWID
+''',
+  '''
+CREATE TABLE IF NOT EXISTS playback_progress_v8 (
+  profile_id TEXT NOT NULL,
+  playlist_id TEXT NOT NULL,
+  item_key INTEGER NOT NULL,
+  position_ms INTEGER NOT NULL CHECK (position_ms >= 0),
+  duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (profile_id, playlist_id, item_key)
+) WITHOUT ROWID
+''',
+  '''
+CREATE TABLE IF NOT EXISTS watch_history_v8 (
+  id INTEGER PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  playlist_id TEXT NOT NULL,
+  item_key INTEGER NOT NULL,
+  watched_at INTEGER NOT NULL,
+  completed INTEGER NOT NULL DEFAULT 0 CHECK (completed IN (0, 1)),
+  position_ms INTEGER CHECK (position_ms IS NULL OR position_ms >= 0),
+  duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0)
+)
+''',
+  '''
+CREATE TABLE IF NOT EXISTS hidden_groups_v8 (
+  profile_id TEXT NOT NULL,
+  playlist_id TEXT NOT NULL,
+  kind INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
+  group_title TEXT NOT NULL,
+  PRIMARY KEY (profile_id, playlist_id, kind, group_title)
+) WITHOUT ROWID
+''',
+  '''
+CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
+  title,
+  tokenize = 'unicode61 remove_diacritics 2',
+  content = 'items',
+  content_rowid = 'id'
+)
+''',
+];
+
 const List<String> _v7DropStatements = <String>[
   // Prefix of idx_media_playlist_type_sort.
   'DROP INDEX IF EXISTS idx_media_playlist_type',

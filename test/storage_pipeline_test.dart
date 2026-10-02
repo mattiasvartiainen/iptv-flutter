@@ -68,7 +68,7 @@ https://stream.test/beta-s01e02.m3u8
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '7');
+    expect(rows.first['value'], '9');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(
@@ -92,6 +92,32 @@ https://stream.test/beta-s01e02.m3u8
     final tableNames = tables.map((row) => row['name']).toSet();
     expect(tableNames, contains('import_staging_items'));
     expect(tableNames, contains('search_index_queue'));
+    expect(tableNames, contains('import_sessions'));
+    expect(tableNames, contains('groups'));
+    expect(tableNames, contains('items'));
+    expect(tableNames, contains('series_v8'));
+    expect(tableNames, contains('import_rows'));
+    expect(tableNames, contains('import_seen'));
+    expect(tableNames, contains('items_fts'));
+    expect(tableNames, contains('favorites_v8'));
+    expect(tableNames, contains('playback_progress_v8'));
+    expect(tableNames, contains('watch_history_v8'));
+    expect(tableNames, contains('hidden_groups_v8'));
+
+    for (final expectedColumn in const [
+      'source_etag',
+      'source_last_modified',
+      'source_content_hash',
+      'source_content_length',
+      'last_checked_at',
+      'last_changed_at',
+    ]) {
+      expect(
+        playlistColumns.any((row) => row['name'] == expectedColumn),
+        isTrue,
+        reason: 'playlists.$expectedColumn must be present in schema v8',
+      );
+    }
 
     final indexes = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type = 'index'",
@@ -99,6 +125,24 @@ https://stream.test/beta-s01e02.m3u8
     final indexNames = indexes.map((row) => row['name']).toSet();
     expect(indexNames, contains('idx_media_playlist_group_sort'));
     expect(indexNames, contains('idx_media_playlist_type_sort'));
+    expect(indexNames, contains('idx_import_sessions_playlist_started'));
+    expect(indexNames, contains('idx_items_group_ord'));
+    expect(indexNames, contains('idx_items_group_sort'));
+    expect(indexNames, contains('idx_items_series_episode'));
+    expect(indexNames, contains('idx_series_v8_group_sort'));
+
+    for (final table in const [
+      'favorites_v8',
+      'playback_progress_v8',
+      'watch_history_v8',
+      'hidden_groups_v8',
+    ]) {
+      expect(
+        await db.rawQuery('PRAGMA foreign_key_list($table)'),
+        isEmpty,
+        reason: '$table must not cascade with catalog rows',
+      );
+    }
 
     final settings = await db.query(
       'app_settings',
@@ -107,6 +151,47 @@ https://stream.test/beta-s01e02.m3u8
       limit: 1,
     );
     expect(settings, hasLength(1));
+
+    await db.insert('groups', {
+      'playlist_id': 'v8-playlist',
+      'kind': 1,
+      'title': 'News',
+      'sort_title': 'news',
+      'ord': 0,
+    });
+    final group = (await db.query('groups')).single;
+    await db.insert('items', {
+      'playlist_id': 'v8-playlist',
+      'item_key': 42,
+      'content_hash': 7,
+      'ord': 0,
+      'kind': 1,
+      'group_id': group['id'],
+      'title': 'Alpha News',
+      'sort_title': 'alpha news',
+      'stream_url': 'https://stream.test/alpha.m3u8',
+    });
+    final item = (await db.query('items')).single;
+    await db.rawInsert("INSERT INTO items_fts(rowid, title) VALUES(?, ?)", [
+      item['id'],
+      item['title'],
+    ]);
+    expect(
+      await db.rawQuery(
+        "SELECT rowid FROM items_fts WHERE items_fts MATCH 'Alpha'",
+      ),
+      hasLength(1),
+    );
+
+    await db.insert('favorites_v8', {
+      'profile_id': 'default',
+      'playlist_id': 'v8-playlist',
+      'item_key': 42,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+    await db.delete('groups', where: 'id = ?', whereArgs: [group['id']]);
+    expect(await db.query('items'), isEmpty);
+    expect(await db.query('favorites_v8'), hasLength(1));
   });
 
   test('an already-open database applies newly added migrations', () async {
@@ -145,6 +230,31 @@ https://stream.test/beta-s01e02.m3u8
       playlistColumns.any((column) => column['name'] == 'search_index_dirty'),
       isTrue,
     );
+
+    migrations
+      ..add(const ImportStagingSqlReconcileV6Migration())
+      ..add(const ImportPerformanceV7Migration())
+      ..add(const ImportSessionsV8Migration());
+    await adapter.initialize();
+
+    expect(await _readUserVersion(db), 8);
+    final sessionTable = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'import_sessions'",
+    );
+    expect(sessionTable, hasLength(1));
+
+    migrations.add(const CatalogImportV9Migration());
+    await adapter.initialize();
+
+    expect(await _readUserVersion(db), 9);
+    final itemTable = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'items'",
+    );
+    expect(itemTable, hasLength(1));
+    final seriesTable = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'series_v8'",
+    );
+    expect(seriesTable, hasLength(1));
   });
 
   test('storage bootstrap shares a single adapter instance', () {
@@ -260,8 +370,43 @@ https://stream.test/beta-s01e02.m3u8
     final storedRows = await db.query('playlists', orderBy: 'name ASC');
     expect(storedRows, hasLength(2));
 
+    await db.insert('groups', {
+      'playlist_id': urlPlaylist.playlistId,
+      'kind': 1,
+      'title': 'Imported group',
+      'sort_title': 'imported group',
+      'ord': 0,
+    });
+    final v9Group = (await db.query('groups')).single;
+    await db.insert('items', {
+      'playlist_id': urlPlaylist.playlistId,
+      'item_key': 901,
+      'content_hash': 902,
+      'ord': 0,
+      'kind': 1,
+      'group_id': v9Group['id'],
+      'title': 'V9 channel',
+      'sort_title': 'v9 channel',
+      'stream_url': 'https://stream.test/v9-channel.m3u8',
+    });
+    final v9Item = (await db.query('items')).single;
+    await db.insert('items_fts', {
+      'rowid': v9Item['id'],
+      'title': 'V9 channel',
+    });
+    await db.insert('favorites_v8', {
+      'profile_id': 'default',
+      'playlist_id': urlPlaylist.playlistId,
+      'item_key': 901,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+
     await repo.deletePlaylist(urlPlaylist.playlistId);
     expect(await repo.listPlaylists(), hasLength(1));
+    expect(await db.query('items'), isEmpty);
+    expect(await db.query('groups'), isEmpty);
+    expect(await db.query('favorites_v8'), isEmpty);
+    expect(await db.rawQuery('SELECT rowid FROM items_fts'), isEmpty);
     final secureKey = storedRows.first['secure_storage_key'] as String;
     expect(await store.read(key: secureKey), isNull);
   });

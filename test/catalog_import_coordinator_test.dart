@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_coordinator.dart';
+import 'package:iptv_flutter/services/catalog/catalog_import_protocol.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_progress.dart';
 
 void main() {
@@ -69,5 +71,67 @@ https://stream.test/channel-a.m3u8
     expect(operationCount, 1);
     expect(firstProgress.last.phase, CatalogImportPhase.completed);
     expect(secondProgress.last.phase, CatalogImportPhase.completed);
+  });
+
+  test(
+    'runs the streamed worker under coordinator lifecycle and progress',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      unawaited(() async {
+        final request = await server.first;
+        request.response.write(
+          '#EXTM3U\n#EXTINF:-1 group-title="News",Channel\nhttps://stream.test/channel.m3u8\n',
+        );
+        await request.response.close();
+      }());
+
+      final coordinator = CatalogImportCoordinator();
+      final progress = <CatalogImportProgress>[];
+      final rows = <CatalogImportRow>[];
+      final result = await coordinator.importPlaylist(
+        playlistId: 'worker-playlist',
+        playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
+        selectRows: (batch) async =>
+            List.generate(batch.itemKeys.length, (index) => index),
+        onRows: (_, items) async => rows.addAll(items),
+        onProgress: progress.add,
+      );
+
+      expect(result.itemsParsed, 1);
+      expect(rows.single.title, 'Channel');
+      expect(progress.first.phase, CatalogImportPhase.starting);
+      expect(
+        progress.any((event) => event.phase == CatalogImportPhase.downloading),
+        isTrue,
+      );
+      expect(
+        progress.any((event) => event.phase == CatalogImportPhase.parsing),
+        isTrue,
+      );
+      expect(progress.last.phase, CatalogImportPhase.completed);
+    },
+  );
+
+  test('runs a cancellation callback registered after cancellation', () async {
+    final coordinator = CatalogImportCoordinator();
+    final operationStarted = Completer<void>();
+    final registerCallback = Completer<void>();
+    final callbackRan = Completer<void>();
+    final operation = coordinator.run<void>(
+      playlistId: 'late-cancel-callback',
+      operation: (reporter) async {
+        operationStarted.complete();
+        await registerCallback.future;
+        reporter.onCancel(() => callbackRan.complete());
+        await callbackRan.future;
+      },
+    );
+
+    await operationStarted.future;
+    await coordinator.cancel('late-cancel-callback');
+    registerCallback.complete();
+    await callbackRan.future;
+    await operation;
   });
 }

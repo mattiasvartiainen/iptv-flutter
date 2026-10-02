@@ -36,6 +36,7 @@ https://stream.test/valid.m3u8''';
         _expectSameItem(actual[index], expected[index]);
       }
       expect(streaming.parsedItemCount, expected.length);
+      expect(streaming.rejectedRecordCount, 1);
     },
   );
 
@@ -63,6 +64,15 @@ https://stream.test/b.m3u8''';
     streaming.finish((_) {});
 
     expect(() => streaming.addChunk('#EXTM3U\n', (_) {}), throwsStateError);
+  });
+
+  test('streaming parser rejects an overlong incomplete line', () {
+    final streaming = M3uStreamingParser(maxLineLength: 8);
+
+    expect(
+      () => streaming.addChunk('123456789', (_) {}),
+      throwsFormatException,
+    );
   });
 }
 

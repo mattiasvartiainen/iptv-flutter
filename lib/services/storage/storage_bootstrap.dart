@@ -19,6 +19,7 @@ class AppStorageBootstrap {
       _catalogRepository ??= SqliteCatalogRepository(
         databaseAdapter: _adapter,
         secretStore: _secretStore,
+        useCatalogImporterV9: true,
       );
 
   SqliteSettingsRepository get settingsRepository =>

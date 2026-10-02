@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:sqflite/sqflite.dart';
@@ -10,6 +11,7 @@ import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_import_coordinator.dart';
+import 'catalog_importer.dart';
 import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
 import 'catalog_query_service.dart';
@@ -46,6 +48,134 @@ class _StreamingStageOutcome {
   final List<String> rejections;
 }
 
+class _ImportSessionRecorder {
+  _ImportSessionRecorder({required this.db, required this.id});
+
+  final DatabaseExecutor db;
+  final int id;
+  final Map<String, int> _stageTimings = {};
+  Future<void> _pendingWrite = Future<void>.value();
+  CatalogImportPhase? _lastPhase;
+  DateTime _phaseStartedAt = DateTime.now();
+  int _bytesReceived = 0;
+  int? _bytesTotal;
+  int _itemsParsed = 0;
+  int _itemsRejected = 0;
+  DateTime _lastPersistedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _lastPersistedBytes = 0;
+
+  static Future<_ImportSessionRecorder> start({
+    required DatabaseExecutor db,
+    required String playlistId,
+  }) async {
+    final startedAt = DateTime.now().toUtc();
+    final id = await db.insert('import_sessions', {
+      'playlist_id': playlistId,
+      'started_at': startedAt.millisecondsSinceEpoch,
+      'state': 'running',
+      'tier': 'legacy_import',
+    });
+    return _ImportSessionRecorder(db: db, id: id);
+  }
+
+  void observe(CatalogImportProgress progress) {
+    final now = DateTime.now();
+    final phase = progress.phase;
+    final phaseChanged = _lastPhase != phase;
+    if (_lastPhase != null && phaseChanged) {
+      _stageTimings[_phaseName(_lastPhase!)] =
+          (_stageTimings[_phaseName(_lastPhase!)] ?? 0) +
+          now.difference(_phaseStartedAt).inMilliseconds;
+      _phaseStartedAt = now;
+    } else if (_lastPhase == null) {
+      _phaseStartedAt = now;
+    }
+    _lastPhase = phase;
+    if (phaseChanged && phase == CatalogImportPhase.importing) {
+      _enqueueUpdate({'state': 'reconciling'});
+    }
+    if (phase == CatalogImportPhase.downloading) {
+      _bytesReceived = progress.current ?? _bytesReceived;
+      _bytesTotal = progress.total ?? _bytesTotal;
+    }
+    _itemsParsed = progress.parsedItems > _itemsParsed
+        ? progress.parsedItems
+        : _itemsParsed;
+    _itemsRejected = progress.rejectedItems > _itemsRejected
+        ? progress.rejectedItems
+        : _itemsRejected;
+
+    if (_bytesReceived - _lastPersistedBytes < 1024 * 1024 &&
+        now.difference(_lastPersistedAt) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastPersistedAt = now;
+    _lastPersistedBytes = _bytesReceived;
+    _enqueueUpdate({
+      'bytes_received': _bytesReceived,
+      'bytes_total': _bytesTotal,
+      'items_parsed': _itemsParsed,
+      'items_rejected': _itemsRejected,
+      'stage_timings': jsonEncode(_snapshotTimings(now)),
+    });
+  }
+
+  Future<void> complete({
+    required String state,
+    required int? acceptedCount,
+    Object? error,
+  }) async {
+    final now = DateTime.now().toUtc();
+    final lastPhase = _lastPhase;
+    if (lastPhase != null) {
+      final key = _phaseName(lastPhase);
+      _stageTimings[key] =
+          (_stageTimings[key] ?? 0) +
+          now.difference(_phaseStartedAt).inMilliseconds;
+    }
+    await _pendingWrite;
+    await db.update(
+      'import_sessions',
+      {
+        'finished_at': now.millisecondsSinceEpoch,
+        'state': state,
+        'bytes_received': _bytesReceived,
+        'bytes_total': _bytesTotal,
+        'items_parsed': _itemsParsed,
+        'items_rejected': _itemsRejected,
+        if (acceptedCount != null) 'items_new': acceptedCount,
+        'stage_timings': jsonEncode(_stageTimings),
+        'error': error?.toString(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  void _enqueueUpdate(Map<String, Object?> values) {
+    _pendingWrite = _pendingWrite
+        .then((_) async {
+          await db.update(
+            'import_sessions',
+            values,
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+        })
+        .catchError((Object _, StackTrace __) {});
+  }
+
+  Map<String, int> _snapshotTimings(DateTime now) => {
+    ..._stageTimings,
+    if (_lastPhase != null)
+      _phaseName(_lastPhase!):
+          (_stageTimings[_phaseName(_lastPhase!)] ?? 0) +
+          now.difference(_phaseStartedAt).inMilliseconds,
+  };
+
+  static String _phaseName(CatalogImportPhase phase) => phase.name;
+}
+
 class SqliteCatalogRepository
     implements CatalogRepository, CatalogQueryService {
   SqliteCatalogRepository({
@@ -54,17 +184,25 @@ class SqliteCatalogRepository
     PlaylistSecretStore? secretStore,
     this.useStagingImport = true,
     this.autoStartSearchIndexWorker = true,
+    this.useCatalogImporterV9 = false,
     CatalogImportCoordinator? importCoordinator,
   }) : _source = source ?? const HttpPlaylistSource(),
        _databaseAdapter = databaseAdapter ?? SqfliteDatabaseAdapter(),
        _secretStore = secretStore ?? InMemoryPlaylistSecretStore(),
-       _importCoordinator = importCoordinator ?? CatalogImportCoordinator();
+       _importCoordinator = importCoordinator ?? CatalogImportCoordinator() {
+    _catalogImporter = CatalogImporter(
+      databaseAdapter: _databaseAdapter,
+      coordinator: _importCoordinator,
+    );
+  }
 
   final PlaylistSource _source;
   final DatabaseAdapter _databaseAdapter;
   final PlaylistSecretStore _secretStore;
   final CatalogImportCoordinator _importCoordinator;
+  late final CatalogImporter _catalogImporter;
   final bool useStagingImport;
+  final bool useCatalogImporterV9;
 
   /// When false, a successful import only queues search-index changes and
   /// leaves draining to an explicit [processSearchIndexQueue] call. Useful in
@@ -119,6 +257,78 @@ class SqliteCatalogRepository
     return _importCoordinator.cancel(playlistId);
   }
 
+  Future<void> recoverAbandonedImports() async {
+    final db = await _databaseAdapter.database;
+    final abandoned = await db.query(
+      'import_sessions',
+      columns: const ['id', 'playlist_id', 'tier'],
+      where: 'state IN (?, ?)',
+      whereArgs: ['running', 'reconciling'],
+    );
+    for (final session in abandoned) {
+      final sessionId = session['id']! as int;
+      final playlistId = session['playlist_id']! as String;
+      final tier = session['tier'];
+      final isColdV9Import = tier == 'cold_import';
+      final isWarmV9Import = tier == 'row_diff';
+      await _databaseAdapter.transaction((txn) async {
+        if (isColdV9Import) {
+          await txn.rawDelete(
+            'DELETE FROM items_fts WHERE rowid IN '
+            '(SELECT id FROM items WHERE playlist_id = ?)',
+            [playlistId],
+          );
+          await txn.delete(
+            'items',
+            where: 'playlist_id = ?',
+            whereArgs: [playlistId],
+          );
+          await txn.delete(
+            'series_v8',
+            where: 'playlist_id = ?',
+            whereArgs: [playlistId],
+          );
+          await txn.delete(
+            'groups',
+            where: 'playlist_id = ?',
+            whereArgs: [playlistId],
+          );
+          await txn.delete(
+            'import_rows',
+            where: 'import_id = ?',
+            whereArgs: [sessionId],
+          );
+          await txn.delete(
+            'import_seen',
+            where: 'import_id = ?',
+            whereArgs: [sessionId],
+          );
+        } else if (isWarmV9Import) {
+          await txn.delete(
+            'import_rows',
+            where: 'import_id = ?',
+            whereArgs: [sessionId],
+          );
+          await txn.delete(
+            'import_seen',
+            where: 'import_id = ?',
+            whereArgs: [sessionId],
+          );
+        }
+        await txn.update(
+          'import_sessions',
+          {
+            'state': 'aborted',
+            'finished_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+            'error': 'Import interrupted by application shutdown.',
+          },
+          where: 'id = ?',
+          whereArgs: [sessionId],
+        );
+      });
+    }
+  }
+
   @override
   Future<CatalogLoadResult> load({
     required String playlistUrl,
@@ -130,12 +340,48 @@ class SqliteCatalogRepository
     final resolvedPlaylistId =
         playlistId ?? await _resolvePlaylistId(playlistUrl);
 
+    if (useCatalogImporterV9) {
+      final db = await _databaseAdapter.database;
+      final cachedItems = await _countV9Items(db, resolvedPlaylistId);
+      if (policy == CatalogLoadPolicy.cacheOnly) {
+        return CatalogLoadResult(
+          playlistId: resolvedPlaylistId,
+          itemCount: cachedItems,
+        );
+      }
+      if (policy == CatalogLoadPolicy.cacheFirst && cachedItems > 0) {
+        final refreshDue = await _isRefreshDue(
+          db,
+          playlistId: resolvedPlaylistId,
+        );
+        if (!refreshDue) {
+          return CatalogLoadResult(
+            playlistId: resolvedPlaylistId,
+            itemCount: cachedItems,
+          );
+        }
+      }
+      final imported = await _catalogImporter.importPlaylist(
+        playlistId: resolvedPlaylistId,
+        playlistUrl: playlistUrl,
+        onProgress: onProgress,
+      );
+      return CatalogLoadResult(
+        playlistId: imported.playlistId,
+        itemCount: imported.itemCount,
+      );
+    }
+
     _pausedIndexingPlaylists.add(resolvedPlaylistId);
     late final CatalogLoadResult result;
+    _ImportSessionRecorder? sessionRecorder;
     try {
       result = await _importCoordinator.run<CatalogLoadResult>(
         playlistId: resolvedPlaylistId,
-        onProgress: onProgress,
+        onProgress: (progress) {
+          if (!progress.isTerminal) sessionRecorder?.observe(progress);
+          onProgress?.call(progress);
+        },
         operation: (reporter) => _loadInternal(
           playlistUrl: playlistUrl,
           playlistId: resolvedPlaylistId,
@@ -143,6 +389,7 @@ class SqliteCatalogRepository
           policy: policy,
           onProgress: reporter.emit,
           reporter: reporter,
+          onSessionCreated: (session) => sessionRecorder = session,
         ),
       );
     } finally {
@@ -152,6 +399,14 @@ class SqliteCatalogRepository
     return result;
   }
 
+  Future<int> _countV9Items(DatabaseExecutor db, String playlistId) async {
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS item_count FROM items WHERE playlist_id = ?',
+      [playlistId],
+    );
+    return (rows.single['item_count'] as num).toInt();
+  }
+
   Future<CatalogLoadResult> _loadInternal({
     required String playlistUrl,
     required String playlistId,
@@ -159,6 +414,7 @@ class SqliteCatalogRepository
     required CatalogLoadPolicy policy,
     CatalogImportProgressCallback? onProgress,
     required CatalogImportReporter reporter,
+    required void Function(_ImportSessionRecorder session) onSessionCreated,
   }) async {
     final resolvedPlaylistId = playlistId;
     final resolvedPlaylistName = playlistName ?? 'Primary Playlist';
@@ -189,6 +445,13 @@ class SqliteCatalogRepository
         );
       }
     }
+
+    final session = await _ImportSessionRecorder.start(
+      db: db,
+      playlistId: resolvedPlaylistId,
+    );
+    reporter.attachSession(session.id);
+    onSessionCreated(session);
 
     try {
       final refreshStartedAt = DateTime.now();
@@ -412,8 +675,17 @@ WHERE id = ?
             throw error;
           });
 
+      await session.complete(
+        state: 'done',
+        acceptedCount: cachedItemCount == 0 ? updatedItems.itemCount : null,
+      );
       return updatedItems;
     } on AppIssueException {
+      await session.complete(
+        state: reporter.isCancelled ? 'cancelled' : 'failed',
+        acceptedCount: null,
+        error: reporter.isCancelled ? 'Import cancelled' : 'Import failed',
+      );
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
         return CatalogLoadResult(
           playlistId: resolvedPlaylistId,
@@ -422,6 +694,11 @@ WHERE id = ?
       }
       rethrow;
     } on TimeoutException catch (error, stackTrace) {
+      await session.complete(
+        state: 'failed',
+        acceptedCount: null,
+        error: error,
+      );
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
         return CatalogLoadResult(
           playlistId: resolvedPlaylistId,
@@ -440,6 +717,11 @@ WHERE id = ?
         stackTrace: stackTrace,
       );
     } on SocketException catch (error, stackTrace) {
+      await session.complete(
+        state: 'failed',
+        acceptedCount: null,
+        error: error,
+      );
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
         return CatalogLoadResult(
           playlistId: resolvedPlaylistId,
@@ -458,6 +740,11 @@ WHERE id = ?
         stackTrace: stackTrace,
       );
     } on HttpException catch (error, stackTrace) {
+      await session.complete(
+        state: 'failed',
+        acceptedCount: null,
+        error: error,
+      );
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
         return CatalogLoadResult(
           playlistId: resolvedPlaylistId,
@@ -476,6 +763,11 @@ WHERE id = ?
         stackTrace: stackTrace,
       );
     } on FormatException catch (error, stackTrace) {
+      await session.complete(
+        state: 'failed',
+        acceptedCount: null,
+        error: error,
+      );
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
         return CatalogLoadResult(
           playlistId: resolvedPlaylistId,
@@ -494,6 +786,11 @@ WHERE id = ?
         stackTrace: stackTrace,
       );
     } catch (error, stackTrace) {
+      await session.complete(
+        state: reporter.isCancelled ? 'cancelled' : 'failed',
+        acceptedCount: null,
+        error: error,
+      );
       if (policy == CatalogLoadPolicy.cacheFirst && cachedItemCount > 0) {
         return CatalogLoadResult(
           playlistId: resolvedPlaylistId,
@@ -536,6 +833,9 @@ WHERE id = ?
   @override
   Future<CatalogPage<CatalogItemSummary>> queryItems(CatalogQuery query) async {
     final db = await _databaseAdapter.database;
+    if (await _hasV9Catalog(db, query.playlistId)) {
+      return _queryV9Items(db, query);
+    }
     final ftsExpression = query.hasSearchTerm
         ? buildFtsPrefixQuery(query.searchTerm!)
         : null;
@@ -606,6 +906,16 @@ WHERE id = ?
     int limit = kHomePreviewCount,
   }) async {
     final db = await _databaseAdapter.database;
+    if (await _hasV9Catalog(db, playlistId)) {
+      final rows = await db.rawQuery(
+        'SELECT $_v9SummaryColumns FROM items m '
+        'JOIN groups g ON g.id = m.group_id '
+        'WHERE m.playlist_id = ? AND m.kind = ? '
+        'ORDER BY m.sort_title, m.id LIMIT ?',
+        [playlistId, _v9KindForItem(kind), limit],
+      );
+      return rows.map(CatalogItemSummary.fromRow).toList(growable: false);
+    }
     final rows = await db.rawQuery(
       'SELECT $_summaryColumns FROM media_items m '
       'WHERE m.playlist_id = ? AND m.content_type = ? '
@@ -623,6 +933,15 @@ WHERE id = ?
     String? searchTerm,
   }) async {
     final db = await _databaseAdapter.database;
+    if (await _hasV9Catalog(db, playlistId)) {
+      return _queryV9Series(
+        db,
+        playlistId,
+        offset: offset,
+        limit: limit,
+        searchTerm: searchTerm,
+      );
+    }
     final clauses = <String>['s.playlist_id = ?'];
     final args = <Object?>[playlistId];
 
@@ -668,6 +987,30 @@ WHERE id = ?
   @override
   Future<List<SeasonSummary>> seasons(String seriesId) async {
     final db = await _databaseAdapter.database;
+    final seriesKey = int.tryParse(seriesId);
+    if (seriesKey != null && await _hasV9Series(db, seriesKey)) {
+      final rows = await db.rawQuery(
+        '''
+SELECT ? AS series_key, season_number,
+       COUNT(*) AS episode_count
+FROM items
+WHERE series_key = ? AND season_number IS NOT NULL
+GROUP BY season_number
+ORDER BY season_number
+''',
+        [seriesKey, seriesKey],
+      );
+      return rows
+          .map(
+            (row) => SeasonSummary(
+              id: '$seriesKey:${row['season_number']}',
+              seriesId: '$seriesKey',
+              seasonNumber: row['season_number']! as int,
+              episodeCount: (row['episode_count'] as num).toInt(),
+            ),
+          )
+          .toList(growable: false);
+    }
     final rows = await db.rawQuery(
       'SELECT se.id AS id, se.series_id AS series_id, '
       'se.season_number AS season_number, '
@@ -685,6 +1028,22 @@ WHERE id = ?
     int limit = kCatalogPageSize,
   }) async {
     final db = await _databaseAdapter.database;
+    final seasonParts = seasonId.split(':');
+    if (seasonParts.length == 2) {
+      final seriesKey = int.tryParse(seasonParts.first);
+      final seasonNumber = int.tryParse(seasonParts.last);
+      if (seriesKey != null &&
+          seasonNumber != null &&
+          await _hasV9Series(db, seriesKey)) {
+        return _queryV9Episodes(
+          db,
+          seriesKey,
+          seasonNumber,
+          offset: offset,
+          limit: limit,
+        );
+      }
+    }
     const from = 'episodes e JOIN media_items m ON m.id = e.media_item_id';
     const where = 'e.season_id = ?';
     final args = <Object?>[seasonId];
@@ -717,6 +1076,20 @@ WHERE id = ?
     List<CatalogItemKind> kinds = const [],
   }) async {
     final db = await _databaseAdapter.database;
+    if (await _hasV9Catalog(db, playlistId)) {
+      final clauses = <String>['playlist_id = ?'];
+      final args = <Object?>[playlistId];
+      if (kinds.isNotEmpty) {
+        clauses.add('kind IN (${List.filled(kinds.length, '?').join(', ')})');
+        args.addAll(kinds.map(_v9KindForItem));
+      }
+      final rows = await db.rawQuery(
+        'SELECT DISTINCT title FROM groups WHERE ${clauses.join(' AND ')} '
+        'ORDER BY title',
+        args,
+      );
+      return rows.map((row) => row['title']! as String).toList(growable: false);
+    }
     final clauses = <String>[
       'playlist_id = ?',
       "group_title IS NOT NULL",
@@ -743,6 +1116,19 @@ WHERE id = ?
   @override
   Future<ContentItem?> itemById(String itemId) async {
     final db = await _databaseAdapter.database;
+    final rowId = int.tryParse(itemId);
+    if (rowId != null) {
+      final v9Rows = await db.rawQuery(
+        '''
+SELECT m.id, m.title, m.kind, m.stream_url, g.title AS group_title,
+       m.logo_url, m.tvg_id, m.tvg_name, m.tvg_chno, m.xui_id, m.ord
+FROM items m JOIN groups g ON g.id = m.group_id
+WHERE m.id = ? LIMIT 1
+''',
+        [rowId],
+      );
+      if (v9Rows.isNotEmpty) return _mapV9RowToItem(v9Rows.single);
+    }
     final rows = await db.query(
       'media_items',
       where: 'id = ?',
@@ -752,6 +1138,306 @@ WHERE id = ?
     if (rows.isEmpty) return null;
     return _mapRowToItem(rows.first);
   }
+
+  Future<void> setV9Favorite({
+    required String playlistId,
+    required int itemKey,
+    required bool favorite,
+    String profileId = 'default',
+  }) async {
+    final db = await _databaseAdapter.database;
+    if (favorite) {
+      await db.insert('favorites_v8', {
+        'profile_id': profileId,
+        'playlist_id': playlistId,
+        'item_key': itemKey,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    } else {
+      await db.delete(
+        'favorites_v8',
+        where: 'profile_id = ? AND playlist_id = ? AND item_key = ?',
+        whereArgs: [profileId, playlistId, itemKey],
+      );
+    }
+  }
+
+  Future<List<CatalogItemSummary>> v9FavoriteItems({
+    required String playlistId,
+    String profileId = 'default',
+    int limit = kCatalogPageSize,
+  }) async {
+    final db = await _databaseAdapter.database;
+    final rows = await db.rawQuery(
+      'SELECT $_v9SummaryColumns FROM favorites_v8 f '
+      'JOIN items m ON m.playlist_id = f.playlist_id AND m.item_key = f.item_key '
+      'JOIN groups g ON g.id = m.group_id '
+      'WHERE f.playlist_id = ? AND f.profile_id = ? '
+      'ORDER BY f.created_at DESC, m.id LIMIT ?',
+      [playlistId, profileId, limit],
+    );
+    return rows.map(CatalogItemSummary.fromRow).toList(growable: false);
+  }
+
+  Future<void> saveV9PlaybackProgress({
+    required String playlistId,
+    required int itemKey,
+    required int positionMs,
+    int? durationMs,
+    String profileId = 'default',
+  }) async {
+    final db = await _databaseAdapter.database;
+    await db.insert('playback_progress_v8', {
+      'profile_id': profileId,
+      'playlist_id': playlistId,
+      'item_key': itemKey,
+      'position_ms': positionMs,
+      'duration_ms': durationMs,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<CatalogPlaybackProgress?> v9PlaybackProgress({
+    required String playlistId,
+    required int itemKey,
+    String profileId = 'default',
+  }) async {
+    final db = await _databaseAdapter.database;
+    final rows = await db.query(
+      'playback_progress_v8',
+      where: 'profile_id = ? AND playlist_id = ? AND item_key = ?',
+      whereArgs: [profileId, playlistId, itemKey],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.single;
+    return CatalogPlaybackProgress(
+      itemKey: row['item_key']! as int,
+      positionMs: row['position_ms']! as int,
+      durationMs: row['duration_ms'] as int?,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(row['updated_at']! as int),
+    );
+  }
+
+  Future<void> recordV9WatchHistory({
+    required String playlistId,
+    required int itemKey,
+    required bool completed,
+    int? positionMs,
+    int? durationMs,
+    String profileId = 'default',
+  }) async {
+    final db = await _databaseAdapter.database;
+    await db.insert('watch_history_v8', {
+      'profile_id': profileId,
+      'playlist_id': playlistId,
+      'item_key': itemKey,
+      'watched_at': DateTime.now().millisecondsSinceEpoch,
+      'completed': completed ? 1 : 0,
+      'position_ms': positionMs,
+      'duration_ms': durationMs,
+    });
+  }
+
+  Future<List<CatalogItemSummary>> v9RecentlyWatchedItems({
+    required String playlistId,
+    String profileId = 'default',
+    int limit = kHomePreviewCount,
+  }) async {
+    final db = await _databaseAdapter.database;
+    final rows = await db.rawQuery(
+      'SELECT $_v9SummaryColumns FROM watch_history_v8 h '
+      'JOIN items m ON m.playlist_id = h.playlist_id AND m.item_key = h.item_key '
+      'JOIN groups g ON g.id = m.group_id '
+      'WHERE h.playlist_id = ? AND h.profile_id = ? '
+      'GROUP BY m.id ORDER BY MAX(h.watched_at) DESC LIMIT ?',
+      [playlistId, profileId, limit],
+    );
+    return rows.map(CatalogItemSummary.fromRow).toList(growable: false);
+  }
+
+  static const String _v9SummaryColumns =
+      'm.id AS id, m.title AS title, m.sort_title AS sort_title, '
+      'm.kind AS kind, g.title AS group_title, m.logo_url AS logo_url, '
+      'm.logo_url AS artwork_url, m.ord AS ord, '
+      'm.episode_number AS episode_number';
+
+  Future<bool> _hasV9Catalog(DatabaseExecutor db, String playlistId) async {
+    final rows = await db.rawQuery(
+      'SELECT 1 FROM items WHERE playlist_id = ? LIMIT 1',
+      [playlistId],
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<bool> _hasV9Series(DatabaseExecutor db, int seriesKey) async {
+    final rows = await db.query(
+      'series_v8',
+      columns: const ['series_key'],
+      where: 'series_key = ?',
+      whereArgs: [seriesKey],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<CatalogPage<CatalogItemSummary>> _queryV9Items(
+    DatabaseExecutor db,
+    CatalogQuery query,
+  ) async {
+    final fts = query.hasSearchTerm
+        ? buildFtsPrefixQuery(query.searchTerm!)
+        : null;
+    if (query.hasSearchTerm && fts == null) {
+      return CatalogPage<CatalogItemSummary>(
+        items: const [],
+        offset: query.offset,
+        total: 0,
+      );
+    }
+    final clauses = <String>['m.playlist_id = ?'];
+    final args = <Object?>[query.playlistId];
+    if (fts != null) {
+      clauses.add('items_fts MATCH ?');
+      args.add(fts);
+    }
+    if (query.kinds.isNotEmpty) {
+      clauses.add(
+        'm.kind IN (${List.filled(query.kinds.length, '?').join(', ')})',
+      );
+      args.addAll(query.kinds.map(_v9KindForItem));
+    }
+    if (query.group != null) {
+      clauses.add('g.title = ?');
+      args.add(query.group);
+    }
+    final from = fts == null
+        ? 'items m JOIN groups g ON g.id = m.group_id'
+        : 'items_fts JOIN items m ON m.id = items_fts.rowid '
+              'JOIN groups g ON g.id = m.group_id';
+    final where = clauses.join(' AND ');
+    final orderBy = fts != null
+        ? 'bm25(items_fts), m.sort_title, m.id'
+        : switch (query.sort) {
+            CatalogSort.title => 'm.sort_title, m.id',
+            CatalogSort.playlistOrder => 'm.ord, m.id',
+          };
+    final total = await _countRows(db, from: from, where: where, args: args);
+    if (total == 0 || query.offset >= total) {
+      return CatalogPage<CatalogItemSummary>(
+        items: const [],
+        offset: query.offset,
+        total: total,
+      );
+    }
+    final rows = await db.rawQuery(
+      'SELECT $_v9SummaryColumns FROM $from WHERE $where '
+      'ORDER BY $orderBy LIMIT ? OFFSET ?',
+      [...args, query.limit, query.offset],
+    );
+    return CatalogPage<CatalogItemSummary>(
+      items: rows.map(CatalogItemSummary.fromRow).toList(growable: false),
+      offset: query.offset,
+      total: total,
+    );
+  }
+
+  Future<CatalogPage<SeriesSummary>> _queryV9Series(
+    DatabaseExecutor db,
+    String playlistId, {
+    required int offset,
+    required int limit,
+    String? searchTerm,
+  }) async {
+    final clauses = <String>['s.playlist_id = ?'];
+    final args = <Object?>[playlistId];
+    final term = searchTerm?.trim();
+    if (term != null && term.isNotEmpty) {
+      clauses.add('s.sort_title LIKE ? ESCAPE ?');
+      args
+        ..add('%${_escapeLike(CatalogNormalizer.normalizeText(term))}%')
+        ..add(r'\');
+    }
+    final where = clauses.join(' AND ');
+    final total = await _countRows(
+      db,
+      from: 'series_v8 s',
+      where: where,
+      args: args,
+    );
+    if (total == 0 || offset >= total) {
+      return CatalogPage<SeriesSummary>(
+        items: const [],
+        offset: offset,
+        total: total,
+      );
+    }
+    final rows = await db.rawQuery(
+      'SELECT s.series_key AS series_key, s.title, s.sort_title, '
+      's.artwork_url, s.season_count, s.episode_count '
+      'FROM series_v8 s WHERE $where ORDER BY s.sort_title, s.series_key '
+      'LIMIT ? OFFSET ?',
+      [...args, limit, offset],
+    );
+    return CatalogPage<SeriesSummary>(
+      items: rows.map(SeriesSummary.fromRow).toList(growable: false),
+      offset: offset,
+      total: total,
+    );
+  }
+
+  Future<CatalogPage<CatalogItemSummary>> _queryV9Episodes(
+    DatabaseExecutor db,
+    int seriesKey,
+    int seasonNumber, {
+    required int offset,
+    required int limit,
+  }) async {
+    const from = 'items m JOIN groups g ON g.id = m.group_id';
+    const where = 'm.series_key = ? AND m.season_number = ?';
+    final args = <Object?>[seriesKey, seasonNumber];
+    final total = await _countRows(db, from: from, where: where, args: args);
+    if (total == 0 || offset >= total) {
+      return CatalogPage<CatalogItemSummary>(
+        items: const [],
+        offset: offset,
+        total: total,
+      );
+    }
+    final rows = await db.rawQuery(
+      'SELECT $_v9SummaryColumns FROM $from WHERE $where '
+      'ORDER BY m.episode_number, m.id LIMIT ? OFFSET ?',
+      [...args, limit, offset],
+    );
+    return CatalogPage<CatalogItemSummary>(
+      items: rows.map(CatalogItemSummary.fromRow).toList(growable: false),
+      offset: offset,
+      total: total,
+    );
+  }
+
+  static int _v9KindForItem(CatalogItemKind kind) => switch (kind) {
+    CatalogItemKind.live => 1,
+    CatalogItemKind.movie => 2,
+    CatalogItemKind.episode => 3,
+    CatalogItemKind.unknown => 0,
+  };
+
+  ContentItem _mapV9RowToItem(Map<String, Object?> row) => ContentItem(
+    id: (row['id']! as int).toString(),
+    title: row['title']! as String,
+    type: row['kind'] == 1 ? ContentType.live : ContentType.vod,
+    streamUrl: row['stream_url']! as String,
+    group: row['group_title']! as String,
+    logoUrl: row['logo_url'] as String?,
+    metadata: {
+      if (row['tvg_id'] is String) 'tvg-id': row['tvg_id']! as String,
+      if (row['tvg_name'] is String) 'tvg-name': row['tvg_name']! as String,
+      if (row['tvg_chno'] is String) 'tvg-chno': row['tvg_chno']! as String,
+      if (row['xui_id'] is String) 'xui-id': row['xui_id']! as String,
+    },
+    sourceIndex: row['ord']! as int,
+  );
 
   Future<int> _countRows(
     DatabaseExecutor db, {

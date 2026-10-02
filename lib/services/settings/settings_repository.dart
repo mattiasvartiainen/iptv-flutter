@@ -399,7 +399,66 @@ LIMIT 1
       }
     }
 
-    await db.delete('playlists', where: 'id = ?', whereArgs: [playlistId]);
+    await _databaseAdapter.transaction((txn) async {
+      await txn.rawInsert(
+        '''
+INSERT INTO items_fts(items_fts, rowid, title)
+SELECT 'delete', id, title FROM items WHERE playlist_id = ?
+''',
+        [playlistId],
+      );
+      await txn.delete(
+        'items',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete(
+        'series_v8',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete(
+        'groups',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.rawDelete(
+        'DELETE FROM import_rows WHERE import_id IN '
+        '(SELECT id FROM import_sessions WHERE playlist_id = ?)',
+        [playlistId],
+      );
+      await txn.rawDelete(
+        'DELETE FROM import_seen WHERE import_id IN '
+        '(SELECT id FROM import_sessions WHERE playlist_id = ?)',
+        [playlistId],
+      );
+      await txn.delete(
+        'import_sessions',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete(
+        'favorites_v8',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete(
+        'playback_progress_v8',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete(
+        'watch_history_v8',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete(
+        'hidden_groups_v8',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+      );
+      await txn.delete('playlists', where: 'id = ?', whereArgs: [playlistId]);
+    });
   }
 
   @override

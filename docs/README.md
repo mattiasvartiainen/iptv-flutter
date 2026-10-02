@@ -10,6 +10,7 @@ This directory contains the product and engineering decisions needed to start im
 4. [`research.md`](research.md) — webOS delivery constraints and reusable IPTV UI patterns.
 5. [`decisions.md`](decisions.md) — verified platform facts and the open decisions to resolve before/while building.
 6. [`agent-handoff.md`](agent-handoff.md) — concrete instructions for the next coding agent.
+7. [`catalog-import-and-browsing-redesign.md`](catalog-import-and-browsing-redesign.md) — current plan for the import pipeline (change-proportional refresh, schema v8) and group-first browsing; supersedes the open items in `import-performance.md` §8 and `implementation-plan4.md`.
 
 ## Current product decisions
 

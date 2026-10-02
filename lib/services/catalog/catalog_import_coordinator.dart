@@ -3,6 +3,12 @@ import 'dart:isolate';
 
 import '../../models/content_item.dart';
 import 'catalog_repository.dart';
+import 'catalog_import_protocol.dart'
+    show
+        CatalogImportRowSelector,
+        CatalogImportRowsCallback,
+        CatalogImportWorkerResult;
+import 'catalog_import_worker.dart';
 import 'm3u_parser.dart';
 
 typedef CatalogImportOperation<T> =
@@ -82,6 +88,59 @@ class CatalogImportCoordinator {
   Future<void> cancel(String playlistId) async {
     await _jobs[playlistId]?.cancel();
   }
+
+  Future<CatalogImportWorkerResult> importPlaylist({
+    required String playlistId,
+    required String playlistUrl,
+    String? sourceUrl,
+    required CatalogImportRowSelector selectRows,
+    required CatalogImportRowsCallback onRows,
+    CatalogImportProgressCallback? onProgress,
+  }) => run<CatalogImportWorkerResult>(
+    playlistId: playlistId,
+    onProgress: onProgress,
+    operation: (reporter) async {
+      final worker = await CatalogImportWorker.start(
+        playlistId: playlistId,
+        playlistUrl: playlistUrl,
+        sourceUrl: sourceUrl,
+        selectRows: selectRows,
+        onRows: onRows,
+        onHeaders: (headers) => reporter.emit(
+          CatalogImportProgress(
+            phase: CatalogImportPhase.downloading,
+            startedAt: reporter.startedAt,
+            current: 0,
+            total: headers.contentLength,
+            currentOperation: 'headers',
+          ),
+        ),
+        onProgress: (received, total, parsed) {
+          reporter.emit(
+            CatalogImportProgress(
+              phase: CatalogImportPhase.downloading,
+              startedAt: reporter.startedAt,
+              current: received,
+              total: total,
+              parsedItems: parsed,
+              currentOperation: 'downloading',
+            ),
+          );
+          reporter.emit(
+            CatalogImportProgress(
+              phase: CatalogImportPhase.parsing,
+              startedAt: reporter.startedAt,
+              current: parsed,
+              parsedItems: parsed,
+              currentOperation: 'parsing',
+            ),
+          );
+        },
+      );
+      reporter.onCancel(worker.cancel);
+      return worker.done;
+    },
+  );
 
   Future<int> parseStream(
     Stream<PlaylistSourceChunk> chunks, {
@@ -235,6 +294,18 @@ class CatalogImportReporter {
   DateTime get startedAt => _job.startedAt;
   bool get isCancelled => _job.isCancelled;
 
+  void attachSession(int sessionId) {
+    _job.importSessionId = sessionId;
+  }
+
+  void onCancel(FutureOr<void> Function() callback) {
+    if (_job.isCancelled) {
+      unawaited(Future<void>.sync(callback));
+      return;
+    }
+    _job.cancellationCallbacks.add(callback);
+  }
+
   void emit(CatalogImportProgress progress) => _job.emit(progress);
 
   Future<T> runCancellable<T>(Future<T> Function() operation) {
@@ -251,6 +322,7 @@ class _ImportJob<T> {
   final listeners = <CatalogImportProgressCallback>[];
   final cancellationCallbacks = <FutureOr<void> Function()>[];
   String? jobId;
+  int? importSessionId;
   bool isCancelled = false;
 
   Future<T> get future => _result.future;
@@ -264,6 +336,7 @@ class _ImportJob<T> {
     final enriched = progress.copyWith(
       jobId: jobId,
       playlistId: playlistId,
+      importSessionId: importSessionId,
       startedAt: startedAt,
       updatedAt: DateTime.now(),
     );

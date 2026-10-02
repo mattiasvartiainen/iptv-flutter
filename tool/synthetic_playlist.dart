@@ -23,13 +23,15 @@ String generateSyntheticPlaylist({
   for (var i = 0; i < itemCount; i++) {
     final roll = random.nextDouble();
     final group = categories[random.nextInt(categories.length)];
+    final duplicateOf = i >= 20 && i % 20 == 0 ? i - 20 : null;
+    final itemIndex = duplicateOf ?? i;
 
     if (roll < liveFraction) {
       buffer.writeln(
-        '#EXTINF:-1 tvg-id="live-$i" tvg-name="Live Channel $i" '
-        'tvg-logo="$urlPrefix/logo/$i.png" group-title="$group",Live Channel $i',
+        '#EXTINF:-1 tvg-id="live-$itemIndex" tvg-name="Live Channel $i" '
+        'tvg-logo="$urlPrefix/logo/$itemIndex.png" group-title="$group",Live Channel $i',
       );
-      buffer.writeln('$urlPrefix/live/stream-$i.m3u8');
+      buffer.writeln('$urlPrefix/live/u/p/$itemIndex.ts');
     } else if (roll < liveFraction + seriesFraction) {
       final series = seriesTitles[random.nextInt(seriesTitles.length)];
       final season = random.nextInt(10) + 1;
@@ -37,18 +39,40 @@ String generateSyntheticPlaylist({
       final seasonPadded = season.toString().padLeft(2, '0');
       final episodePadded = episode.toString().padLeft(2, '0');
       buffer.writeln(
-        '#EXTINF:-1 tvg-id="ep-$i" group-title="$group",'
+        '#EXTINF:-1 tvg-id="ep-$itemIndex" group-title="$group",'
         '$series S${seasonPadded}E$episodePadded',
       );
-      buffer.writeln('$urlPrefix/series/episode-$i.m3u8');
+      buffer.writeln('$urlPrefix/series/u/p/$itemIndex.mkv');
     } else {
       buffer.writeln(
-        '#EXTINF:-1 tvg-id="vod-$i" group-title="$group",Movie Title $i',
+        '#EXTINF:-1 tvg-id="vod-$itemIndex" group-title="$group",Movie Title $i',
       );
-      buffer.writeln('$urlPrefix/vod/movie-$i.m3u8');
+      buffer.writeln('$urlPrefix/movie/u/p/$itemIndex.mkv');
     }
   }
 
+  return buffer.toString();
+}
+
+/// Reorders complete M3U records without changing their contents.
+String reorderSyntheticPlaylist(String original, {int seed = 19}) {
+  final lines = original.split('\n');
+  final header = lines.isNotEmpty && lines.first == '#EXTM3U'
+      ? lines.first
+      : null;
+  final start = header == null ? 0 : 1;
+  final records = <List<String>>[];
+  for (var i = start; i + 1 < lines.length; i += 2) {
+    if (lines[i].isEmpty && lines[i + 1].isEmpty) continue;
+    records.add(<String>[lines[i], lines[i + 1]]);
+  }
+  records.shuffle(Random(seed));
+  final buffer = StringBuffer();
+  if (header != null) buffer.writeln(header);
+  for (final record in records) {
+    buffer.writeln(record[0]);
+    buffer.writeln(record[1]);
+  }
   return buffer.toString();
 }
 

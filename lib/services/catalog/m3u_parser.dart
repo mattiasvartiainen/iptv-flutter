@@ -18,6 +18,8 @@ class M3uParser {
     'tvg-name',
     'tvg-chno',
     'xui-id',
+    'type',
+    'content-type',
   ];
 
   List<ContentItem> parse(String text, {String? sourceUrl}) {
@@ -195,18 +197,21 @@ class M3uParser {
 /// only that incomplete line, the current EXTINF metadata, and the caller's
 /// output batch.
 class M3uStreamingParser {
-  M3uStreamingParser({String? sourceUrl})
+  M3uStreamingParser({String? sourceUrl, this.maxLineLength = 1024 * 1024})
     : _sourceUrl = sourceUrl,
       _parser = const M3uParser();
 
   final String? _sourceUrl;
+  final int maxLineLength;
   final M3uParser _parser;
   String _buffer = '';
   String? _metadataLine;
   int _sourceIndex = 0;
+  int _rejectedRecordCount = 0;
   bool _finished = false;
 
   int get parsedItemCount => _sourceIndex;
+  int get rejectedRecordCount => _rejectedRecordCount;
 
   void addChunk(String chunk, M3uItemSink sink) {
     if (_finished) {
@@ -215,6 +220,9 @@ class M3uStreamingParser {
     if (chunk.isEmpty) return;
     _buffer += chunk;
     _drainCompleteLines(sink);
+    if (_buffer.length > maxLineLength) {
+      throw const FormatException('Playlist line exceeded the maximum length.');
+    }
   }
 
   void finish(M3uItemSink sink) {
@@ -224,12 +232,21 @@ class M3uStreamingParser {
       _consumeLine(_buffer, sink);
       _buffer = '';
     }
+    if (_metadataLine != null) {
+      _rejectedRecordCount++;
+      _metadataLine = null;
+    }
   }
 
   void _drainCompleteLines(M3uItemSink sink) {
     while (true) {
       final breakAt = _buffer.indexOf('\n');
       if (breakAt < 0) return;
+      if (breakAt > maxLineLength) {
+        throw const FormatException(
+          'Playlist line exceeded the maximum length.',
+        );
+      }
       var line = _buffer.substring(0, breakAt);
       _buffer = _buffer.substring(breakAt + 1);
       if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
@@ -240,6 +257,7 @@ class M3uStreamingParser {
   void _consumeLine(String line, M3uItemSink sink) {
     if (line.isEmpty || line.startsWith('#EXTM3U')) return;
     if (line.startsWith('#EXTINF')) {
+      if (_metadataLine != null) _rejectedRecordCount++;
       _metadataLine = line;
       return;
     }
