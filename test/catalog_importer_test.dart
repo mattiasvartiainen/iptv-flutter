@@ -36,58 +36,63 @@ void main() {
 
   tearDown(() => adapter.close());
 
-  test(
-    'cold import persists items, ordered groups, series, FTS and session',
-    () async {
-      final server = await _serve(_playlist);
-      addTearDown(() => server.close(force: true));
-      final progress = <CatalogImportProgress>[];
-      final importer = CatalogImporter(databaseAdapter: adapter);
+  test('cold import persists catalog and queues searchable rows', () async {
+    final server = await _serve(_playlist);
+    addTearDown(() => server.close(force: true));
+    final progress = <CatalogImportProgress>[];
+    final importer = CatalogImporter(databaseAdapter: adapter);
 
-      final result = await importer.importCold(
-        playlistId: 'v9-playlist',
-        playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
-        onProgress: progress.add,
-      );
+    final result = await importer.importCold(
+      playlistId: 'v9-playlist',
+      playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
+      onProgress: progress.add,
+    );
 
-      final db = await adapter.database;
-      final items = await db.query('items', orderBy: 'ord');
-      final groups = await db.query('groups', orderBy: 'ord');
-      final series = await db.query('series_v8');
-      final sessions = await db.query('import_sessions');
-      final timings = jsonDecode(sessions.single['stage_timings']! as String);
+    final db = await adapter.database;
+    final items = await db.query('items', orderBy: 'ord');
+    final groups = await db.query('groups', orderBy: 'ord');
+    final series = await db.query('series_v8');
+    final sessions = await db.query('import_sessions');
+    final timings = jsonDecode(sessions.single['stage_timings']! as String);
 
-      expect(result.itemCount, 4);
-      expect(result.groupCount, 3);
-      expect(result.rejectedCount, 0);
-      expect(items.map((row) => row['ord']), [0, 1, 2, 3]);
-      expect(groups.map((row) => row['title']), ['News', 'Movies', 'Drama']);
-      expect(groups.map((row) => row['item_count']), [1, 1, 2]);
-      expect(series.single['title'], 'Example Show');
-      expect(series.single['season_count'], 1);
-      expect(series.single['episode_count'], 2);
-      expect(sessions.single['state'], 'done');
-      expect(sessions.single['items_new'], 4);
-      expect(timings['total'], isA<int>());
-      expect(
-        await db.rawQuery(
-          "SELECT rowid FROM items_fts WHERE items_fts MATCH 'Alpha'",
-        ),
-        hasLength(1),
-      );
-      expect(
-        progress.where((event) => event.phase == CatalogImportPhase.importing),
-        isNotEmpty,
-      );
-      expect(
-        progress
-            .where((event) => event.phase != CatalogImportPhase.starting)
-            .every((event) => event.importSessionId == sessions.single['id']),
-        isTrue,
-      );
-      expect(await db.query('media_items'), isEmpty);
-    },
-  );
+    expect(result.itemCount, 4);
+    expect(result.groupCount, 3);
+    expect(result.rejectedCount, 0);
+    expect(items.map((row) => row['ord']), [0, 1, 2, 3]);
+    expect(groups.map((row) => row['title']), ['News', 'Movies', 'Drama']);
+    expect(groups.map((row) => row['item_count']), [1, 1, 2]);
+    expect(series.single['title'], 'Example Show');
+    expect(series.single['season_count'], 1);
+    expect(series.single['episode_count'], 2);
+    expect(sessions.single['state'], 'done');
+    expect(sessions.single['items_new'], 4);
+    expect(timings['total'], isA<int>());
+    expect(await db.query('items_fts_queue'), hasLength(4));
+    expect(
+      await db.rawQuery(
+        "SELECT rowid FROM items_fts WHERE items_fts MATCH 'Alpha'",
+      ),
+      isEmpty,
+    );
+    await _drainCatalogSearchIndex(adapter, 'v9-playlist');
+    expect(
+      await db.rawQuery(
+        "SELECT rowid FROM items_fts WHERE items_fts MATCH 'Alpha'",
+      ),
+      hasLength(1),
+    );
+    expect(
+      progress.where((event) => event.phase == CatalogImportPhase.importing),
+      isNotEmpty,
+    );
+    expect(
+      progress
+          .where((event) => event.phase != CatalogImportPhase.starting)
+          .every((event) => event.importSessionId == sessions.single['id']),
+      isTrue,
+    );
+    expect(await db.query('media_items'), isEmpty);
+  });
 
   test(
     'repository can opt into v9 cold import without changing legacy default',
@@ -130,6 +135,44 @@ void main() {
       expect(sessions.map((row) => row['tier']), ['cold_import', 'row_diff']);
       expect(sessions.last['items_new'], 0);
       expect(sessions.last['items_changed'], 0);
+    },
+  );
+
+  test(
+    'v9 search indexing resumes queued work and reports its progress',
+    () async {
+      final server = await _serve(_playlist);
+      addTearDown(() => server.close(force: true));
+      await CatalogImporter(databaseAdapter: adapter).importCold(
+        playlistId: 'resume-search',
+        playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
+      );
+      final repository = SqliteCatalogRepository(
+        databaseAdapter: adapter,
+        autoStartSearchIndexWorker: true,
+      );
+
+      final queued = await repository.searchIndexStatus('resume-search');
+      expect(queued.totalItems, 4);
+      expect(queued.indexedItems, 0);
+      expect(queued.pendingItems, 4);
+
+      await repository.resumeSearchIndexing();
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      var status = queued;
+      while (status.pendingItems > 0 && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        status = await repository.searchIndexStatus('resume-search');
+      }
+
+      expect(status.pendingItems, 0);
+      expect(status.indexedItems, 4);
+      expect(
+        await (await adapter.database).rawQuery(
+          "SELECT rowid FROM items_fts WHERE items_fts MATCH 'Alpha'",
+        ),
+        hasLength(1),
+      );
     },
   );
 
@@ -373,9 +416,13 @@ BEGIN SELECT RAISE(ABORT, 'injected second-batch failure'); END
         'stream_url': 'https://stream.test/orphaned.m3u8',
       });
       final item = (await db.query('items')).single;
-      await db.insert('items_fts', {
-        'rowid': item['id'],
-        'title': item['title'],
+      await db.insert('items_fts_queue', {
+        'item_id': item['id'],
+        'playlist_id': 'interrupted-playlist',
+        'operation': 'upsert',
+        'old_title': null,
+        'priority': 1,
+        'queued_at': DateTime.now().millisecondsSinceEpoch,
       });
       final sessionId = await db.insert('import_sessions', {
         'playlist_id': 'interrupted-playlist',
@@ -403,7 +450,13 @@ BEGIN SELECT RAISE(ABORT, 'injected second-batch failure'); END
       expect(await db.query('groups'), isEmpty);
       expect(await db.query('series_v8'), isEmpty);
       expect(await db.query('import_rows'), isEmpty);
-      expect(await db.rawQuery('SELECT rowid FROM items_fts'), isEmpty);
+      expect(await db.query('items_fts_queue'), isEmpty);
+      expect(
+        await db.rawQuery(
+          "SELECT rowid FROM items_fts WHERE items_fts MATCH 'Orphaned'",
+        ),
+        isEmpty,
+      );
       expect((await db.query('import_sessions')).single['state'], 'aborted');
     },
   );
@@ -575,12 +628,22 @@ https://stream.test/a.m3u8
 ''';
 
       await _importText(importer, 'diff-playlist', first);
+      await _drainCatalogSearchIndex(adapter, 'diff-playlist');
       final db = await adapter.database;
       final before = await db.query('items', orderBy: 'ord');
       final alphaId = before.firstWhere((row) => row['title'] == 'Alpha')['id'];
       final gammaId = before.firstWhere((row) => row['title'] == 'Gamma')['id'];
 
       final update = await _importText(importer, 'diff-playlist', second);
+      expect(
+        await (await adapter.database).query(
+          'items_fts_queue',
+          where: 'playlist_id = ?',
+          whereArgs: ['diff-playlist'],
+        ),
+        hasLength(4),
+      );
+      await _drainCatalogSearchIndex(adapter, 'diff-playlist');
       final after = await db.query('items', orderBy: 'ord');
       expect(update.newCount, 1);
       expect(update.changedCount, 1);
@@ -777,6 +840,7 @@ https://stream.test/a.m3u8
     () async {
       final importer = CatalogImporter(databaseAdapter: adapter);
       await _importText(importer, 'reconcile-failure', _playlist);
+      await _drainCatalogSearchIndex(adapter, 'reconcile-failure');
       final db = await adapter.database;
       await db.execute('''
 CREATE TRIGGER fail_warm_update
@@ -891,6 +955,14 @@ Future<CatalogImportResult> _importText(
     await server.close(force: true);
   }
 }
+
+Future<int> _drainCatalogSearchIndex(
+  SqfliteDatabaseAdapter adapter,
+  String playlistId,
+) => SqliteCatalogRepository(
+  databaseAdapter: adapter,
+  autoStartSearchIndexWorker: false,
+).processCatalogSearchIndexQueue(playlistId: playlistId);
 
 Future<HttpServer> _serve(String playlist) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

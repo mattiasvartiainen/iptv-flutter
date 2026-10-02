@@ -112,12 +112,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> initialize() async {
     await AppStorageBootstrap.instance.initialize();
-    // Picks up index work left behind by a kill mid-import or by a schema
-    // migration that rebuilt the index; runs in the background.
     final repository = _catalogRepository;
     if (repository is SqliteCatalogRepository) {
-      unawaited(repository.resumeSearchIndexing());
       await repository.recoverAbandonedImports();
+      // Resume after recovery so an interrupted cold import cannot enqueue
+      // partial catalog rows while they are being removed.
+      unawaited(repository.resumeSearchIndexing());
     }
     await refreshHomeSectionVisibility();
     await refreshVerboseRefreshInfoSetting();

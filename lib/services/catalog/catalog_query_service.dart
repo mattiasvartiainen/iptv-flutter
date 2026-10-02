@@ -8,6 +8,8 @@ abstract interface class CatalogQueryService {
   /// Applies kind/group/search filters and returns a single page.
   Future<CatalogPage<CatalogItemSummary>> queryItems(CatalogQuery query);
 
+  Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId);
+
   Future<List<GroupSummary>> queryGroups(
     String playlistId, {
     required CatalogGroupKind kind,
@@ -203,6 +205,14 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     _sort(matches, query.sort);
     return _paginate(matches, offset: query.offset, limit: query.limit);
   }
+
+  @override
+  Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId) async =>
+      CatalogSearchIndexStatus(
+        totalItems: playlistId == this.playlistId ? _summaries.length : 0,
+        indexedItems: playlistId == this.playlistId ? _summaries.length : 0,
+        pendingItems: 0,
+      );
 
   @override
   Future<List<CatalogItemSummary>> homePreview(

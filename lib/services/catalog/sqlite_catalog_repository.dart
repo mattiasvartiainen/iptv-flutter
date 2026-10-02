@@ -273,10 +273,10 @@ class SqliteCatalogRepository
       final isWarmV9Import = tier == 'row_diff';
       await _databaseAdapter.transaction((txn) async {
         if (isColdV9Import) {
-          await txn.rawDelete(
-            'DELETE FROM items_fts WHERE rowid IN '
-            '(SELECT id FROM items WHERE playlist_id = ?)',
-            [playlistId],
+          await txn.delete(
+            'items_fts_queue',
+            where: 'playlist_id = ?',
+            whereArgs: [playlistId],
           );
           await txn.delete(
             'items',
@@ -361,11 +361,18 @@ class SqliteCatalogRepository
           );
         }
       }
-      final imported = await _catalogImporter.importPlaylist(
-        playlistId: resolvedPlaylistId,
-        playlistUrl: playlistUrl,
-        onProgress: onProgress,
-      );
+      _pausedIndexingPlaylists.add(resolvedPlaylistId);
+      late final CatalogImportResult imported;
+      try {
+        imported = await _catalogImporter.importPlaylist(
+          playlistId: resolvedPlaylistId,
+          playlistUrl: playlistUrl,
+          onProgress: onProgress,
+        );
+      } finally {
+        _pausedIndexingPlaylists.remove(resolvedPlaylistId);
+      }
+      _startCatalogSearchIndexWorker(resolvedPlaylistId);
       return CatalogLoadResult(
         playlistId: imported.playlistId,
         itemCount: imported.itemCount,
@@ -896,6 +903,37 @@ WHERE id = ?
       items: rows.map(CatalogItemSummary.fromRow).toList(growable: false),
       offset: query.offset,
       total: total,
+    );
+  }
+
+  @override
+  Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId) async {
+    final db = await _databaseAdapter.database;
+    final isV9 = await _hasV9Catalog(db, playlistId);
+    final table = isV9 ? 'items' : 'media_items';
+    final queueTable = isV9 ? 'items_fts_queue' : 'search_index_queue';
+    final idColumn = isV9 ? 'item_id' : 'media_item_id';
+    final rows = await db.rawQuery(
+      '''
+SELECT
+  (SELECT COUNT(*) FROM $table WHERE playlist_id = ?) AS total_items,
+  (SELECT COUNT(*) FROM $queueTable WHERE playlist_id = ?) AS pending_items,
+  (SELECT COUNT(*) FROM $queueTable q JOIN $table i
+    ON i.id = q.$idColumn
+    WHERE q.playlist_id = ? AND q.operation IN ('insert', 'upsert'))
+    AS pending_upserts
+''',
+      [playlistId, playlistId, playlistId],
+    );
+    final row = rows.single;
+    final totalItems = (row['total_items'] as num).toInt();
+    final pendingItems = (row['pending_items'] as num).toInt();
+    final pendingUpserts = (row['pending_upserts'] as num).toInt();
+    final indexedItems = totalItems - pendingUpserts;
+    return CatalogSearchIndexStatus(
+      totalItems: totalItems,
+      indexedItems: indexedItems < 0 ? 0 : indexedItems,
+      pendingItems: pendingItems,
     );
   }
 
@@ -3210,6 +3248,101 @@ WHERE series.playlist_id = ?
     for (final row in rows) {
       _startSearchIndexWorker(row['id']! as String);
     }
+    final catalogRows = await db.rawQuery(
+      'SELECT DISTINCT playlist_id FROM items_fts_queue',
+    );
+    for (final row in catalogRows) {
+      _startCatalogSearchIndexWorker(row['playlist_id']! as String);
+    }
+  }
+
+  void _startCatalogSearchIndexWorker(String playlistId) {
+    if (!autoStartSearchIndexWorker) return;
+    if (!_indexingPlaylists.add('catalog:$playlistId')) return;
+    unawaited(
+      processCatalogSearchIndexQueue(playlistId: playlistId)
+          .catchError((Object _, StackTrace stackTrace) => 0)
+          .whenComplete(() => _indexingPlaylists.remove('catalog:$playlistId')),
+    );
+  }
+
+  Future<int> processCatalogSearchIndexQueue({
+    String? playlistId,
+    int batchSize = searchIndexBatchSize,
+  }) async {
+    var processed = 0;
+    while (true) {
+      final batchCount = await _drainCatalogSearchIndexBatch(
+        playlistId: playlistId,
+        batchSize: batchSize,
+      );
+      if (batchCount == 0) return processed;
+      processed += batchCount;
+    }
+  }
+
+  Future<int> _drainCatalogSearchIndexBatch({
+    required String? playlistId,
+    required int batchSize,
+  }) async {
+    if (playlistId != null && _pausedIndexingPlaylists.contains(playlistId)) {
+      return 0;
+    }
+    return _databaseAdapter.transaction((txn) async {
+      final rows = await txn.query(
+        'items_fts_queue',
+        columns: const ['item_id', 'operation', 'old_title'],
+        where: playlistId == null ? null : 'playlist_id = ?',
+        whereArgs: playlistId == null ? null : [playlistId],
+        orderBy: 'priority, queued_at, item_id',
+        limit: batchSize,
+      );
+      if (rows.isEmpty) return 0;
+      if (playlistId != null && _pausedIndexingPlaylists.contains(playlistId)) {
+        return 0;
+      }
+
+      final queuedIds = <int>[];
+      final deleteEntries = <(int, String)>[];
+      final upsertIds = <int>[];
+      for (final row in rows) {
+        final itemId = (row['item_id'] as num).toInt();
+        queuedIds.add(itemId);
+        final operation = row['operation']! as String;
+        final oldTitle = row['old_title'] as String?;
+        if (oldTitle != null) deleteEntries.add((itemId, oldTitle));
+        if (operation == 'upsert') upsertIds.add(itemId);
+      }
+
+      for (final chunk in _chunked(deleteEntries, size: 300)) {
+        final values = <Object?>[];
+        for (final entry in chunk) {
+          values
+            ..add(entry.$1)
+            ..add(entry.$2);
+        }
+        final tuples = List.filled(chunk.length, "('delete', ?, ?)").join(', ');
+        await txn.rawInsert(
+          'INSERT INTO items_fts(items_fts, rowid, title) VALUES $tuples',
+          values,
+        );
+      }
+      for (final chunk in _chunked(upsertIds)) {
+        final placeholders = _placeholders(chunk.length);
+        await txn.rawInsert(
+          'INSERT INTO items_fts(rowid, title) '
+          'SELECT id, title FROM items WHERE id IN ($placeholders)',
+          chunk,
+        );
+      }
+      for (final chunk in _chunked(queuedIds)) {
+        await txn.rawDelete(
+          'DELETE FROM items_fts_queue WHERE item_id IN (${_placeholders(chunk.length)})',
+          chunk,
+        );
+      }
+      return rows.length;
+    });
   }
 
   /// Drains queued FTS changes in bounded batches so a refresh never has to

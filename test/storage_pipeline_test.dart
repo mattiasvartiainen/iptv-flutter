@@ -69,7 +69,7 @@ https://stream.test/beta-s01e02.m3u8
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '9');
+    expect(rows.first['value'], '10');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(
@@ -104,6 +104,7 @@ https://stream.test/beta-s01e02.m3u8
     expect(tableNames, contains('playback_progress_v8'));
     expect(tableNames, contains('watch_history_v8'));
     expect(tableNames, contains('hidden_groups_v8'));
+    expect(tableNames, contains('items_fts_queue'));
 
     for (final expectedColumn in const [
       'source_etag',
@@ -131,6 +132,7 @@ https://stream.test/beta-s01e02.m3u8
     expect(indexNames, contains('idx_items_group_sort'));
     expect(indexNames, contains('idx_items_series_episode'));
     expect(indexNames, contains('idx_series_v8_group_sort'));
+    expect(indexNames, contains('idx_items_fts_queue_priority'));
 
     for (final table in const [
       'favorites_v8',
@@ -252,6 +254,15 @@ https://stream.test/beta-s01e02.m3u8
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'items'",
     );
     expect(itemTable, hasLength(1));
+
+    migrations.add(const CatalogSearchV10Migration());
+    await adapter.initialize();
+
+    expect(await _readUserVersion(db), 10);
+    final queueTable = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'items_fts_queue'",
+    );
+    expect(queueTable, hasLength(1));
     final seriesTable = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'series_v8'",
     );

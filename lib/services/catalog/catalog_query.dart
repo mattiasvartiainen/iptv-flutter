@@ -204,6 +204,21 @@ class CatalogPlaybackProgress {
 }
 
 @immutable
+class CatalogSearchIndexStatus {
+  const CatalogSearchIndexStatus({
+    required this.totalItems,
+    required this.indexedItems,
+    required this.pendingItems,
+  });
+
+  final int totalItems;
+  final int indexedItems;
+  final int pendingItems;
+
+  bool get isIndexing => pendingItems > 0;
+}
+
+@immutable
 class GroupSummary {
   const GroupSummary({
     required this.id,

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/screens/catalog_screen.dart';
+import 'package:iptv_flutter/screens/search_screen.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
@@ -83,6 +84,44 @@ void main() {
       controller.selectedItem?.streamUrl,
       'https://example.invalid/live/news-24.m3u8',
     );
+  });
+
+  testWidgets('search filters results and opens the selected item', (
+    tester,
+  ) async {
+    const playlistId = 'search-playlist';
+    final service = InMemoryCatalogQueryService(playlistId, fixtureCatalog);
+    final controller = AppController(
+      catalogRepository: const FixtureCatalogRepository(),
+      catalogQueryService: service,
+      settingsRepository: _TestSettingsRepository(),
+    );
+    addTearDown(controller.dispose);
+    controller.screen = AppScreen.search;
+    await controller.catalogView.bind(service: service, playlistId: playlistId);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppScope(controller: controller, child: const SearchScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'News');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('News 24'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Movies'));
+    await tester.pumpAndSettle();
+    expect(find.text('No matching titles.'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Live'));
+    await tester.pumpAndSettle();
+    expect(find.text('News 24'), findsOneWidget);
+    await tester.tap(find.text('News 24'));
+    await tester.pumpAndSettle();
+    expect(controller.screen, AppScreen.details);
+    expect(controller.selectedItem?.id, 'news-24');
   });
 
   testWidgets(

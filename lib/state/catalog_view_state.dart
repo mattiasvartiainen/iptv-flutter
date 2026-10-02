@@ -106,6 +106,7 @@ class CatalogViewState extends ChangeNotifier {
   final PagedCollection<CatalogItemSummary> items = PagedCollection();
   final PagedCollection<SeriesSummary> series = PagedCollection();
   final PagedCollection<CatalogItemSummary> episodes = PagedCollection();
+  final PagedCollection<CatalogItemSummary> searchResults = PagedCollection();
 
   CatalogQueryService? _service;
   String? _playlistId;
@@ -120,6 +121,10 @@ class CatalogViewState extends ChangeNotifier {
   int? selectedGroupId;
   bool isLoadingGroups = false;
   String? groupsErrorMessage;
+  CatalogSearchIndexStatus? searchIndexStatus;
+  String _searchTerm = '';
+  CatalogItemKind? _searchKind;
+  int _searchStatusGeneration = 0;
 
   /// Total media rows for the bound playlist, used for empty-state decisions.
   int itemCount = 0;
@@ -136,10 +141,14 @@ class CatalogViewState extends ChangeNotifier {
     items.clear();
     series.clear();
     episodes.clear();
+    searchResults.clear();
     seasons = const [];
     browseGroups = const [];
     browseGroupKind = null;
     selectedGroupId = null;
+    searchIndexStatus = null;
+    _searchTerm = '';
+    _searchKind = null;
     await refreshHomeSections();
   }
 
@@ -149,15 +158,85 @@ class CatalogViewState extends ChangeNotifier {
     items.clear();
     series.clear();
     episodes.clear();
+    searchResults.clear();
     seasons = const [];
     browseGroups = const [];
     browseGroupKind = null;
     selectedGroupId = null;
+    searchIndexStatus = null;
+    _searchTerm = '';
+    _searchKind = null;
     homeLive = const [];
     homeMovies = const [];
     homeSeries = const [];
     itemCount = 0;
     _notify();
+  }
+
+  Future<void> search(String term, {CatalogItemKind? kind}) async {
+    final service = _service;
+    final playlistId = _playlistId;
+    if (service == null || playlistId == null) return;
+
+    _searchTerm = term.trim();
+    _searchKind = kind;
+    final normalizedTerm = _searchTerm;
+    final selectedKind = _searchKind;
+    if (normalizedTerm.isEmpty) {
+      searchResults.clear();
+    } else {
+      await searchResults.load(
+        (offset, limit) => service.queryItems(
+          CatalogQuery(
+            playlistId: playlistId,
+            kinds: selectedKind == null ? const [] : [selectedKind],
+            searchTerm: normalizedTerm,
+            offset: offset,
+            limit: limit,
+          ),
+        ),
+      );
+    }
+    await refreshSearchIndexStatus();
+  }
+
+  Future<void> refreshSearchIndexStatus() async {
+    final service = _service;
+    final playlistId = _playlistId;
+    if (service == null || playlistId == null) return;
+    final generation = ++_searchStatusGeneration;
+    final status = await service.searchIndexStatus(playlistId);
+    if (_playlistId != playlistId || generation != _searchStatusGeneration) {
+      return;
+    }
+    final previousPending = searchIndexStatus?.pendingItems;
+    searchIndexStatus = status;
+    _notify();
+    if (previousPending != null &&
+        previousPending > 0 &&
+        status.pendingItems == 0 &&
+        _searchTerm.isNotEmpty) {
+      await _reloadSearchResults();
+    }
+  }
+
+  Future<void> _reloadSearchResults() async {
+    final service = _service;
+    final playlistId = _playlistId;
+    if (service == null || playlistId == null || _searchTerm.isEmpty) return;
+    final term = _searchTerm;
+    final kind = _searchKind;
+    await searchResults.load(
+      (offset, limit) => service.queryItems(
+        CatalogQuery(
+          playlistId: playlistId,
+          kinds: kind == null ? const [] : [kind],
+          searchTerm: term,
+          offset: offset,
+          limit: limit,
+        ),
+      ),
+    );
   }
 
   Future<void> refreshHomeSections() async {
@@ -321,6 +400,7 @@ class CatalogViewState extends ChangeNotifier {
     items.dispose();
     series.dispose();
     episodes.dispose();
+    searchResults.dispose();
     super.dispose();
   }
 }

@@ -27,7 +27,7 @@ class _IptvAppState extends State<IptvApp> {
   @override
   void initState() {
     super.initState();
-    controller.initialize();
+    if (widget.controller == null) controller.initialize();
     if (IptvApp.autoRunPlaybackSpike) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         controller.openPlaybackSpike();

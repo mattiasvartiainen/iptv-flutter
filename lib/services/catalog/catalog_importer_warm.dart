@@ -300,18 +300,49 @@ ON CONFLICT(playlist_id, kind, title) DO UPDATE SET
 
     await txn.rawInsert(
       '''
-INSERT INTO items_fts(items_fts, rowid, title)
-SELECT 'delete', i.id, i.title
-FROM items i
-WHERE i.playlist_id = ? AND (
-  i.item_key IN (SELECT item_key FROM import_rows WHERE import_id = ?)
-  OR (? = 0 AND NOT EXISTS(
-    SELECT 1 FROM import_seen s WHERE s.import_id = ? AND s.item_key = i.item_key
-  ))
+INSERT INTO items_fts_queue(
+  item_id, playlist_id, operation, old_title, priority, queued_at
 )
+SELECT i.id, i.playlist_id, 'upsert', i.title, r.kind, ?
+FROM items i
+JOIN import_rows r ON r.item_key = i.item_key AND r.import_id = ?
+WHERE i.playlist_id = ?
+ON CONFLICT(item_id) DO UPDATE SET
+  operation = 'upsert',
+  old_title = CASE
+    WHEN items_fts_queue.operation = 'upsert'
+      AND items_fts_queue.old_title IS NULL THEN NULL
+    ELSE COALESCE(items_fts_queue.old_title, excluded.old_title)
+  END,
+  priority = excluded.priority,
+  queued_at = excluded.queued_at
 ''',
-      [playlistId, sessionId, result.itemsRejected, sessionId],
+      [DateTime.now().millisecondsSinceEpoch, sessionId, playlistId],
     );
+    if (result.itemsRejected == 0) {
+      await txn.rawInsert(
+        '''
+INSERT INTO items_fts_queue(
+  item_id, playlist_id, operation, old_title, priority, queued_at
+)
+SELECT i.id, i.playlist_id, 'delete', i.title, i.kind, ?
+FROM items i
+WHERE i.playlist_id = ? AND NOT EXISTS(
+  SELECT 1 FROM import_seen s WHERE s.import_id = ? AND s.item_key = i.item_key
+)
+ON CONFLICT(item_id) DO UPDATE SET
+  operation = 'delete',
+  old_title = CASE
+    WHEN items_fts_queue.operation = 'upsert'
+      AND items_fts_queue.old_title IS NULL THEN NULL
+    ELSE COALESCE(items_fts_queue.old_title, excluded.old_title)
+  END,
+  priority = excluded.priority,
+  queued_at = excluded.queued_at
+''',
+        [DateTime.now().millisecondsSinceEpoch, playlistId, sessionId],
+      );
+    }
 
     await txn.rawInsert(
       '''
@@ -346,6 +377,27 @@ ON CONFLICT(playlist_id, item_key) DO UPDATE SET
 ''',
       [playlistId, playlistId, sessionId],
     );
+    await txn.rawInsert(
+      '''
+INSERT INTO items_fts_queue(
+  item_id, playlist_id, operation, old_title, priority, queued_at
+)
+SELECT i.id, i.playlist_id, 'upsert', NULL, i.kind, ?
+FROM items i
+JOIN import_rows r ON r.item_key = i.item_key AND r.import_id = ?
+WHERE i.playlist_id = ?
+ON CONFLICT(item_id) DO UPDATE SET
+  operation = 'upsert',
+  old_title = CASE
+    WHEN items_fts_queue.operation = 'upsert'
+      AND items_fts_queue.old_title IS NULL THEN NULL
+    ELSE COALESCE(items_fts_queue.old_title, excluded.old_title)
+  END,
+  priority = excluded.priority,
+  queued_at = excluded.queued_at
+''',
+      [DateTime.now().millisecondsSinceEpoch, sessionId, playlistId],
+    );
 
     await txn.rawUpdate(
       '''
@@ -372,15 +424,6 @@ DELETE FROM items WHERE playlist_id = ? AND NOT EXISTS (
       );
     }
 
-    await txn.rawInsert(
-      '''
-INSERT INTO items_fts(rowid, title)
-SELECT i.id, i.title FROM items i
-JOIN import_rows r ON r.item_key = i.item_key
-WHERE r.import_id = ? AND i.playlist_id = ?
-''',
-      [sessionId, playlistId],
-    );
     await txn.rawUpdate(
       '''
 UPDATE groups SET item_count = (

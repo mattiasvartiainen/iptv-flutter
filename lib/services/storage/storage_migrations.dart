@@ -632,6 +632,38 @@ CREATE TABLE IF NOT EXISTS import_sessions (
   }
 }
 
+class CatalogSearchV10Migration implements StorageMigration {
+  const CatalogSearchV10Migration();
+
+  @override
+  int get version => 10;
+
+  @override
+  String get name => 'catalog_search_v10';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS items_fts_queue (
+  item_id INTEGER PRIMARY KEY,
+  playlist_id TEXT NOT NULL,
+  operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+  old_title TEXT,
+  priority INTEGER NOT NULL CHECK (priority IN (1, 2, 3)),
+  queued_at INTEGER NOT NULL
+)
+''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_items_fts_queue_priority '
+      'ON items_fts_queue(priority, queued_at, item_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_items_fts_queue_playlist '
+      'ON items_fts_queue(playlist_id, priority)',
+    );
+  }
+}
+
 const List<String> _v9CatalogStatements = [
   '''
 CREATE TABLE IF NOT EXISTS groups (

@@ -387,10 +387,19 @@ class CatalogImporter {
       final itemKeys = rows.map((row) => row.itemKey).toList(growable: false);
       for (final keyChunk in _chunks(itemKeys, 500)) {
         await txn.rawInsert(
-          'INSERT INTO items_fts(rowid, title) '
-          'SELECT id, title FROM items WHERE playlist_id = ? '
-          'AND item_key IN (${List.filled(keyChunk.length, '?').join(', ')})',
-          [playlistId, ...keyChunk],
+          '''
+INSERT INTO items_fts_queue(
+  item_id, playlist_id, operation, old_title, priority, queued_at
+)
+SELECT id, playlist_id, 'upsert', NULL, kind, ?
+FROM items WHERE playlist_id = ?
+  AND item_key IN (${List.filled(keyChunk.length, '?').join(', ')})
+ON CONFLICT(item_id) DO UPDATE SET
+  operation = 'upsert',
+  priority = excluded.priority,
+  queued_at = excluded.queued_at
+''',
+          [DateTime.now().millisecondsSinceEpoch, playlistId, ...keyChunk],
         );
       }
     });
@@ -481,10 +490,10 @@ GROUP BY series_key, playlist_id, group_id
     required int acceptedItems,
   }) async {
     await _databaseAdapter.transaction((txn) async {
-      await txn.rawDelete(
-        'DELETE FROM items_fts WHERE rowid IN '
-        '(SELECT id FROM items WHERE playlist_id = ?)',
-        [playlistId],
+      await txn.delete(
+        'items_fts_queue',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
       );
       await txn.delete(
         'items',
