@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../models/content_item.dart';
 import 'catalog_classifier.dart';
 import 'catalog_normalizer.dart';
+import 'catalog_query.dart';
 
 const int _wordMask = 0xffffffff;
 final BigInt _twoTo63 = BigInt.from(1) << 63;

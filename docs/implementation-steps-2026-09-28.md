@@ -521,52 +521,87 @@ Tests:
 
 **Exit criteria:** The query layer supports the complete target information architecture.
 
+**Status:** Implemented 2026-10-02. Added `GroupSummary`, group IDs on item/series
+summaries, optional `CatalogQuery.groupId`, and APIs for group summaries, group-scoped
+items and series. Group summaries are scoped by playlist/kind, ordered by first playlist
+position, carry item counts, and exclude profile-hidden groups. Direct group pages and
+global v9 item/series queries also exclude hidden groups. No selected group means all
+groups, preserving the current flat browsing behavior. `SettingsRepository` now exposes
+profile-scoped hidden-group persistence for v9. The legacy list-of-group-names API remains
+for compatibility. Tests cover v9 and in-memory grouping, counts/order, all-groups default,
+group paging, series-in-group and hidden-group filtering.
+
+**Status:** Implemented 2026-10-02. Added `GroupSummary`, group IDs on item/series
+summaries, optional `CatalogQuery.groupId`, and APIs for group summaries, items in a group,
+and series in a group. V9 group summaries are playlist/kind scoped, ordered by first
+playlist position, carry item counts, and exclude profile-hidden groups. Direct group pages
+and global v9 item/series queries also exclude hidden groups. No selected group means all
+groups, preserving current flat results. Legacy group names and group-title filters remain
+available for compatibility. Tests cover v9 and in-memory grouping, counts/order,
+all-groups default, group paging, series-in-group and hidden-group filtering.
+
+**Status:** Implemented 2026-10-02. Added `GroupSummary`, group IDs on item/series
+summaries, optional `CatalogQuery.groupId`, and APIs for group summaries, items in a group,
+and series in a group. Group summaries are playlist/kind scoped, ordered by first playlist
+position, carry item counts, and exclude profile-hidden groups. Direct group pages and
+global v9 item/series queries also exclude hidden groups. No selected group means all
+groups, preserving current flat results. The old group-name API remains for compatibility.
+Tests cover v9 and in-memory grouping, counts/order, all-items behavior, group paging,
+series-in-group and hidden-group filtering.
+
 ***
 
-## Step 11 — Implement Group-First Navigation
+## Step 11 — Add Desktop Group Filtering
 
-**Goal:** Change the UI in small screen-level slices.
+**Goal:** Let desktop users optionally narrow Live/Movies/Series to one provider group.
+Defer group UX decisions for TVs and phones; keep their current layouts in this step.
 
-Recommended order:
+Desktop behavior:
 
-1. Live group list.
-2. Live group items.
-3. Movie group list.
-4. Movie group items.
-5. Series group list.
-6. Series list within a group.
-7. Seasons.
-8. Episodes.
-9. “All channels”.
-10. Hidden group management.
-11. Focus restoration.
+- Keep Live TV, Movies and Series as the primary navigation choices.
+- Add a left-side group selector scoped to the active content kind.
+- Default to “All groups”; selecting one group filters the main results to it.
+- Changing content kind resets selection to “All groups”.
+- Continue using bounded paged queries; never load a whole kind into Dart.
+- Clear selection if its group disappears after refresh.
+- Keep TV/phone layouts unchanged pending a separate UX decision.
 
-Refactor:
+Product direction confirmed 2026-10-02: the desktop selector is a left menu; it does not
+force a drill-down screen. Selecting All is the default and shows the whole active kind;
+selecting one provider group filters the same main results area. Design and navigation for
+other devices remain deferred.
+
+Likely files:
 
 - `catalog_screen.dart`
-- New `group_list_screen.dart`
-- New `group_items_screen.dart`
 - `CatalogViewState`
-- `AppScreen`
-- App controller navigation
+- `AppController` only if selection state needs to be persisted there
 
 Use:
 
-- A `PagedCollection<GroupSummary>`.
-- Per-group item collections.
-- A small LRU cache for recently visited groups.
-- Group-scoped pagination.
-- Remembered focus per group.
+- A bounded group list loaded through `queryGroups`.
+- One selected group ID per kind, with null meaning all groups.
+- The existing item/series page collections reloaded with the optional group ID.
+- Clear selected-state and keyboard/focus semantics.
 
 Widget tests:
 
-- Opening each content kind shows groups.
-- Opening a group shows only its items.
-- Back navigation restores group focus.
+- Desktop defaults to all items of the selected kind.
+- Selecting a group filters items/series and updates the displayed count/results.
+- Switching kind resets the filter to all groups.
 - Hidden groups are absent.
-- Series navigation remains usable with a remote.
+- TV/phone layout remains unchanged.
 
-**Exit criteria:** No normal browsing screen performs an unscoped full-kind query.
+**Exit criteria:** Desktop group filtering is optional, all-by-default, and backed by bounded
+queries; other device layouts remain unchanged.
+
+**Status:** Implemented 2026-10-02. `CatalogViewState` loads the active kind's group
+summaries and retains a nullable selected group; null means All. Selecting a group reloads
+the existing paged Live/Movies/Series collection through the group-scoped API. `CatalogScreen`
+renders a counted left-side selector on Windows/Linux/macOS at wide desktop widths; narrow
+windows and TV/phone platforms retain the existing layout. The widget test verifies All by
+default, one-group filtering and returning to All. Non-desktop group presentation remains
+deferred by product direction.
 
 ***
 

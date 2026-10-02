@@ -26,6 +26,8 @@ enum CatalogItemKind {
       this == CatalogItemKind.live ? ContentType.live : ContentType.vod;
 }
 
+enum CatalogGroupKind { live, movie, series }
+
 enum CatalogSort {
   /// Alphabetical by `sort_title`.
   title,
@@ -75,6 +77,7 @@ class CatalogItemSummary {
     required this.sortTitle,
     required this.kind,
     this.group,
+    this.groupId,
     this.logoUrl,
     this.artworkUrl,
     this.sourceIndex = 0,
@@ -86,6 +89,7 @@ class CatalogItemSummary {
   final String sortTitle;
   final CatalogItemKind kind;
   final String? group;
+  final int? groupId;
   final String? logoUrl;
   final String? artworkUrl;
   final int sourceIndex;
@@ -104,6 +108,7 @@ class CatalogItemSummary {
             ? CatalogItemKind.values[(row['kind'] as int) - 1]
             : CatalogItemKind.fromStorage(row['content_type'] as String?),
         group: (row['group_title'] ?? row['group_title_v9']) as String?,
+        groupId: row['group_id'] as int?,
         logoUrl: row['logo_url'] as String?,
         artworkUrl: (row['artwork_url'] ?? row['logo_url']) as String?,
         sourceIndex: (row['source_index'] ?? row['ord']) as int? ?? 0,
@@ -127,6 +132,7 @@ class SeriesSummary {
     required this.seasonCount,
     required this.episodeCount,
     this.artworkUrl,
+    this.groupId,
   });
 
   final String id;
@@ -135,6 +141,7 @@ class SeriesSummary {
   final int seasonCount;
   final int episodeCount;
   final String? artworkUrl;
+  final int? groupId;
 
   static SeriesSummary fromRow(Map<String, Object?> row) => SeriesSummary(
     id: (row['id'] ?? row['series_key']).toString(),
@@ -143,6 +150,7 @@ class SeriesSummary {
     seasonCount: (row['season_count'] as int?) ?? 0,
     episodeCount: (row['episode_count'] as int?) ?? 0,
     artworkUrl: row['artwork_url'] as String?,
+    groupId: row['group_id'] as int?,
   );
 
   @override
@@ -195,6 +203,34 @@ class CatalogPlaybackProgress {
   final DateTime updatedAt;
 }
 
+@immutable
+class GroupSummary {
+  const GroupSummary({
+    required this.id,
+    required this.kind,
+    required this.title,
+    required this.sortTitle,
+    required this.itemCount,
+    required this.ordinal,
+  });
+
+  final int id;
+  final CatalogGroupKind kind;
+  final String title;
+  final String sortTitle;
+  final int itemCount;
+  final int ordinal;
+
+  static GroupSummary fromRow(Map<String, Object?> row) => GroupSummary(
+    id: row['id']! as int,
+    kind: CatalogGroupKind.values[(row['kind']! as int) - 1],
+    title: row['title']! as String,
+    sortTitle: (row['sort_title'] as String?) ?? row['title']! as String,
+    itemCount: (row['item_count'] as num?)?.toInt() ?? 0,
+    ordinal: row['ord'] as int? ?? 0,
+  );
+}
+
 /// Default number of rows fetched per catalog page.
 const int kCatalogPageSize = 100;
 
@@ -207,6 +243,7 @@ class CatalogQuery {
     required this.playlistId,
     this.kinds = const [],
     this.group,
+    this.groupId,
     this.searchTerm,
     this.offset = 0,
     this.limit = kCatalogPageSize,
@@ -219,6 +256,7 @@ class CatalogQuery {
   /// Empty means "any kind".
   final List<CatalogItemKind> kinds;
   final String? group;
+  final int? groupId;
   final String? searchTerm;
   final int offset;
   final int limit;
@@ -235,6 +273,7 @@ class CatalogQuery {
     String? playlistId,
     List<CatalogItemKind>? kinds,
     Object? group = _unset,
+    Object? groupId = _unset,
     Object? searchTerm = _unset,
     int? offset,
     int? limit,
@@ -243,6 +282,7 @@ class CatalogQuery {
     playlistId: playlistId ?? this.playlistId,
     kinds: kinds ?? this.kinds,
     group: identical(group, _unset) ? this.group : group as String?,
+    groupId: identical(groupId, _unset) ? this.groupId : groupId as int?,
     searchTerm: identical(searchTerm, _unset)
         ? this.searchTerm
         : searchTerm as String?,
@@ -254,7 +294,7 @@ class CatalogQuery {
   /// Identity of the result set, ignoring paging position.
   String get resultSetKey =>
       '$playlistId|${kinds.map((k) => k.name).join(",")}|'
-      '${group ?? ""}|${searchTerm?.trim() ?? ""}|${sort.name}';
+      '${group ?? ""}|${groupId ?? ""}|${searchTerm?.trim() ?? ""}|${sort.name}';
 
   @override
   bool operator ==(Object other) =>

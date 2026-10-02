@@ -911,6 +911,9 @@ WHERE id = ?
         'SELECT $_v9SummaryColumns FROM items m '
         'JOIN groups g ON g.id = m.group_id '
         'WHERE m.playlist_id = ? AND m.kind = ? '
+        "AND NOT EXISTS (SELECT 1 FROM hidden_groups_v8 h "
+        'WHERE h.playlist_id = m.playlist_id AND h.kind = g.kind '
+        "AND h.group_title = g.title AND h.profile_id = 'default') "
         'ORDER BY m.sort_title, m.id LIMIT ?',
         [playlistId, _v9KindForItem(kind), limit],
       );
@@ -1114,6 +1117,180 @@ ORDER BY season_number
   }
 
   @override
+  Future<List<GroupSummary>> queryGroups(
+    String playlistId, {
+    required CatalogGroupKind kind,
+    String profileId = 'default',
+  }) async {
+    final db = await _databaseAdapter.database;
+    if (await _hasV9Catalog(db, playlistId)) {
+      final rows = await db.rawQuery(
+        '''
+SELECT g.id, g.kind, g.title, g.sort_title, g.item_count, g.ord
+FROM groups g
+WHERE g.playlist_id = ? AND g.kind = ?
+  AND NOT EXISTS (
+    SELECT 1 FROM hidden_groups_v8 h
+    WHERE h.playlist_id = g.playlist_id AND h.kind = g.kind
+      AND h.group_title = g.title AND h.profile_id = ?
+  )
+ORDER BY g.ord, g.sort_title, g.id
+''',
+        [playlistId, _v9GroupKindValue(kind), profileId],
+      );
+      return rows.map(GroupSummary.fromRow).toList(growable: false);
+    }
+
+    final legacyKind = switch (kind) {
+      CatalogGroupKind.live => 'live',
+      CatalogGroupKind.movie => 'movie',
+      CatalogGroupKind.series => 'episode',
+    };
+    final rows = await db.rawQuery(
+      '''
+SELECT MIN(m.rowid) AS id, m.group_title AS title,
+       LOWER(TRIM(m.group_title)) AS sort_title, COUNT(*) AS item_count,
+       MIN(m.source_index) AS ord
+FROM media_items m
+WHERE m.playlist_id = ? AND m.content_type = ?
+  AND m.group_title IS NOT NULL AND m.group_title <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM hidden_categories h
+    JOIN categories c ON c.id = h.category_id
+    WHERE h.playlist_id = m.playlist_id AND h.profile_id = ?
+      AND c.provider_group_title = m.group_title
+  )
+GROUP BY m.group_title
+ORDER BY MIN(m.source_index), LOWER(TRIM(m.group_title))
+''',
+      [playlistId, legacyKind, profileId],
+    );
+    return rows
+        .map(
+          (row) => GroupSummary(
+            id: row['id']! as int,
+            kind: kind,
+            title: row['title']! as String,
+            sortTitle: row['sort_title']! as String,
+            itemCount: (row['item_count'] as num).toInt(),
+            ordinal: (row['ord'] as num).toInt(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<CatalogPage<CatalogItemSummary>> itemsInGroup(
+    String playlistId,
+    int groupId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) async {
+    final db = await _databaseAdapter.database;
+    if (await _hasV9Catalog(db, playlistId)) {
+      final groupRows = await db.query(
+        'groups',
+        columns: const ['id'],
+        where: 'id = ? AND playlist_id = ?',
+        whereArgs: [groupId, playlistId],
+        limit: 1,
+      );
+      if (groupRows.isEmpty) return const CatalogPage.empty();
+      if (await _isV9GroupHidden(
+        db,
+        playlistId: playlistId,
+        groupId: groupId,
+        profileId: 'default',
+      )) {
+        return const CatalogPage.empty();
+      }
+      return _queryV9Items(
+        db,
+        CatalogQuery(
+          playlistId: playlistId,
+          groupId: groupId,
+          offset: offset,
+          limit: limit,
+          sort: sort,
+        ),
+      );
+    }
+
+    final groupRows = await db.rawQuery(
+      'SELECT group_title, content_type FROM media_items '
+      'WHERE playlist_id = ? AND rowid = ? LIMIT 1',
+      [playlistId, groupId],
+    );
+    if (groupRows.isEmpty) return const CatalogPage.empty();
+    final kind = CatalogItemKind.fromStorage(
+      groupRows.single['content_type'] as String?,
+    );
+    return queryItems(
+      CatalogQuery(
+        playlistId: playlistId,
+        kinds: [kind],
+        group: groupRows.single['group_title'] as String?,
+        offset: offset,
+        limit: limit,
+        sort: sort,
+      ),
+    );
+  }
+
+  @override
+  Future<CatalogPage<SeriesSummary>> seriesInGroup(
+    String playlistId,
+    int groupId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    String? searchTerm,
+  }) async {
+    final db = await _databaseAdapter.database;
+    if (!await _hasV9Catalog(db, playlistId)) {
+      return CatalogPage<SeriesSummary>(
+        items: const [],
+        offset: offset,
+        total: 0,
+      );
+    }
+    final groupRows = await db.query(
+      'groups',
+      columns: const ['id', 'kind'],
+      where: 'id = ? AND playlist_id = ?',
+      whereArgs: [groupId, playlistId],
+      limit: 1,
+    );
+    if (groupRows.isEmpty || groupRows.single['kind'] != 3) {
+      return CatalogPage<SeriesSummary>(
+        items: const [],
+        offset: offset,
+        total: 0,
+      );
+    }
+    if (await _isV9GroupHidden(
+      db,
+      playlistId: playlistId,
+      groupId: groupId,
+      profileId: 'default',
+    )) {
+      return CatalogPage<SeriesSummary>(
+        items: const [],
+        offset: offset,
+        total: 0,
+      );
+    }
+    return _queryV9Series(
+      db,
+      playlistId,
+      offset: offset,
+      limit: limit,
+      searchTerm: searchTerm,
+      groupId: groupId,
+    );
+  }
+
+  @override
   Future<ContentItem?> itemById(String itemId) async {
     final db = await _databaseAdapter.database;
     final rowId = int.tryParse(itemId);
@@ -1258,7 +1435,7 @@ WHERE m.id = ? LIMIT 1
 
   static const String _v9SummaryColumns =
       'm.id AS id, m.title AS title, m.sort_title AS sort_title, '
-      'm.kind AS kind, g.title AS group_title, m.logo_url AS logo_url, '
+      'm.kind AS kind, g.id AS group_id, g.title AS group_title, m.logo_url AS logo_url, '
       'm.logo_url AS artwork_url, m.ord AS ord, '
       'm.episode_number AS episode_number';
 
@@ -1281,6 +1458,23 @@ WHERE m.id = ? LIMIT 1
     return rows.isNotEmpty;
   }
 
+  Future<bool> _isV9GroupHidden(
+    DatabaseExecutor db, {
+    required String playlistId,
+    required int groupId,
+    required String profileId,
+  }) async {
+    final rows = await db.rawQuery(
+      '''
+SELECT 1 FROM groups g JOIN hidden_groups_v8 h
+ON h.playlist_id = g.playlist_id AND h.kind = g.kind AND h.group_title = g.title
+WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
+''',
+      [groupId, playlistId, profileId],
+    );
+    return rows.isNotEmpty;
+  }
+
   Future<CatalogPage<CatalogItemSummary>> _queryV9Items(
     DatabaseExecutor db,
     CatalogQuery query,
@@ -1295,7 +1489,14 @@ WHERE m.id = ? LIMIT 1
         total: 0,
       );
     }
-    final clauses = <String>['m.playlist_id = ?'];
+    final clauses = <String>[
+      'm.playlist_id = ?',
+      '''NOT EXISTS (
+        SELECT 1 FROM hidden_groups_v8 h
+        WHERE h.playlist_id = m.playlist_id AND h.kind = g.kind
+          AND h.group_title = g.title AND h.profile_id = 'default'
+      )''',
+    ];
     final args = <Object?>[query.playlistId];
     if (fts != null) {
       clauses.add('items_fts MATCH ?');
@@ -1310,6 +1511,10 @@ WHERE m.id = ? LIMIT 1
     if (query.group != null) {
       clauses.add('g.title = ?');
       args.add(query.group);
+    }
+    if (query.groupId != null) {
+      clauses.add('m.group_id = ?');
+      args.add(query.groupId);
     }
     final from = fts == null
         ? 'items m JOIN groups g ON g.id = m.group_id'
@@ -1348,9 +1553,21 @@ WHERE m.id = ? LIMIT 1
     required int offset,
     required int limit,
     String? searchTerm,
+    int? groupId,
   }) async {
-    final clauses = <String>['s.playlist_id = ?'];
+    final clauses = <String>[
+      's.playlist_id = ?',
+      '''NOT EXISTS (
+        SELECT 1 FROM hidden_groups_v8 h
+        WHERE h.playlist_id = s.playlist_id AND h.kind = g.kind
+          AND h.group_title = g.title AND h.profile_id = 'default'
+      )''',
+    ];
     final args = <Object?>[playlistId];
+    if (groupId != null) {
+      clauses.add('s.group_id = ?');
+      args.add(groupId);
+    }
     final term = searchTerm?.trim();
     if (term != null && term.isNotEmpty) {
       clauses.add('s.sort_title LIKE ? ESCAPE ?');
@@ -1361,7 +1578,7 @@ WHERE m.id = ? LIMIT 1
     final where = clauses.join(' AND ');
     final total = await _countRows(
       db,
-      from: 'series_v8 s',
+      from: 'series_v8 s JOIN groups g ON g.id = s.group_id',
       where: where,
       args: args,
     );
@@ -1374,8 +1591,9 @@ WHERE m.id = ? LIMIT 1
     }
     final rows = await db.rawQuery(
       'SELECT s.series_key AS series_key, s.title, s.sort_title, '
-      's.artwork_url, s.season_count, s.episode_count '
-      'FROM series_v8 s WHERE $where ORDER BY s.sort_title, s.series_key '
+      's.artwork_url, s.season_count, s.episode_count, s.group_id '
+      'FROM series_v8 s JOIN groups g ON g.id = s.group_id '
+      'WHERE $where ORDER BY s.sort_title, s.series_key '
       'LIMIT ? OFFSET ?',
       [...args, limit, offset],
     );
@@ -1421,6 +1639,12 @@ WHERE m.id = ? LIMIT 1
     CatalogItemKind.movie => 2,
     CatalogItemKind.episode => 3,
     CatalogItemKind.unknown => 0,
+  };
+
+  static int _v9GroupKindValue(CatalogGroupKind kind) => switch (kind) {
+    CatalogGroupKind.live => 1,
+    CatalogGroupKind.movie => 2,
+    CatalogGroupKind.series => 3,
   };
 
   ContentItem _mapV9RowToItem(Map<String, Object?> row) => ContentItem(

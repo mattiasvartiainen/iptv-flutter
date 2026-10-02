@@ -91,6 +91,43 @@ void main() {
       expect(page.isEmpty, isTrue);
       expect(page.total, 0);
     });
+
+    test(
+      'supports all-groups default and optional single-group paging',
+      () async {
+        final all = await service.queryItems(
+          const CatalogQuery(playlistId: 'p1', kinds: [CatalogItemKind.live]),
+        );
+        expect(all.total, 3);
+
+        final groups = await service.queryGroups(
+          'p1',
+          kind: CatalogGroupKind.live,
+        );
+        expect(groups.map((group) => group.title), ['News', 'Sports']);
+        expect(groups.map((group) => group.itemCount), [2, 1]);
+
+        final selected = await service.itemsInGroup(
+          'p1',
+          groups.first.id,
+          limit: 1,
+        );
+        expect(selected.total, 2);
+        expect(selected.items, hasLength(1));
+        expect(selected.items.single.group, 'News');
+      },
+    );
+
+    test('series can be filtered to the selected series group', () async {
+      final groups = await service.queryGroups(
+        'p1',
+        kind: CatalogGroupKind.series,
+      );
+      expect(groups, hasLength(1));
+      final series = await service.seriesInGroup('p1', groups.single.id);
+      expect(series.total, 1);
+      expect(series.items.single.title, 'Pine Gap');
+    });
   });
 
   group('SqliteCatalogRepository as CatalogQueryService', () {

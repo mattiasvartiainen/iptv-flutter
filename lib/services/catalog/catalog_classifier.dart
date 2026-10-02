@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
 
-enum CatalogGroupKind { live, movie, series }
-
 @immutable
 class CatalogClassification {
   const CatalogClassification({

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
+import 'package:iptv_flutter/models/content_item.dart';
+import 'package:iptv_flutter/screens/catalog_screen.dart';
+import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
+import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
+import 'package:iptv_flutter/widgets/app_scope.dart';
 
 void main() {
   Future<(AppController, String)> pumpLoadedApp(WidgetTester tester) async {
@@ -79,6 +84,62 @@ void main() {
       'https://example.invalid/live/news-24.m3u8',
     );
   });
+
+  testWidgets(
+    'desktop group menu defaults to all and filters one group',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final settings = _TestSettingsRepository();
+      final service = InMemoryCatalogQueryService(
+        'desktop-playlist',
+        fixtureCatalog,
+      );
+      final controller = AppController(
+        catalogRepository: const FixtureCatalogRepository(),
+        catalogQueryService: service,
+        settingsRepository: settings,
+        playbackAdapter: FakePlaybackAdapter(),
+      );
+      addTearDown(controller.dispose);
+      controller.screen = AppScreen.liveCatalog;
+      controller.catalogType = ContentType.live;
+      await controller.catalogView.bind(
+        service: service,
+        playlistId: 'desktop-playlist',
+      );
+      await controller.catalogView.showItems(CatalogItemKind.live);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppScope(controller: controller, child: const CatalogScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('GROUPS'), findsOneWidget);
+      expect(find.text('All groups'), findsOneWidget);
+      expect(controller.catalogView.selectedGroupId, isNull);
+      expect(controller.catalogView.items.total, 3);
+
+      await tester.tap(find.widgetWithText(ListTile, 'Sports'));
+      await tester.pumpAndSettle();
+      expect(controller.catalogView.selectedGroupId, isNotNull);
+      expect(controller.catalogView.items.total, 1);
+      expect(controller.catalogView.items.items.single.title, 'World Sports');
+
+      await tester.tap(find.widgetWithText(ListTile, 'All groups'));
+      await tester.pumpAndSettle();
+      expect(controller.catalogView.selectedGroupId, isNull);
+      expect(controller.catalogView.items.total, 3);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }
 
 class _TestSettingsRepository implements SettingsRepository {
@@ -157,6 +218,23 @@ class _TestSettingsRepository implements SettingsRepository {
   Future<void> setCategoryHidden({
     required String playlistId,
     required String categoryId,
+    required bool hidden,
+    String? profileId,
+  }) async {}
+
+  @override
+  Future<bool> isGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
+    String? profileId,
+  }) async => false;
+
+  @override
+  Future<void> setGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
     required bool hidden,
     String? profileId,
   }) async {}

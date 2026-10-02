@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'catalog_classifier.dart';
 import 'catalog_query.dart';
 
 class CatalogImportBatchKeys {

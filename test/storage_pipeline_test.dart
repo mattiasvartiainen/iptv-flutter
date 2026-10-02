@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 import 'package:iptv_flutter/services/errors/app_issue.dart';
+import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/id_identity.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
@@ -1229,6 +1230,23 @@ class _FakeSettingsRepository implements SettingsRepository {
   Future<void> setCategoryHidden({
     required String playlistId,
     required String categoryId,
+    required bool hidden,
+    String? profileId,
+  }) async {}
+
+  @override
+  Future<bool> isGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
+    String? profileId,
+  }) async => false;
+
+  @override
+  Future<void> setGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
     required bool hidden,
     String? profileId,
   }) async {}

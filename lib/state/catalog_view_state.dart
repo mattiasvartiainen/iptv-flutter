@@ -115,6 +115,11 @@ class CatalogViewState extends ChangeNotifier {
   List<CatalogItemSummary> homeMovies = const [];
   List<SeriesSummary> homeSeries = const [];
   List<SeasonSummary> seasons = const [];
+  List<GroupSummary> browseGroups = const [];
+  CatalogGroupKind? browseGroupKind;
+  int? selectedGroupId;
+  bool isLoadingGroups = false;
+  String? groupsErrorMessage;
 
   /// Total media rows for the bound playlist, used for empty-state decisions.
   int itemCount = 0;
@@ -132,6 +137,9 @@ class CatalogViewState extends ChangeNotifier {
     series.clear();
     episodes.clear();
     seasons = const [];
+    browseGroups = const [];
+    browseGroupKind = null;
+    selectedGroupId = null;
     await refreshHomeSections();
   }
 
@@ -142,6 +150,9 @@ class CatalogViewState extends ChangeNotifier {
     series.clear();
     episodes.clear();
     seasons = const [];
+    browseGroups = const [];
+    browseGroupKind = null;
+    selectedGroupId = null;
     homeLive = const [];
     homeMovies = const [];
     homeSeries = const [];
@@ -169,32 +180,110 @@ class CatalogViewState extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> showItems(CatalogItemKind kind) {
+  Future<void> showItems(CatalogItemKind kind, {int? groupId}) async {
     final service = _service;
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return Future<void>.value();
 
-    return items.load(
-      (offset, limit) => service.queryItems(
-        CatalogQuery(
-          playlistId: playlistId,
-          kinds: [kind],
-          offset: offset,
-          limit: limit,
-        ),
-      ),
+    final groupKind = switch (kind) {
+      CatalogItemKind.live => CatalogGroupKind.live,
+      CatalogItemKind.movie => CatalogGroupKind.movie,
+      CatalogItemKind.episode => CatalogGroupKind.series,
+      CatalogItemKind.unknown => CatalogGroupKind.live,
+    };
+    final kindChanged = browseGroupKind != groupKind;
+    browseGroupKind = groupKind;
+    selectedGroupId = kindChanged ? null : groupId;
+    await _loadBrowseGroups(service, playlistId, groupKind);
+    final selectedGroup = selectedGroupId;
+    await items.load(
+      (offset, limit) => selectedGroup == null
+          ? service.queryItems(
+              CatalogQuery(
+                playlistId: playlistId,
+                kinds: [kind],
+                offset: offset,
+                limit: limit,
+              ),
+            )
+          : service.itemsInGroup(
+              playlistId,
+              selectedGroup,
+              offset: offset,
+              limit: limit,
+            ),
     );
   }
 
-  Future<void> showSeries() {
+  Future<void> showSeries({int? groupId}) async {
     final service = _service;
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return Future<void>.value();
 
-    return series.load(
-      (offset, limit) =>
-          service.querySeries(playlistId, offset: offset, limit: limit),
+    const groupKind = CatalogGroupKind.series;
+    final kindChanged = browseGroupKind != groupKind;
+    browseGroupKind = groupKind;
+    selectedGroupId = kindChanged ? null : groupId;
+    await _loadBrowseGroups(service, playlistId, groupKind);
+    final selectedGroup = selectedGroupId;
+    await series.load(
+      (offset, limit) => selectedGroup == null
+          ? service.querySeries(playlistId, offset: offset, limit: limit)
+          : service.seriesInGroup(
+              playlistId,
+              selectedGroup,
+              offset: offset,
+              limit: limit,
+            ),
     );
+  }
+
+  Future<void> selectBrowseGroup(int? groupId) async {
+    final kind = browseGroupKind;
+    if (kind == null) return;
+    selectedGroupId = groupId;
+    _notify();
+    switch (kind) {
+      case CatalogGroupKind.live:
+        await showItems(CatalogItemKind.live, groupId: groupId);
+      case CatalogGroupKind.movie:
+        await showItems(CatalogItemKind.movie, groupId: groupId);
+      case CatalogGroupKind.series:
+        await showSeries(groupId: groupId);
+    }
+  }
+
+  Future<void> _loadBrowseGroups(
+    CatalogQueryService service,
+    String playlistId,
+    CatalogGroupKind kind,
+  ) async {
+    isLoadingGroups = true;
+    groupsErrorMessage = null;
+    _notify();
+    try {
+      final loaded = await service.queryGroups(playlistId, kind: kind);
+      if (_service != service ||
+          _playlistId != playlistId ||
+          browseGroupKind != kind) {
+        return;
+      }
+      browseGroups = loaded;
+      if (selectedGroupId != null &&
+          !loaded.any((group) => group.id == selectedGroupId)) {
+        selectedGroupId = null;
+      }
+    } catch (error) {
+      if (_service != service || _playlistId != playlistId) return;
+      groupsErrorMessage = '$error';
+      browseGroups = const [];
+      selectedGroupId = null;
+    } finally {
+      if (_service == service && _playlistId == playlistId) {
+        isLoadingGroups = false;
+        _notify();
+      }
+    }
   }
 
   Future<void> showSeasons(SeriesSummary value) async {

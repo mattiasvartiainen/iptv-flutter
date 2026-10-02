@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
 import '../catalog/id_identity.dart';
+import '../catalog/catalog_query.dart';
 import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
@@ -212,6 +213,19 @@ abstract interface class SettingsRepository {
   Future<bool> isCategoryHidden({
     required String playlistId,
     required String categoryId,
+    String? profileId,
+  });
+  Future<void> setGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
+    required bool hidden,
+    String? profileId,
+  });
+  Future<bool> isGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
     String? profileId,
   });
 }
@@ -550,6 +564,63 @@ SELECT 'delete', id, title FROM items WHERE playlist_id = ?
       columns: const ['playlist_id'],
       where: 'playlist_id = ? AND category_id = ? AND profile_id = ?',
       whereArgs: [playlistId, categoryId, targetProfile],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  @override
+  Future<void> setGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
+    required bool hidden,
+    String? profileId,
+  }) async {
+    final db = await _databaseAdapter.database;
+    final targetProfile = profileId ?? 'default';
+    final kindValue = switch (kind) {
+      CatalogGroupKind.live => 1,
+      CatalogGroupKind.movie => 2,
+      CatalogGroupKind.series => 3,
+    };
+    if (hidden) {
+      await db.insert('hidden_groups_v8', {
+        'profile_id': targetProfile,
+        'playlist_id': playlistId,
+        'kind': kindValue,
+        'group_title': groupTitle,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      return;
+    }
+    await db.delete(
+      'hidden_groups_v8',
+      where:
+          'profile_id = ? AND playlist_id = ? AND kind = ? AND group_title = ?',
+      whereArgs: [targetProfile, playlistId, kindValue, groupTitle],
+    );
+  }
+
+  @override
+  Future<bool> isGroupHidden({
+    required String playlistId,
+    required CatalogGroupKind kind,
+    required String groupTitle,
+    String? profileId,
+  }) async {
+    final db = await _databaseAdapter.database;
+    final targetProfile = profileId ?? 'default';
+    final kindValue = switch (kind) {
+      CatalogGroupKind.live => 1,
+      CatalogGroupKind.movie => 2,
+      CatalogGroupKind.series => 3,
+    };
+    final rows = await db.query(
+      'hidden_groups_v8',
+      columns: const ['playlist_id'],
+      where:
+          'profile_id = ? AND playlist_id = ? AND kind = ? AND group_title = ?',
+      whereArgs: [targetProfile, playlistId, kindValue, groupTitle],
       limit: 1,
     );
     return rows.isNotEmpty;

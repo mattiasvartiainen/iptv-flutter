@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:sqflite_common/sqlite_api.dart';
 
 import '../storage/storage_contracts.dart';
-import 'catalog_classifier.dart';
 import 'catalog_import_coordinator.dart';
 import 'catalog_import_progress.dart';
 import 'catalog_import_protocol.dart' hide CatalogImportProgressCallback;

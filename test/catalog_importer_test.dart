@@ -9,6 +9,7 @@ import 'package:iptv_flutter/services/catalog/catalog_import_coordinator.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
+import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
@@ -159,6 +160,20 @@ void main() {
     expect(live.items.single.title, 'Alpha News');
     expect(live.items.single.id, matches(RegExp(r'^\d+$')));
 
+    final liveGroups = await repository.queryGroups(
+      loaded.playlistId!,
+      kind: CatalogGroupKind.live,
+    );
+    expect(liveGroups.map((group) => group.title), ['News']);
+    expect(liveGroups.single.itemCount, 1);
+    final groupPage = await repository.itemsInGroup(
+      loaded.playlistId!,
+      liveGroups.single.id,
+      limit: 1,
+    );
+    expect(groupPage.total, 1);
+    expect(groupPage.items.single.title, 'Alpha News');
+
     final preview = await repository.homePreview(
       loaded.playlistId!,
       kind: CatalogItemKind.movie,
@@ -180,6 +195,47 @@ void main() {
       CatalogItemKind.episode,
       CatalogItemKind.episode,
     ]);
+    final seriesGroups = await repository.queryGroups(
+      loaded.playlistId!,
+      kind: CatalogGroupKind.series,
+    );
+    expect(seriesGroups.single.title, 'Drama');
+    expect(seriesGroups.single.itemCount, 2);
+    expect(
+      (await repository.seriesInGroup(
+        loaded.playlistId!,
+        seriesGroups.single.id,
+      )).total,
+      1,
+    );
+
+    final settings = SqliteSettingsRepository(
+      databaseAdapter: adapter,
+      secretStore: InMemoryPlaylistSecretStore(),
+    );
+    await settings.setGroupHidden(
+      playlistId: loaded.playlistId!,
+      kind: CatalogGroupKind.live,
+      groupTitle: 'News',
+      hidden: true,
+    );
+    expect(
+      await repository.queryGroups(
+        loaded.playlistId!,
+        kind: CatalogGroupKind.live,
+      ),
+      isEmpty,
+    );
+    expect(
+      (await repository.queryItems(
+        CatalogQuery(playlistId: loaded.playlistId!, searchTerm: 'Alpha'),
+      )).items,
+      isEmpty,
+    );
+    expect(
+      await repository.itemsInGroup(loaded.playlistId!, liveGroups.single.id),
+      isEmpty,
+    );
 
     final selected = await repository.itemById(live.items.single.id);
     expect(selected?.streamUrl, 'https://stream.test/alpha.m3u8');

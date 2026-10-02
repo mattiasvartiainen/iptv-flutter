@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 
 import '../services/catalog/catalog_query.dart';
 import '../state/app_controller.dart';
@@ -26,15 +28,20 @@ class CatalogScreen extends StatelessWidget {
     return switch (controller.screen) {
       AppScreen.liveCatalog => _ContentGrid(
         title: 'Live TV',
+        groupKind: CatalogGroupKind.live,
         collection: view.items,
         emptyText: 'No live channels found yet.',
       ),
       AppScreen.movieCatalog => _ContentGrid(
         title: 'Movies',
+        groupKind: CatalogGroupKind.movie,
         collection: view.items,
         emptyText: 'No movies found yet.',
       ),
-      AppScreen.seriesCatalog => _SeriesGrid(collection: view.series),
+      AppScreen.seriesCatalog => _SeriesGrid(
+        groupKind: CatalogGroupKind.series,
+        collection: view.series,
+      ),
       AppScreen.seasonCatalog => _SeasonGrid(series: controller.selectedSeries),
       AppScreen.episodeCatalog => _EpisodeGrid(
         series: controller.selectedSeries,
@@ -102,11 +109,13 @@ class _PagedGrid<T> extends StatelessWidget {
 class _ContentGrid extends StatelessWidget {
   const _ContentGrid({
     required this.title,
+    required this.groupKind,
     required this.collection,
     required this.emptyText,
   });
 
   final String title;
+  final CatalogGroupKind groupKind;
   final PagedCollection<CatalogItemSummary> collection;
   final String emptyText;
 
@@ -117,38 +126,43 @@ class _ContentGrid extends StatelessWidget {
       showBack: true,
       title: title,
       child: _GridFrame(
-        child: _PagedGrid<CatalogItemSummary>(
+        child: _DesktopGroupLayout(
+          kind: groupKind,
           collection: collection,
-          emptyText: emptyText,
-          gridDelegate: _cardGrid,
-          itemBuilder: (context, item) => Card(
-            child: InkWell(
-              onTap: () => controller.openDetailsById(item.id),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      item.kind == CatalogItemKind.live
-                          ? Icons.live_tv
-                          : Icons.movie,
-                    ),
-                    const Spacer(),
-                    Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.group ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+          seriesCollection: null,
+          child: _PagedGrid<CatalogItemSummary>(
+            collection: collection,
+            emptyText: emptyText,
+            gridDelegate: _cardGrid,
+            itemBuilder: (context, item) => Card(
+              child: InkWell(
+                onTap: () => controller.openDetailsById(item.id),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        item.kind == CatalogItemKind.live
+                            ? Icons.live_tv
+                            : Icons.movie,
+                      ),
+                      const Spacer(),
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        item.group ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -160,8 +174,9 @@ class _ContentGrid extends StatelessWidget {
 }
 
 class _SeriesGrid extends StatelessWidget {
-  const _SeriesGrid({required this.collection});
+  const _SeriesGrid({required this.groupKind, required this.collection});
 
+  final CatalogGroupKind groupKind;
   final PagedCollection<SeriesSummary> collection;
 
   @override
@@ -171,34 +186,39 @@ class _SeriesGrid extends StatelessWidget {
       showBack: true,
       title: 'Series',
       child: _GridFrame(
-        child: _PagedGrid<SeriesSummary>(
-          collection: collection,
-          emptyText: 'No series episodes recognized yet.',
-          gridDelegate: _cardGrid,
-          itemBuilder: (context, item) => Card(
-            child: InkWell(
-              onTap: () => controller.openSeriesSeasons(item),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.tv),
-                    const Spacer(),
-                    Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${item.seasonCount} seasons · ${item.episodeCount} episodes',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+        child: _DesktopGroupLayout(
+          kind: groupKind,
+          collection: null,
+          seriesCollection: collection,
+          child: _PagedGrid<SeriesSummary>(
+            collection: collection,
+            emptyText: 'No series episodes recognized yet.',
+            gridDelegate: _cardGrid,
+            itemBuilder: (context, item) => Card(
+              child: InkWell(
+                onTap: () => controller.openSeriesSeasons(item),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.tv),
+                      const Spacer(),
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${item.seasonCount} seasons · ${item.episodeCount} episodes',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -207,6 +227,146 @@ class _SeriesGrid extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DesktopGroupLayout extends StatelessWidget {
+  const _DesktopGroupLayout({
+    required this.kind,
+    required this.collection,
+    required this.seriesCollection,
+    required this.child,
+  });
+
+  final CatalogGroupKind kind;
+  final PagedCollection<CatalogItemSummary>? collection;
+  final PagedCollection<SeriesSummary>? seriesCollection;
+  final Widget child;
+
+  static const double _desktopBreakpoint = 1050;
+  static const double _sidebarWidth = 250;
+
+  @override
+  Widget build(BuildContext context) {
+    final view = AppScope.of(context).catalogView;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop =
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS;
+        if (!isDesktop || constraints.maxWidth < _desktopBreakpoint) {
+          return child;
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: _sidebarWidth,
+              child: _GroupFilterMenu(
+                kind: kind,
+                groups: view.browseGroups,
+                selectedGroupId: view.selectedGroupId,
+                loading: view.isLoadingGroups,
+                error: view.groupsErrorMessage,
+                totalItems: collection?.total ?? seriesCollection?.total ?? 0,
+                onSelected: view.selectBrowseGroup,
+              ),
+            ),
+            const SizedBox(width: 24),
+            Expanded(child: child),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _GroupFilterMenu extends StatelessWidget {
+  const _GroupFilterMenu({
+    required this.kind,
+    required this.groups,
+    required this.selectedGroupId,
+    required this.loading,
+    required this.error,
+    required this.totalItems,
+    required this.onSelected,
+  });
+
+  final CatalogGroupKind kind;
+  final List<GroupSummary> groups;
+  final int? selectedGroupId;
+  final bool loading;
+  final String? error;
+  final int totalItems;
+  final ValueChanged<int?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Text(
+            'GROUPS',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (loading) const LinearProgressIndicator(minHeight: 2),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(error!, style: theme.textTheme.bodySmall),
+          ),
+        Expanded(
+          child: ListView(
+            children: [
+              _GroupChoice(
+                label: 'All groups',
+                count: totalItems,
+                selected: selectedGroupId == null,
+                onTap: () => onSelected(null),
+              ),
+              for (final group in groups)
+                _GroupChoice(
+                  label: group.title,
+                  count: group.itemCount,
+                  selected: selectedGroupId == group.id,
+                  onTap: () => onSelected(group.id),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GroupChoice extends StatelessWidget {
+  const _GroupChoice({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    selected: selected,
+    dense: true,
+    title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+    trailing: Text('$count', style: Theme.of(context).textTheme.labelSmall),
+    onTap: onTap,
+  );
 }
 
 class _SeasonGrid extends StatelessWidget {
