@@ -2,6 +2,19 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "iptv_flutter (Linux Debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "linux",
+      "flutterMode": "debug",
+      "toolArgs": [
+        "--dart-define=IPTV_DESKTOP_BACKEND=media_kit",
+        "--dart-define=IPTV_DISABLE_VIDEO_OUTPUT=false",
+        "--dart-define=IPTV_DISABLE_HW_ACCEL=true"
+      ]
+    },
+    {
       "name": "iptv_flutter (Windows Debug)",
       "type": "dart",
       "request": "launch",
