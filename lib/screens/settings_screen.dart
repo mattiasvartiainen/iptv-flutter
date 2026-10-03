@@ -371,11 +371,11 @@ class _ImportProgressIndicatorState extends State<_ImportProgressIndicator> {
   Widget build(BuildContext context) {
     final progress = widget.progress;
     final label = switch (progress.phase) {
-      CatalogImportPhase.starting => 'Preparing playlistâ€¦',
-      CatalogImportPhase.downloading => 'Downloading playlistâ€¦',
-      CatalogImportPhase.parsing => 'Parsing playlistâ€¦',
-      CatalogImportPhase.importing => 'Importing itemsâ€¦',
-      CatalogImportPhase.indexing => 'Updating search indexâ€¦',
+      CatalogImportPhase.starting => 'Preparing playlist…',
+      CatalogImportPhase.downloading => 'Downloading playlist…',
+      CatalogImportPhase.parsing => 'Parsing playlist…',
+      CatalogImportPhase.importing => 'Importing items…',
+      CatalogImportPhase.indexing => 'Updating search index…',
       CatalogImportPhase.completed => 'Import complete',
       CatalogImportPhase.cancelled => 'Import cancelled',
       CatalogImportPhase.failed => 'Import failed',
