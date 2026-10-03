@@ -148,6 +148,10 @@ void main() {
       controller.selectedItem?.streamUrl,
       'https://example.invalid/live/news-24.m3u8',
     );
+    expect(
+      find.text('https://example.invalid/live/news-24.m3u8'),
+      findsNothing,
+    );
   });
 
   testWidgets('leaving the player stops playback', (tester) async {
@@ -158,6 +162,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     await openingPlayer;
     expect(controller.playbackAdapter.state.status, PlaybackStatus.playing);
+    expect(find.text(fixtureCatalog.first.streamUrl), findsNothing);
 
     controller.goBack();
     await tester.pumpAndSettle();

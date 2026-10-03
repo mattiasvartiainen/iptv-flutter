@@ -555,7 +555,7 @@ GROUP BY series_key, playlist_id, group_id
           'items_new': newCount,
           'items_changed': changedCount,
           'items_moved': movedCount,
-          'error': error.toString(),
+          'error': redactSensitiveText(error.toString()),
         },
         where: 'id = ?',
         whereArgs: [sessionId],

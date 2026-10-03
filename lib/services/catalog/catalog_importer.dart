@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:sqflite_common/sqlite_api.dart';
 
+import '../security/url_redaction.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_import_coordinator.dart';
 import 'catalog_import_progress.dart';
@@ -521,7 +522,7 @@ GROUP BY series_key, playlist_id, group_id
           'bytes_total': bytesTotal,
           'items_parsed': parsedItems,
           'items_new': acceptedItems,
-          'error': error.toString(),
+          'error': redactSensitiveText(error.toString()),
         },
         where: 'id = ?',
         whereArgs: [sessionId],

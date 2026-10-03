@@ -7,6 +7,7 @@ import 'package:sqflite_common/sqlite_api.dart';
 
 import '../../models/content_item.dart';
 import '../errors/app_issue.dart';
+import '../security/url_redaction.dart';
 import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
@@ -145,7 +146,7 @@ class _ImportSessionRecorder {
         'items_rejected': _itemsRejected,
         'items_new': ?acceptedCount,
         'stage_timings': jsonEncode(_stageTimings),
-        'error': error?.toString(),
+        'error': error == null ? null : redactSensitiveText(error.toString()),
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -529,7 +530,7 @@ class SqliteCatalogRepository
                 'id': resolvedPlaylistId,
                 'name': resolvedPlaylistName,
                 'secure_storage_key': secureStorageKey,
-                'source_url_redacted': _redactUrl(playlistUrl),
+                'source_url_redacted': redactUrl(playlistUrl),
                 'enabled': 1,
                 'created_at': now,
                 'updated_at': now,
@@ -643,7 +644,7 @@ WHERE id = ?
               [
                 resolvedPlaylistName,
                 secureStorageKey,
-                _redactUrl(playlistUrl),
+                redactUrl(playlistUrl),
                 1,
                 now,
                 stageComplete.toIso8601String(),
@@ -718,7 +719,7 @@ WHERE id = ?
           source: AppIssueSource.playlistImport,
           title: 'Playlist timed out',
           message: 'The playlist took too long to download.',
-          details: error.toString(),
+          details: redactSensitiveText(error.toString()),
         ),
         cause: error,
         stackTrace: stackTrace,
@@ -741,7 +742,7 @@ WHERE id = ?
           source: AppIssueSource.playlistImport,
           title: 'Network unavailable',
           message: 'Could not reach the playlist server.',
-          details: error.toString(),
+          details: redactSensitiveText(error.toString()),
         ),
         cause: error,
         stackTrace: stackTrace,
@@ -764,7 +765,7 @@ WHERE id = ?
           source: AppIssueSource.playlistImport,
           title: 'Playlist request failed',
           message: 'The server returned an error while fetching the playlist.',
-          details: error.toString(),
+          details: redactSensitiveText(error.toString()),
         ),
         cause: error,
         stackTrace: stackTrace,
@@ -787,7 +788,7 @@ WHERE id = ?
           source: AppIssueSource.playlistImport,
           title: 'Playlist format invalid',
           message: 'The playlist could not be parsed.',
-          details: error.toString(),
+          details: redactSensitiveText(error.toString()),
         ),
         cause: error,
         stackTrace: stackTrace,
@@ -810,7 +811,7 @@ WHERE id = ?
           source: AppIssueSource.playlistImport,
           title: 'Import failed',
           message: 'Could not load that playlist. Try again.',
-          details: error.toString(),
+          details: redactSensitiveText(error.toString()),
         ),
         cause: error,
         stackTrace: stackTrace,
@@ -2160,7 +2161,9 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
   }
 
   String _conciseError(Object error) {
-    final text = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final text = redactSensitiveText(
+      error.toString(),
+    ).replaceAll(RegExp(r'\s+'), ' ').trim();
     return text.length <= 160 ? text : '${text.substring(0, 157)}...';
   }
 
@@ -3515,7 +3518,7 @@ WHERE series.playlist_id = ?
         'id': playlistId,
         'name': 'Primary Playlist',
         'secure_storage_key': secureStorageKey,
-        'source_url_redacted': _redactUrl(playlistUrl),
+        'source_url_redacted': redactUrl(playlistUrl),
         'enabled': 1,
         'created_at': startedAt.toIso8601String(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
@@ -3524,7 +3527,7 @@ WHERE series.playlist_id = ?
         'last_import_staged_rows': stagedRows,
         'last_import_staged_duration_ms': stagedDurationMs,
         'last_import_status': 'failed',
-        'last_import_error': error.toString(),
+        'last_import_error': redactSensitiveText(error.toString()),
       },
     );
   }
@@ -3604,14 +3607,6 @@ WHERE series.playlist_id = ?
       },
       sourceIndex: row['source_index'] as int? ?? 0,
     );
-  }
-
-  String _redactUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return '';
-    final auth = uri.userInfo.isNotEmpty ? '***@' : '';
-    final port = uri.hasPort ? ':${uri.port}' : '';
-    return '${uri.scheme}://$auth${uri.host}$port${uri.path}';
   }
 
   String _stableId(String value) => legacyStableId('id', value);

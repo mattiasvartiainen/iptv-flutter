@@ -64,8 +64,6 @@ class PlayerScreen extends StatelessWidget {
                     Text(item?.title ?? 'No stream selected'),
                     const SizedBox(height: 8),
                     Text(item?.group ?? ''),
-                    const SizedBox(height: 8),
-                    SelectableText(item?.streamUrl ?? ''),
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,

@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import '../../models/content_item.dart';
+import '../security/url_redaction.dart';
 import 'catalog_classifier.dart';
 import 'catalog_hash.dart';
 import 'catalog_import_protocol.dart';
@@ -467,8 +468,8 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
     replyTo.send({
       'type': 'error',
       'errorType': error.runtimeType.toString(),
-      'error': error.toString(),
-      'stackTrace': stackTrace.toString(),
+      'error': redactSensitiveText(error.toString()),
+      'stackTrace': redactSensitiveText(stackTrace.toString()),
     });
   } finally {
     commands.close();

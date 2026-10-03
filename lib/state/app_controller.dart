@@ -11,6 +11,7 @@ import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/errors/app_issue.dart';
 import '../services/logging/app_logger.dart';
 import '../services/playback/playback_adapter.dart';
+import '../services/security/url_redaction.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/storage_bootstrap.dart';
 import 'catalog_view_state.dart';
@@ -243,8 +244,10 @@ class AppController extends ChangeNotifier {
       _applyIssue(error.issue);
       _logger.error(
         'playlist_import_failed',
-        error: error.cause ?? error,
-        stackTrace: error.stackTrace ?? stackTrace,
+        error: redactSensitiveText((error.cause ?? error).toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText((error.stackTrace ?? stackTrace).toString()),
+        ),
         context: {
           'source': error.issue.source.name,
           'kind': error.issue.kind.name,
@@ -306,8 +309,10 @@ class AppController extends ChangeNotifier {
       _applyIssue(error.issue);
       _logger.error(
         'playlist_import_failed',
-        error: error.cause ?? error,
-        stackTrace: error.stackTrace ?? stackTrace,
+        error: redactSensitiveText((error.cause ?? error).toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText((error.stackTrace ?? stackTrace).toString()),
+        ),
         context: {
           'source': error.issue.source.name,
           'kind': error.issue.kind.name,
@@ -376,8 +381,10 @@ class AppController extends ChangeNotifier {
       _applyIssue(error.issue);
       _logger.error(
         'playlist_import_failed',
-        error: error.cause ?? error,
-        stackTrace: error.stackTrace ?? stackTrace,
+        error: redactSensitiveText((error.cause ?? error).toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText((error.stackTrace ?? stackTrace).toString()),
+        ),
         context: {
           'source': error.issue.source.name,
           'kind': error.issue.kind.name,
@@ -501,8 +508,10 @@ class AppController extends ChangeNotifier {
       _applyIssue(error.issue);
       _logger.error(
         'playlist_import_failed',
-        error: error.cause ?? error,
-        stackTrace: error.stackTrace ?? stackTrace,
+        error: redactSensitiveText((error.cause ?? error).toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText((error.stackTrace ?? stackTrace).toString()),
+        ),
         context: {
           ...context,
           'source': error.issue.source.name,
@@ -568,13 +577,15 @@ class AppController extends ChangeNotifier {
         message: error is FormatException
             ? 'The playlist could not be parsed.'
             : 'Could not load that playlist. Try again.',
-        details: error.toString(),
+        details: redactSensitiveText(error.toString()),
       );
       _applyIssue(issue);
       _logger.error(
         'playlist_import_failed',
-        error: error,
-        stackTrace: stackTrace,
+        error: redactSensitiveText(error.toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText(stackTrace.toString()),
+        ),
         context: {
           ...context,
           'source': issue.source.name,
@@ -888,8 +899,17 @@ class AppController extends ChangeNotifier {
   }
 
   void _applyIssue(AppIssue issue) {
-    activeIssue = issue;
-    errorMessage = issue.message;
+    activeIssue = AppIssue(
+      kind: issue.kind,
+      source: issue.source,
+      title: issue.title,
+      message: redactSensitiveText(issue.message),
+      details: issue.details == null
+          ? null
+          : redactSensitiveText(issue.details!),
+      retryable: issue.retryable,
+    );
+    errorMessage = activeIssue!.message;
     playlistStatus = LoadStatus.error;
     notifyListeners();
   }

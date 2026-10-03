@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../../models/content_item.dart';
+import '../security/url_redaction.dart';
 import 'catalog_import_progress.dart';
 import 'm3u_parser.dart';
 
@@ -84,7 +85,7 @@ class HttpPlaylistSource implements PlaylistSource, StreamingPlaylistSource {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
           'Playlist request failed: ${response.statusCode}',
-          uri: Uri.parse(url),
+          uri: Uri.parse(redactUrl(url)),
         );
       }
       final total = response.contentLength >= 0 ? response.contentLength : null;
@@ -117,7 +118,7 @@ class HttpPlaylistSource implements PlaylistSource, StreamingPlaylistSource {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
           'Playlist request failed: ${response.statusCode}',
-          uri: Uri.parse(url),
+          uri: Uri.parse(redactUrl(url)),
         );
       }
       final total = response.contentLength >= 0 ? response.contentLength : null;

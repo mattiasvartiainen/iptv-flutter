@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../catalog/catalog_query.dart';
 import '../catalog/id_identity.dart';
+import '../security/url_redaction.dart';
 import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
@@ -368,7 +369,7 @@ LIMIT 1
       'id': playlistId,
       'name': config.name,
       'secure_storage_key': secureStorageKey,
-      'source_url_redacted': _redactUrl(config.resolvedUrl),
+      'source_url_redacted': redactUrl(config.resolvedUrl),
       'enabled': config.enabled ? 1 : 0,
       'created_at': existing?['created_at'] ?? now,
       'updated_at': now,
@@ -682,13 +683,5 @@ SELECT 'delete', id, title FROM items WHERE playlist_id = ?
     final seed =
         '${config.kind.name}|${config.name}|${config.resolvedUrl}|${DateTime.now().toUtc().microsecondsSinceEpoch}';
     return 'playlist-${legacyStableId('id', seed)}';
-  }
-
-  String _redactUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return '';
-    final auth = uri.userInfo.isNotEmpty ? '***@' : '';
-    final port = uri.hasPort ? ':${uri.port}' : '';
-    return '${uri.scheme}://$auth${uri.host}$port${uri.path}';
   }
 }

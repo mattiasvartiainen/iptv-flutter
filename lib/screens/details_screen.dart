@@ -28,8 +28,6 @@ class DetailsScreen extends StatelessWidget {
                       ? 'No description available yet.'
                       : item.description,
                 ),
-                const SizedBox(height: 10),
-                SelectableText(item.streamUrl),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   onPressed: c.openPlayer,
