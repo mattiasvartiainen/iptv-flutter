@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
-import '../catalog/id_identity.dart';
 import '../catalog/catalog_query.dart';
+import '../catalog/id_identity.dart';
 import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';

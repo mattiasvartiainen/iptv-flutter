@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_coordinator.dart';
-import 'package:iptv_flutter/services/catalog/catalog_import_protocol.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_progress.dart';
+import 'package:iptv_flutter/services/catalog/catalog_import_protocol.dart';
 
 void main() {
   test('parses in a worker and reports lifecycle progress', () async {

@@ -1,10 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite_common/sqlite_api.dart';
-import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/id_identity.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
+import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
@@ -12,6 +11,7 @@ import 'package:iptv_flutter/services/storage/storage_bootstrap.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
 import 'package:iptv_flutter/services/storage/storage_migrations.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 
 void main() {
   test(

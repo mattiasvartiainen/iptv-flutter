@@ -143,7 +143,7 @@ class _ImportSessionRecorder {
         'bytes_total': _bytesTotal,
         'items_parsed': _itemsParsed,
         'items_rejected': _itemsRejected,
-        if (acceptedCount != null) 'items_new': acceptedCount,
+        'items_new': ?acceptedCount,
         'stage_timings': jsonEncode(_stageTimings),
         'error': error?.toString(),
       },
@@ -162,7 +162,7 @@ class _ImportSessionRecorder {
             whereArgs: [id],
           );
         })
-        .catchError((Object _, StackTrace __) {});
+        .catchError((Object _, StackTrace _) {});
   }
 
   Map<String, int> _snapshotTimings(DateTime now) => {

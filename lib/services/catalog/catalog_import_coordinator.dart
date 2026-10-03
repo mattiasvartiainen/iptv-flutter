@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../../models/content_item.dart';
-import 'catalog_repository.dart';
 import 'catalog_import_protocol.dart'
     show
         CatalogImportRowSelector,
         CatalogImportRowsCallback,
         CatalogImportWorkerResult;
 import 'catalog_import_worker.dart';
+import 'catalog_repository.dart';
 import 'm3u_parser.dart';
 
 typedef CatalogImportOperation<T> =

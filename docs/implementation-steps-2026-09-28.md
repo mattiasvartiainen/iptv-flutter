@@ -638,6 +638,18 @@ Tests:
 
 **Exit criteria:** Warm refreshes index only changed rows and live search is available shortly after cold import.
 
+**Status:** Implemented. Cold imports enqueue FTS upserts by content-kind priority;
+warm reconciliation captures each old title before updates/deletes and queues only
+changed, added, or removed items in the same transaction. A bounded SQLite worker
+applies external-content FTS delete/insert operations atomically, orders live rows
+first, and resumes persisted queue entries after interrupted-import recovery. The
+Search screen now provides debounced text search, Live/Movies/Series filters, paged
+results with group and kind labels, item-detail navigation, and live index progress.
+Tests cover cold queueing/draining, changed-title replacement, removal, startup resume,
+status counts, filtering, and result selection. Performance on a 500k catalog remains
+subject to device benchmarking; this completes the functional step, not the hardware
+tuning exit criterion.
+
 ***
 
 ## Step 13 — Hardware Tuning and Optional Isolation

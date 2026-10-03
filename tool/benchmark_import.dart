@@ -1,9 +1,11 @@
+// ignore_for_file: avoid_print
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/catalog_importer.dart';
+import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
@@ -158,11 +160,7 @@ Future<Map<String, Object?>> _runV9Scenario({
         label: '$scenario / refresh',
       );
     }
-    return {
-      'scenario': scenario,
-      'cold': cold,
-      if (refresh != null) 'refresh': refresh,
-    };
+    return {'scenario': scenario, 'cold': cold, 'refresh': ?refresh};
   } finally {
     await server.close(force: true);
     final path = (await adapter.database).path;

@@ -389,8 +389,7 @@ class _ImportProgressIndicatorState extends State<_ImportProgressIndicator> {
         '${progress.current ?? 0} / ${progress.total ?? '?'} items',
       CatalogImportPhase.importing =>
         '${progress.current ?? 0} / ${progress.total ?? '?'} items',
-      CatalogImportPhase.indexing =>
-        '${progress.indexedItems} indexed',
+      CatalogImportPhase.indexing => '${progress.indexedItems} indexed',
       _ => progress.message ?? '',
     };
     final elapsed = _formatElapsed(progress.elapsed);
@@ -590,6 +589,7 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                   if (!mounted) return;
                   setState(() => _saving = false);
                   if (success) {
+                    if (!context.mounted) return;
                     Navigator.of(context).pop(true);
                   }
                 },

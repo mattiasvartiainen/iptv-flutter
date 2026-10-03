@@ -88,19 +88,6 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
         );
       },
     );
-
-    final version = await _database?.rawQuery(
-      'SELECT sqlite_version() AS version',
-    );
-
-    print('SQLite version: $version');
-
-    final compileOptions = await _database?.rawQuery(
-      "SELECT * FROM pragma_compile_options "
-      "WHERE compile_options LIKE 'ENABLE_FTS5%'",
-    );
-
-    print('FTS5: $compileOptions');
   }
 
   Future<void> _runMigrations(

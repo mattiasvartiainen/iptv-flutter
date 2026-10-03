@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'state/app_controller.dart';
-import 'widgets/app_scope.dart';
-import 'screens/home_screen.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/details_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/storage/storage_bootstrap.dart';
+import 'state/app_controller.dart';
+import 'widgets/app_scope.dart';
 
 class IptvApp extends StatefulWidget {
   const IptvApp({super.key, this.controller});

@@ -6,8 +6,8 @@ import 'playback_contract.dart';
 import 'webos_playback.dart';
 import 'windows_playback.dart';
 
-export 'playback_contract.dart';
 export 'fake_playback.dart';
+export 'playback_contract.dart';
 export 'webos_playback.dart';
 
 const bool isWebOsBuild = bool.fromEnvironment(

@@ -1,7 +1,7 @@
-import 'database_adapter.dart';
-import 'secure_storage_service.dart';
 import '../catalog/sqlite_catalog_repository.dart';
 import '../settings/settings_repository.dart';
+import 'database_adapter.dart';
+import 'secure_storage_service.dart';
 
 class AppStorageBootstrap {
   AppStorageBootstrap._();

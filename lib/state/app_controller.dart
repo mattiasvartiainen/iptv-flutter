@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/content_item.dart';
-import '../services/errors/app_issue.dart';
 import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/catalog/catalog_repository.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
+import '../services/errors/app_issue.dart';
 import '../services/logging/app_logger.dart';
 import '../services/playback/playback_adapter.dart';
 import '../services/settings/settings_repository.dart';

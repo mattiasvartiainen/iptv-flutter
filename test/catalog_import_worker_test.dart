@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/services/catalog/catalog_hash.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_protocol.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
-import 'package:iptv_flutter/services/catalog/catalog_hash.dart';
 
 void main() {
   group('CatalogImportWorker', () {

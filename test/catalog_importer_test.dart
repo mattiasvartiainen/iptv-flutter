@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iptv_flutter/services/catalog/catalog_importer.dart';
 import 'package:iptv_flutter/services/catalog/catalog_hash.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_coordinator.dart';
+import 'package:iptv_flutter/services/catalog/catalog_importer.dart';
+import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
-import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
@@ -53,7 +53,9 @@ void main() {
     final groups = await db.query('groups', orderBy: 'ord');
     final series = await db.query('series_v8');
     final sessions = await db.query('import_sessions');
-    final timings = jsonDecode(sessions.single['stage_timings']! as String);
+    final timings =
+        jsonDecode(sessions.single['stage_timings']! as String)
+            as Map<String, Object?>;
 
     expect(result.itemCount, 4);
     expect(result.groupCount, 3);
