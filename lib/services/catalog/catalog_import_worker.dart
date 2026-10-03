@@ -38,11 +38,27 @@ class CatalogImportWorkerHandle {
   }
 }
 
+class CatalogImportWorkerException implements Exception {
+  const CatalogImportWorkerException({
+    required this.errorType,
+    required this.message,
+    required this.workerStackTrace,
+  });
+
+  final String errorType;
+  final String message;
+  final String workerStackTrace;
+
+  @override
+  String toString() => '$errorType: $message';
+}
+
 class CatalogImportWorker {
   const CatalogImportWorker._();
 
   static const int batchSize = 1000;
   static const int maxParseSliceLength = 16 * 1024;
+  static const Duration connectionTimeout = Duration(seconds: 60);
   static const Duration requestTimeout = Duration(seconds: 20);
 
   static Future<CatalogImportWorkerHandle> start({
@@ -63,6 +79,7 @@ class CatalogImportWorker {
           'playlistId': playlistId,
           'sourceUrl': sourceUrl ?? playlistUrl,
           'batchSize': batchSize,
+          'connectionTimeoutMs': connectionTimeout.inMilliseconds,
           'requestTimeoutMs': requestTimeout.inMilliseconds,
         });
     final completion = Completer<CatalogImportWorkerResult>();
@@ -189,8 +206,17 @@ class CatalogImportWorker {
             receivePort.close();
             return;
           case 'error':
-            throw FormatException(
-              message['error']?.toString() ?? 'Playlist import worker failed.',
+            final errorType = message['errorType']?.toString() ?? 'Error';
+            final errorMessage =
+                message['error']?.toString() ??
+                'Playlist import worker failed.';
+            if (errorType == 'FormatException') {
+              throw FormatException(errorMessage);
+            }
+            throw CatalogImportWorkerException(
+              errorType: errorType,
+              message: errorMessage,
+              workerStackTrace: message['stackTrace']?.toString() ?? '',
             );
           default:
             throw StateError(
@@ -373,7 +399,9 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
     try {
       final httpRequest = await client
           .getUrl(Uri.parse(request['playlistUrl']! as String))
-          .timeout(timeout);
+          .timeout(
+            Duration(milliseconds: request['connectionTimeoutMs']! as int),
+          );
       httpRequest.headers.set(
         HttpHeaders.acceptHeader,
         'application/x-mpegURL, text/plain, */*',
@@ -436,7 +464,12 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
       client.close(force: true);
     }
   } catch (error, stackTrace) {
-    replyTo.send({'type': 'error', 'error': '$error\n$stackTrace'});
+    replyTo.send({
+      'type': 'error',
+      'errorType': error.runtimeType.toString(),
+      'error': error.toString(),
+      'stackTrace': stackTrace.toString(),
+    });
   } finally {
     commands.close();
     await commandIterator.cancel();

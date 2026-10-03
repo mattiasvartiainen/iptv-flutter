@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'storage_contracts.dart';
@@ -51,15 +52,19 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
     }
 
     if (!kIsWeb &&
-        (Platform.isAndroid ||
-            Platform.isIOS ||
-            Platform.isWindows ||
-            Platform.isLinux)) {
+        (Platform.isAndroid || Platform.isWindows || Platform.isLinux)) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }
 
-    final basePath = await getDatabasesPath();
+    final String basePath;
+    if (!kIsWeb && Platform.isAndroid) {
+      final supportDirectory = await getApplicationSupportDirectory();
+      basePath = p.join(supportDirectory.path, 'databases');
+      await Directory(basePath).create(recursive: true);
+    } else {
+      basePath = await getDatabasesPath();
+    }
     final fullPath = p.join(basePath, fileName);
 
     _database = await openDatabase(

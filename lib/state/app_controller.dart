@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/content_item.dart';
+import '../services/catalog/catalog_import_worker.dart';
 import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/catalog/catalog_repository.dart';
@@ -494,6 +495,51 @@ class AppController extends ChangeNotifier {
           'source': error.issue.source.name,
           'kind': error.issue.kind.name,
           'retryable': error.issue.retryable,
+        },
+      );
+      return false;
+    } on CatalogImportWorkerException catch (error, stackTrace) {
+      final authorizationFailure =
+          error.errorType == 'HttpException' &&
+          RegExp(r'\b(?:401|403)\b').hasMatch(error.message);
+      final kind = switch (error.errorType) {
+        'TimeoutException' => AppIssueKind.timeout,
+        'SocketException' => AppIssueKind.networkUnavailable,
+        'HttpException' when authorizationFailure =>
+          AppIssueKind.authorizationFailure,
+        _ => AppIssueKind.unknown,
+      };
+      final issue = AppIssue(
+        kind: kind,
+        source: AppIssueSource.playlistImport,
+        title: switch (kind) {
+          AppIssueKind.timeout => 'Playlist request timed out',
+          AppIssueKind.networkUnavailable => 'Network unavailable',
+          AppIssueKind.authorizationFailure => 'Access denied',
+          _ => 'Import failed',
+        },
+        message: switch (kind) {
+          AppIssueKind.timeout =>
+            'The playlist server took too long to respond.',
+          AppIssueKind.networkUnavailable =>
+            'Could not connect to the playlist server.',
+          AppIssueKind.authorizationFailure =>
+            'The playlist server rejected the request.',
+          _ => 'Could not load that playlist. Try again.',
+        },
+      );
+      _applyIssue(issue);
+      _logger.error(
+        'playlist_import_failed',
+        stackTrace: error.workerStackTrace.isEmpty
+            ? stackTrace
+            : StackTrace.fromString(error.workerStackTrace),
+        context: {
+          ...context,
+          'source': issue.source.name,
+          'kind': issue.kind.name,
+          'workerErrorType': error.errorType,
+          'retryable': issue.retryable,
         },
       );
       return false;

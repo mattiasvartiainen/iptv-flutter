@@ -167,7 +167,14 @@ http://[
         onRows: (_, _) async {},
       );
 
-      await expectLater(handle.done, throwsA(isA<FormatException>()));
+      await expectLater(
+        handle.done,
+        throwsA(
+          isA<CatalogImportWorkerException>()
+              .having((error) => error.errorType, 'errorType', 'HttpException')
+              .having((error) => error.message, 'message', contains('500')),
+        ),
+      );
     });
   });
 }

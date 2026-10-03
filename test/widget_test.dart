@@ -4,9 +4,11 @@ import 'package:iptv_flutter/app.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/screens/catalog_screen.dart';
 import 'package:iptv_flutter/screens/search_screen.dart';
+import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
+import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
@@ -39,6 +41,32 @@ void main() {
     await tester.pumpAndSettle();
     return (controller, playlist.playlistId);
   }
+
+  test('worker timeout is not reported as a playlist parse error', () async {
+    final settings = _TestSettingsRepository();
+    final playlist = await settings.upsertPlaylist(
+      const PlaylistSourceConfig.url(
+        name: 'Slow provider',
+        url: 'https://provider.test/playlist.m3u',
+      ),
+    );
+    final controller = AppController(
+      catalogRepository: _FailingCatalogRepository(
+        const CatalogImportWorkerException(
+          errorType: 'TimeoutException',
+          message: 'Request timed out',
+          workerStackTrace: '',
+        ),
+      ),
+      settingsRepository: settings,
+      playbackAdapter: FakePlaybackAdapter(),
+    );
+    addTearDown(controller.dispose);
+
+    expect(await controller.loadPlaylist(playlist.playlistId), isFalse);
+    expect(controller.activeIssue?.kind, AppIssueKind.timeout);
+    expect(controller.errorMessage, isNot(contains('parsed')));
+  });
 
   testWidgets('home rows render preview pages from the query service', (
     tester,
@@ -179,6 +207,23 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+}
+
+class _FailingCatalogRepository implements CatalogRepository {
+  const _FailingCatalogRepository(this.error);
+
+  final Object error;
+
+  @override
+  Future<CatalogLoadResult> load({
+    required String playlistUrl,
+    String? playlistId,
+    String? playlistName,
+    CatalogLoadPolicy policy = CatalogLoadPolicy.cacheFirst,
+    CatalogImportProgressCallback? onProgress,
+  }) async {
+    throw error;
+  }
 }
 
 class _TestSettingsRepository implements SettingsRepository {
