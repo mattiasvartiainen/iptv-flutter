@@ -41,7 +41,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-0.4 | Fix mojibake strings in settings | 0 Guardrails | – | XS | DONE (2026-10-03): Corrected five import-progress labels; no mojibake matches remain. |
 | WP-1.1 | Android manifest: network + TV launcher | 1 Critical fixes | – | XS | DONE (2026-10-03): Added network/TV manifest declarations and banner; release APK builds. Android TV/HTTP device smoke test pending. |
 | WP-1.2 | Stop playback when leaving the player | 1 Critical fixes | – | XS | DONE (2026-10-03): Stop playback on every player exit; guard late load completion; widget regression test passes. |
-| WP-1.3 | Handle system Back / Escape at the shell | 1 Critical fixes | – | S | TODO |
+| WP-1.3 | Handle system Back / Escape at the shell | 1 Critical fixes | – | S | DONE (2026-10-03): PopScope and Escape/Back shortcuts return to Home; widget tests pass. Android TV/webOS hardware key validation pending. |
 | WP-1.4 | Stop displaying/logging credential-bearing URLs | 1 Critical fixes | – | S | TODO |
 | WP-1.5 | Honest secret storage (rename + platform secure store) | 1 Critical fixes | D-3 | M | TODO |
 | WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | TODO |

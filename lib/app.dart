@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'screens/catalog_screen.dart';
 import 'screens/details_screen.dart';
@@ -58,20 +59,50 @@ class _IptvAppState extends State<IptvApp> {
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
+
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    return switch (controller.screen) {
-      AppScreen.home => const HomeScreen(),
-      AppScreen.liveCatalog => const CatalogScreen(),
-      AppScreen.movieCatalog => const CatalogScreen(),
-      AppScreen.seriesCatalog => const CatalogScreen(),
-      AppScreen.seasonCatalog => const CatalogScreen(),
-      AppScreen.episodeCatalog => const CatalogScreen(),
-      AppScreen.details => const DetailsScreen(),
-      AppScreen.player => const PlayerScreen(),
-      AppScreen.search => const SearchScreen(),
-      AppScreen.settings => const SettingsScreen(),
-    };
+    return Shortcuts(
+      shortcuts: {
+        SingleActivator(LogicalKeyboardKey.escape): _BackIntent(),
+        SingleActivator(LogicalKeyboardKey.goBack): _BackIntent(),
+      },
+      child: Actions(
+        actions: {
+          _BackIntent: CallbackAction<_BackIntent>(
+            onInvoke: (_) {
+              controller.goBack();
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: PopScope(
+            canPop: controller.screen == AppScreen.home,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) controller.goBack();
+            },
+            child: switch (controller.screen) {
+              AppScreen.home => const HomeScreen(),
+              AppScreen.liveCatalog => const CatalogScreen(),
+              AppScreen.movieCatalog => const CatalogScreen(),
+              AppScreen.seriesCatalog => const CatalogScreen(),
+              AppScreen.seasonCatalog => const CatalogScreen(),
+              AppScreen.episodeCatalog => const CatalogScreen(),
+              AppScreen.details => const DetailsScreen(),
+              AppScreen.player => const PlayerScreen(),
+              AppScreen.search => const SearchScreen(),
+              AppScreen.settings => const SettingsScreen(),
+            },
+          ),
+        ),
+      ),
+    );
   }
+}
+
+class _BackIntent extends Intent {
+  const _BackIntent();
 }

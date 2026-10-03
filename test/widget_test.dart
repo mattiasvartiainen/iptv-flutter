@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
 import 'package:iptv_flutter/models/content_item.dart';
@@ -97,6 +98,38 @@ void main() {
     expect(find.text('News 24'), findsOneWidget);
     expect(find.text('World Sports'), findsOneWidget);
     expect(find.text('Northbound'), findsNothing);
+  });
+
+  testWidgets('system Back returns from catalog without exiting the app', (
+    tester,
+  ) async {
+    final (controller, _) = await pumpLoadedApp(tester);
+    var appDisposed = false;
+    addTearDown(() => appDisposed = true);
+
+    controller.openLiveTv();
+    await tester.pumpAndSettle();
+    expect(controller.screen, AppScreen.liveCatalog);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(controller.screen, AppScreen.home);
+    expect(find.byType(IptvApp), findsOneWidget);
+    expect(appDisposed, isFalse);
+  });
+
+  testWidgets('Escape returns from catalog to Home', (tester) async {
+    final (controller, _) = await pumpLoadedApp(tester);
+    controller.openLiveTv();
+    await tester.pumpAndSettle();
+    expect(controller.screen, AppScreen.liveCatalog);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(controller.screen, AppScreen.home);
+    expect(find.byType(IptvApp), findsOneWidget);
   });
 
   testWidgets('selecting a grid tile loads the full item for details', (
