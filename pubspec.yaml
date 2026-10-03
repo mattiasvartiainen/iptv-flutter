@@ -45,6 +45,12 @@ dependencies:
   sqlite3: ^3.0.0
   path: ^1.9.1
   path_provider: ^2.1.5
+  flutter_secure_storage: ^9.2.3
+  flutter_secure_storage_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/flutter_secure_storage
+      ref: 3780db6e4cd17108ca66c2bfdf96740343d99f7a
   crypto: ^3.0.6
 
   # The following adds the Cupertino Icons font to your application.

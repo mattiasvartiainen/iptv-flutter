@@ -33,9 +33,14 @@ choice if concrete stream compatibility failures appear. Reserve `vlc` as a futu
 without adding it to the current implementation.
 - Affects: [architecture.md](architecture.md) §8.
 
-### D3 — Credential storage split 🔶
-Playlist URL (contains credentials) → `flutter_secure_storage_webos`. Settings and last navigation
-context → `shared_preferences_webos`. Never log or render the credential-bearing URL.
+### D3 — Credential storage split ✅
+Use `flutter_secure_storage` on Android/Windows and the LG
+`flutter_secure_storage_webos` implementation on webOS. The webOS plugin requires the
+`securitykey.operation` ACG and targets webOS 26+. Its documented implementation encrypts data
+with AES-256-CBC and persists it in a local SQLite database; this still requires verification on
+target hardware. Migrate existing JSON-file playlist secrets lazily on first read, deleting each
+legacy file only after the secure write succeeds. Settings and last navigation context remain
+separate preferences. Never log or render the credential-bearing URL.
 - Affects: [architecture.md](architecture.md) §7, PRD non-functional requirements.
 
 ### D4 — Catalog cache strategy 🔶

@@ -43,7 +43,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-1.2 | Stop playback when leaving the player | 1 Critical fixes | – | XS | DONE (2026-10-03): Stop playback on every player exit; guard late load completion; widget regression test passes. |
 | WP-1.3 | Handle system Back / Escape at the shell | 1 Critical fixes | – | S | DONE (2026-10-03): PopScope and Escape/Back shortcuts return to Home; widget tests pass. Android TV/webOS hardware key validation pending. |
 | WP-1.4 | Stop displaying/logging credential-bearing URLs | 1 Critical fixes | – | S | DONE (2026-10-03): Removed raw URL UI fields; centralized URL/error redaction and added unit/widget coverage. |
-| WP-1.5 | Honest secret storage (rename + platform secure store) | 1 Critical fixes | D-3 | M | TODO |
+| WP-1.5 | Honest secret storage (rename + platform secure store) | 1 Critical fixes | D-3 | M | DONE (2026-10-03): Renamed the file store, added secure plugin storage and lazy migration; analyzer/tests pass. Android/Windows native builds and webOS hardware verification remain pending. |
 | WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | TODO |
 | WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | TODO |
 | WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | TODO |
@@ -446,7 +446,7 @@ Future<void> main() async {
 | `video_player` + `video_player_webos` (git) | supported (ExoPlayer) | not supported | supported | webOS plugin pinned to commit `3a742bb86b04e261044f0864f9b1f71acf0bbad3`. |
 | `sqflite_common_ffi` + `sqlite3` (native assets) | works | works | **verify** | Repo notes mention `sqflite_webos`; current code uses FFI on webOS because `Platform.isLinux` is true. Confirm on hardware before changing (WP-2.4). |
 | `path_provider` | supported | supported | via `path_provider_webos` | Verify the webOS implementation is registered. |
-| Secure storage (none today) | `flutter_secure_storage` | `flutter_secure_storage` | `flutter_secure_storage_webos` | Decision **D-3**. |
+| Secure storage | `flutter_secure_storage` | `flutter_secure_storage` | `flutter_secure_storage` + pinned LG implementation | D-3 selected; webOS requires `securitykey.operation` and hardware verification. |
 
 Do not assume a package works on webOS because it works on Linux desktop.
 
@@ -851,7 +851,7 @@ Agents must not resolve these on their own. Record the answer in `docs/decisions
 |----|----------|---------|----------------|
 | D-1 | Navigation mechanism | **A.** Hand-rolled `sealed AppRoute` stack + `Navigator.pages` (no new dependency). **B.** `go_router` (URL-based; adds dependency; deep links not needed on TV). | A |
 | D-2 | May legacy (v1–v7) catalog tables and code be removed, and is losing legacy-only user data (favorites/history keyed to `media_items`) acceptable? There is no favorites/history UI today. | Remove + drop tables in v11 / remove code but keep tables / keep both | Remove code; drop tables in v11 |
-| D-3 | Secret storage backend per platform | `flutter_secure_storage` (Android/Windows) + `flutter_secure_storage_webos` (webOS) / keep file store but encrypt / keep as-is | Secure storage plugins; verify webOS plugin on hardware first |
+| D-3 | Secret storage backend per platform | `flutter_secure_storage` (Android/Windows) + LG `flutter_secure_storage_webos`; lazy migration from the file store | **Resolved 2026-10-03**; webOS hardware verification pending |
 | D-4 | Android playback backend | `video_player` (shared with webOS, ExoPlayer) / `media_kit` (shared with desktop, bigger APK) | `video_player` |
 | D-5 | Do we need explicit Android TV detection? | `highlightMode` only / detect leanback feature via `device_info_plus` or a method channel | `highlightMode` only until a feature needs more |
 | D-6 | webOS entry: keep `--dart-define=IPTV_WEBOS=true` or a separate `lib/main_webos.dart` target | define / separate target (requires verifying `flutter-webos build -t`) | Keep the define; read it only in `lib/platform/` |

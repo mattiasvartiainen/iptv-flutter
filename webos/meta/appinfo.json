@@ -18,5 +18,6 @@
     "transparent":false,
     "uiRevision":2,
     "requiredACG": [
+        "securitykey.operation"
     ]
 }

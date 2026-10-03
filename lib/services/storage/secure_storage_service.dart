@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -10,8 +11,8 @@ abstract interface class PlaylistSecretStore {
   Future<void> delete({required String key});
 }
 
-class FlutterSecurePlaylistSecretStore implements PlaylistSecretStore {
-  FlutterSecurePlaylistSecretStore({Directory? baseDirectory})
+class FilePlaylistSecretStore implements PlaylistSecretStore {
+  FilePlaylistSecretStore({Directory? baseDirectory})
     : _baseDirectory = baseDirectory;
 
   final Directory? _baseDirectory;
@@ -56,6 +57,59 @@ class FlutterSecurePlaylistSecretStore implements PlaylistSecretStore {
     if (await file.exists()) {
       await file.delete();
     }
+  }
+}
+
+class SecurePlaylistSecretStore implements PlaylistSecretStore {
+  SecurePlaylistSecretStore({FlutterSecureStorage? storage})
+    : _storage = storage ?? const FlutterSecureStorage();
+
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<void> write({required String key, required String value}) =>
+      _storage.write(key: key, value: value);
+
+  @override
+  Future<String?> read({required String key}) => _storage.read(key: key);
+
+  @override
+  Future<void> delete({required String key}) => _storage.delete(key: key);
+}
+
+class MigratingPlaylistSecretStore implements PlaylistSecretStore {
+  MigratingPlaylistSecretStore({
+    required PlaylistSecretStore secureStore,
+    required FilePlaylistSecretStore legacyStore,
+  }) : _secureStore = secureStore,
+       _legacyStore = legacyStore;
+
+  final PlaylistSecretStore _secureStore;
+  final FilePlaylistSecretStore _legacyStore;
+
+  @override
+  Future<void> write({required String key, required String value}) async {
+    await _secureStore.write(key: key, value: value);
+    await _legacyStore.delete(key: key);
+  }
+
+  @override
+  Future<String?> read({required String key}) async {
+    final secureValue = await _secureStore.read(key: key);
+    if (secureValue != null) return secureValue;
+
+    final legacyValue = await _legacyStore.read(key: key);
+    if (legacyValue == null) return null;
+
+    await _secureStore.write(key: key, value: legacyValue);
+    await _legacyStore.delete(key: key);
+    return legacyValue;
+  }
+
+  @override
+  Future<void> delete({required String key}) async {
+    await _secureStore.delete(key: key);
+    await _legacyStore.delete(key: key);
   }
 }
 

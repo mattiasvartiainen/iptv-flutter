@@ -9,7 +9,10 @@ class AppStorageBootstrap {
   static final AppStorageBootstrap instance = AppStorageBootstrap._();
 
   final SqfliteDatabaseAdapter _adapter = SqfliteDatabaseAdapter();
-  final PlaylistSecretStore _secretStore = FlutterSecurePlaylistSecretStore();
+  final PlaylistSecretStore _secretStore = MigratingPlaylistSecretStore(
+    secureStore: SecurePlaylistSecretStore(),
+    legacyStore: FilePlaylistSecretStore(),
+  );
   SqliteCatalogRepository? _catalogRepository;
   SqliteSettingsRepository? _settingsRepository;
 
