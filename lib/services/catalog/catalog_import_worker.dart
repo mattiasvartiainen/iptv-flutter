@@ -58,8 +58,8 @@ class CatalogImportWorker {
 
   static const int batchSize = 1000;
   static const int maxParseSliceLength = 16 * 1024;
-  static const Duration connectionTimeout = Duration(seconds: 60);
-  static const Duration requestTimeout = Duration(seconds: 20);
+  static const Duration connectionTimeout = Duration(minutes: 5);
+  static const Duration requestTimeout = Duration(minutes: 5);
 
   static Future<CatalogImportWorkerHandle> start({
     required String playlistId,

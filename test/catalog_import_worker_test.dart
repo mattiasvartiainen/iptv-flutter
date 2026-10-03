@@ -9,6 +9,11 @@ import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
 
 void main() {
   group('CatalogImportWorker', () {
+    test('allows slow playlist connections and response chunks', () {
+      expect(CatalogImportWorker.connectionTimeout, const Duration(minutes: 5));
+      expect(CatalogImportWorker.requestTimeout, const Duration(minutes: 5));
+    });
+
     test(
       'decodes UTF-8 split across network chunks and returns ordered rows',
       () async {

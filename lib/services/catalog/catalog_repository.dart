@@ -63,7 +63,7 @@ abstract interface class StreamingPlaylistSource {
 }
 
 class HttpPlaylistSource implements PlaylistSource, StreamingPlaylistSource {
-  const HttpPlaylistSource({this.timeout = const Duration(seconds: 20)});
+  const HttpPlaylistSource({this.timeout = const Duration(minutes: 5)});
 
   final Duration timeout;
 
