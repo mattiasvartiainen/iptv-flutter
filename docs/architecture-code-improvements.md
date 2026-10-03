@@ -37,7 +37,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 |----|-------|-------|-----------|------|--------|
 | WP-0.1 | Add `AGENTS.md` with project rules | 0 Guardrails | – | S | DONE (2026-10-03): Added concise root rules; detailed references linked. |
 | WP-0.2 | Tighten lints, clear analyzer baseline | 0 Guardrails | – | S | DONE (2026-10-03): Seven additional lints enabled; analyzer clean; webOS plugin pinned. |
-| WP-0.3 | Architecture boundary test | 0 Guardrails | – | S | TODO |
+| WP-0.3 | Architecture boundary test | 0 Guardrails | – | S | DONE (2026-10-03): Added platform/layer import checks with an exact exception allowlist; 122 tests pass. |
 | WP-0.4 | Fix mojibake strings in settings | 0 Guardrails | – | XS | TODO |
 | WP-1.1 | Android manifest: network + TV launcher | 1 Critical fixes | – | XS | TODO |
 | WP-1.2 | Stop playback when leaving the player | 1 Critical fixes | – | XS | TODO |

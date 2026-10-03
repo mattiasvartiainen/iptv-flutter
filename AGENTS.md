@@ -5,6 +5,7 @@ TV-first IPTV app targeting Android (phone and TV), Windows, and LG webOS. Linux
 
 ## Start Here
 - Before implementation, read [docs/architecture-code-improvements.md](docs/architecture-code-improvements.md) and choose one unblocked work package. Read its touched files and listed skills first.
+- Treat `test/architecture/architecture_rules_test.dart` as the executable source of truth for platform and layer boundaries; update its allowlist when a known exception is removed.
 - For Flutter or Dart work outside a listed work package, check `.agents/skills/` and read only the skill(s) relevant to the task before editing.
 - Check [docs/decisions.md](docs/decisions.md) before making a choice reserved for a human. Record completed work in the plan's status table.
 - Use [docs/architecture.md](docs/architecture.md) for current architecture intent and [docs/catalog-import-and-browsing-redesign.md](docs/catalog-import-and-browsing-redesign.md) plus [docs/implementation-steps-2026-09-28.md](docs/implementation-steps-2026-09-28.md) for the catalog v9 pipeline.
@@ -19,7 +20,7 @@ TV-first IPTV app targeting Android (phone and TV), Windows, and LG webOS. Linux
 - Preserve existing behavior unless the selected work package explicitly changes it. Avoid unrelated refactors.
 
 ## Verify
-Run `flutter analyze` and `flutter test` for code changes. The baseline currently has 9 info-level analyzer findings; introduce no new findings, and don't claim the baseline is clean until WP-0.2 is complete. For webOS builds, use `tool/build-webos.sh` from the supported Linux/WSL/DevContainer environment; see the plan and repo docs for platform setup.
+Run `flutter analyze` and `flutter test` for code changes. The analyzer baseline is clean after WP-0.2. For webOS builds, use `tool/build-webos.sh` from the supported Linux/WSL/DevContainer environment; see the plan and repo docs for platform setup.
 
 ## Test/Toolchain Notes
 - `testWidgets` uses FakeAsync: advance time with `tester.pump(duration)`; real delays/timers won't elapse on their own.
