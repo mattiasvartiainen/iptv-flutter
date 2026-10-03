@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
@@ -47,6 +48,16 @@ void main() {
     final adapter = createPlatformPlaybackAdapter(webOs: true);
     addTearDown(adapter.dispose);
 
-    expect(adapter, isA<WebOsPlaybackAdapterStub>());
+    expect(adapter, isA<VideoPlayerPlaybackAdapter>());
+  });
+
+  test('Android selects the video_player adapter', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    final adapter = createPlatformPlaybackAdapter();
+    addTearDown(adapter.dispose);
+
+    expect(adapter, isA<VideoPlayerPlaybackAdapter>());
   });
 }

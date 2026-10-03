@@ -44,7 +44,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-1.3 | Handle system Back / Escape at the shell | 1 Critical fixes | – | S | DONE (2026-10-03): PopScope and Escape/Back shortcuts return to Home; widget tests pass. Android TV/webOS hardware key validation pending. |
 | WP-1.4 | Stop displaying/logging credential-bearing URLs | 1 Critical fixes | – | S | DONE (2026-10-03): Removed raw URL UI fields; centralized URL/error redaction and added unit/widget coverage. |
 | WP-1.5 | Honest secret storage (rename + platform secure store) | 1 Critical fixes | D-3 | M | DONE (2026-10-03): Renamed the file store, added secure plugin storage and lazy migration; analyzer/tests pass. Android/Windows native builds and webOS hardware verification remain pending. |
-| WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | TODO |
+| WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | BLOCKED (2026-10-03): Android now selects the video_player adapter and the factory regression test passes; Android debug build fails compiling generated package_info_plus/wakelock_plus registrant references, so stream playback is not yet verified. |
 | WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | TODO |
 | WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | TODO |
 | WP-2.3 | Move playback backend selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
@@ -129,9 +129,9 @@ flowchart TD
     importer --> db
     settings --> db
     settings --> secrets
-    pa --> wos[WebOsPlaybackAdapter<br/>video_player]
+    pa --> vp[VideoPlayerPlaybackAdapter<br/>Android + webOS]
     pa --> mk[DesktopMediaKitPlaybackAdapter<br/>Windows/Linux]
-    pa --> fake[FakePlaybackAdapter<br/>Android, web, default]
+    pa --> fake[FakePlaybackAdapter<br/>web, unsupported/default]
 ```
 
 ### 3.2 Platform boundaries today
@@ -176,9 +176,9 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 
 **F-01 — Android plays nothing.** Critical · High · Platform/Media
 - Location: `createPlatformPlaybackAdapter()` in [playback_adapter.dart](../lib/services/playback/playback_adapter.dart).
-- Problem: the `switch (defaultTargetPlatform)` only handles linux/windows; Android hits `default: return FakePlaybackAdapter();`. `shouldInitializeMediaKit()` also returns false on Android.
+- Problem: Android previously fell through to `FakePlaybackAdapter`; the factory now selects `VideoPlayerPlaybackAdapter`. Android build and device-stream validation remain blocked/pending.
 - Why it matters: Android is a declared target; playback is the product.
-- Recommendation: reuse the existing `video_player`-based adapter (today named `WebOsPlaybackAdapter`; it contains no webOS-specific code) for Android. → **WP-1.6**
+- Recommendation: reuse the `video_player`-based adapter for Android. → **WP-1.6**
 - Effort: S · Risk: Low.
 
 **F-02 — Android release build has no network permission and no TV launcher.** Critical · High · Platform
@@ -852,7 +852,7 @@ Agents must not resolve these on their own. Record the answer in `docs/decisions
 | D-1 | Navigation mechanism | **A.** Hand-rolled `sealed AppRoute` stack + `Navigator.pages` (no new dependency). **B.** `go_router` (URL-based; adds dependency; deep links not needed on TV). | A |
 | D-2 | May legacy (v1–v7) catalog tables and code be removed, and is losing legacy-only user data (favorites/history keyed to `media_items`) acceptable? There is no favorites/history UI today. | Remove + drop tables in v11 / remove code but keep tables / keep both | Remove code; drop tables in v11 |
 | D-3 | Secret storage backend per platform | `flutter_secure_storage` (Android/Windows) + LG `flutter_secure_storage_webos`; lazy migration from the file store | **Resolved 2026-10-03**; webOS hardware verification pending |
-| D-4 | Android playback backend | `video_player` (shared with webOS, ExoPlayer) / `media_kit` (shared with desktop, bigger APK) | `video_player` |
+| D-4 | Android playback backend | `video_player` (shared with webOS, ExoPlayer) / `media_kit` (shared with desktop, bigger APK) | **Resolved 2026-10-03: `video_player`**, selected during WP-1.6 implementation |
 | D-5 | Do we need explicit Android TV detection? | `highlightMode` only / detect leanback feature via `device_info_plus` or a method channel | `highlightMode` only until a feature needs more |
 | D-6 | webOS entry: keep `--dart-define=IPTV_WEBOS=true` or a separate `lib/main_webos.dart` target | define / separate target (requires verifying `flutter-webos build -t`) | Keep the define; read it only in `lib/platform/` |
 

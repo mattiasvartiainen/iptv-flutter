@@ -6,7 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../../models/content_item.dart';
 import 'playback_contract.dart';
 
-class WebOsPlaybackAdapter implements PlaybackAdapter {
+class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   final _stateController = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
   VideoPlayerController? _controller;
@@ -125,7 +125,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter {
   VideoPlayerController _requireController() {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
-      throw StateError('No initialized webOS video is loaded.');
+      throw StateError('No initialized video is loaded.');
     }
     return controller;
   }
@@ -201,5 +201,3 @@ class WebOsPlaybackAdapter implements PlaybackAdapter {
     _stateController.close();
   }
 }
-
-typedef WebOsPlaybackAdapterStub = WebOsPlaybackAdapter;

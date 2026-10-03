@@ -3,12 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'fake_playback.dart';
 import 'linux_playback.dart';
 import 'playback_contract.dart';
-import 'webos_playback.dart';
+import 'video_player_playback.dart';
 import 'windows_playback.dart';
 
 export 'fake_playback.dart';
 export 'playback_contract.dart';
-export 'webos_playback.dart';
+export 'video_player_playback.dart';
 
 const bool isWebOsBuild = bool.fromEnvironment(
   'IPTV_WEBOS',
@@ -44,7 +44,7 @@ bool shouldInitializeMediaKit({bool? webOs}) {
 PlaybackAdapter createPlatformPlaybackAdapter({bool? webOs}) {
   final useWebOsAdapter = webOs ?? isWebOsBuild;
   if (useWebOsAdapter) {
-    return WebOsPlaybackAdapter();
+    return VideoPlayerPlaybackAdapter();
   }
 
   if (kIsWeb) {
@@ -54,6 +54,8 @@ PlaybackAdapter createPlatformPlaybackAdapter({bool? webOs}) {
   final useMediaKit = desktopPlaybackBackend == 'media_kit';
 
   switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      return VideoPlayerPlaybackAdapter();
     case TargetPlatform.linux:
       if (useMediaKit) {
         return LinuxPlaybackAdapter(
