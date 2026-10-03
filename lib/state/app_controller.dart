@@ -75,7 +75,20 @@ class AppController extends ChangeNotifier {
   /// Owns the visible page window; the controller never holds the full catalog.
   final CatalogViewState catalogView = CatalogViewState();
 
-  AppScreen screen = AppScreen.home;
+  AppScreen _screen = AppScreen.home;
+  int _playbackLoadGeneration = 0;
+
+  AppScreen get screen => _screen;
+
+  set screen(AppScreen value) {
+    final leavingPlayer = _screen == AppScreen.player && value != _screen;
+    _screen = value;
+    if (leavingPlayer) {
+      _playbackLoadGeneration++;
+      unawaited(_stopPlayback());
+    }
+  }
+
   LoadStatus playlistStatus = LoadStatus.idle;
   ContentItem? selectedItem;
   String? playlistUrl;
@@ -753,13 +766,30 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _openPlayerFor(ContentItem item) async {
+    final generation = ++_playbackLoadGeneration;
     screen = AppScreen.player;
     notifyListeners();
     try {
       await playbackAdapter.load(item);
+      if (generation != _playbackLoadGeneration || screen != AppScreen.player) {
+        await _stopPlayback();
+        return;
+      }
       notifyListeners();
     } catch (_) {
       notifyListeners();
+    }
+  }
+
+  Future<void> _stopPlayback() async {
+    try {
+      await playbackAdapter.stop();
+    } catch (error, stackTrace) {
+      _logger.error(
+        'playback_stop_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

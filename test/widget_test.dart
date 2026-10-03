@@ -30,6 +30,9 @@ void main() {
         fixtureCatalog,
       ),
       settingsRepository: settings,
+      playbackAdapter: FakePlaybackAdapter(
+        transitionDelay: const Duration(milliseconds: 1),
+      ),
     );
     addTearDown(controller.dispose);
 
@@ -112,6 +115,22 @@ void main() {
       controller.selectedItem?.streamUrl,
       'https://example.invalid/live/news-24.m3u8',
     );
+  });
+
+  testWidgets('leaving the player stops playback', (tester) async {
+    final (controller, _) = await pumpLoadedApp(tester);
+    controller.selectedItem = fixtureCatalog.first;
+
+    final openingPlayer = controller.openPlayer();
+    await tester.pump(const Duration(milliseconds: 1));
+    await openingPlayer;
+    expect(controller.playbackAdapter.state.status, PlaybackStatus.playing);
+
+    controller.goBack();
+    await tester.pumpAndSettle();
+
+    expect(controller.screen, AppScreen.details);
+    expect(controller.playbackAdapter.state.status, PlaybackStatus.stopped);
   });
 
   testWidgets('search filters results and opens the selected item', (
