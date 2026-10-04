@@ -8,6 +8,8 @@ import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/database_adapter.dart';
+
 const String _playlistText = '''#EXTM3U
 #EXTINF:-1 tvg-id="alpha" tvg-logo="https://img.test/alpha.png" group-title="News",Alpha News
 https://stream.test/alpha.m3u8
@@ -136,7 +138,7 @@ void main() {
     late String playlistId;
 
     setUp(() async {
-      adapter = SqfliteDatabaseAdapter(
+      adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_query_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );

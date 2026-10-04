@@ -6,6 +6,8 @@ import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/database_adapter.dart';
+
 /// Counts fetches and lets a test hold the response open to force overlap
 /// between two concurrent [SqliteCatalogRepository.load] calls.
 class _CountingPlaylistSource implements PlaylistSource {
@@ -52,7 +54,7 @@ void main() {
   late SqfliteDatabaseAdapter adapter;
 
   setUp(() {
-    adapter = SqfliteDatabaseAdapter(
+    adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_concurrency_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );

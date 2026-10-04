@@ -8,7 +8,6 @@ const _knownPlatformViolations = <String, Set<String>>{
     'defaultTargetPlatform',
     'TargetPlatform',
   },
-  'lib/services/storage/database_adapter.dart': {'Platform.is', 'kIsWeb'},
 };
 
 final _platformPatterns = <String, RegExp>{

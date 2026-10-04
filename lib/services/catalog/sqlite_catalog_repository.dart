@@ -8,7 +8,6 @@ import 'package:sqflite_common/sqlite_api.dart';
 import '../../models/content_item.dart';
 import '../errors/app_issue.dart';
 import '../security/url_redaction.dart';
-import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_import_coordinator.dart';
@@ -181,14 +180,14 @@ class SqliteCatalogRepository
     implements CatalogRepository, CatalogQueryService {
   SqliteCatalogRepository({
     PlaylistSource? source,
-    DatabaseAdapter? databaseAdapter,
+    required DatabaseAdapter databaseAdapter,
     PlaylistSecretStore? secretStore,
     this.useStagingImport = true,
     this.autoStartSearchIndexWorker = true,
     this.useCatalogImporterV9 = false,
     CatalogImportCoordinator? importCoordinator,
   }) : _source = source ?? const HttpPlaylistSource(),
-       _databaseAdapter = databaseAdapter ?? SqfliteDatabaseAdapter(),
+       _databaseAdapter = databaseAdapter,
        _secretStore = secretStore ?? InMemoryPlaylistSecretStore(),
        _importCoordinator = importCoordinator ?? CatalogImportCoordinator() {
     _catalogImporter = CatalogImporter(

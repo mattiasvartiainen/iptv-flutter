@@ -1,5 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart' as sqflite;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../services/playback/desktop_media_kit_playback.dart';
 import '../services/playback/playback_adapter.dart';
@@ -15,6 +21,8 @@ abstract interface class PlatformProfile {
 
   Future<void> initialize();
   PlaybackAdapter createPlaybackAdapter();
+  DatabaseFactory createDatabaseFactory();
+  Future<String> getDatabaseDirectory(DatabaseFactory databaseFactory);
   PlaylistSecretStore createSecretStore();
 }
 
@@ -55,6 +63,31 @@ abstract base class _PlatformProfile implements PlatformProfile {
 
   @override
   Future<void> initialize() async {}
+
+  @override
+  DatabaseFactory createDatabaseFactory() => switch (platform) {
+    AppPlatform.android ||
+    AppPlatform.windows ||
+    AppPlatform.linux ||
+    AppPlatform.webos => _createFfiDatabaseFactory(),
+    AppPlatform.other => sqflite.databaseFactory,
+  };
+
+  static DatabaseFactory _createFfiDatabaseFactory() {
+    sqfliteFfiInit();
+    return databaseFactoryFfi;
+  }
+
+  @override
+  Future<String> getDatabaseDirectory(DatabaseFactory databaseFactory) async {
+    if (platform == AppPlatform.android) {
+      final supportDirectory = await getApplicationSupportDirectory();
+      final directory = Directory(p.join(supportDirectory.path, 'databases'));
+      await directory.create(recursive: true);
+      return directory.path;
+    }
+    return databaseFactory.getDatabasesPath();
+  }
 
   @override
   PlaybackAdapter createPlaybackAdapter() => switch (resolvePlaybackBackend(

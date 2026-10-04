@@ -6,18 +6,19 @@ import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
-import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
 import 'package:iptv_flutter/services/storage/storage_migrations.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 
+import 'support/database_adapter.dart';
+
 void main() {
   test(
     'a cold import and a refresh both reconcile via the set-based SQL path',
     () async {
-      final adapter = SqfliteDatabaseAdapter(
+      final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_set_based_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
@@ -54,7 +55,7 @@ https://stream.test/beta-s01e02.m3u8
   );
 
   test('contracts and migrations initialize schema v1 tables', () async {
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_schema_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -203,7 +204,7 @@ https://stream.test/beta-s01e02.m3u8
       const PlaylistImportMetricsV2Migration(),
       const PlaylistScopedIdentityV3Migration(),
     ];
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_live_migration_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       migrations: migrations,
@@ -270,7 +271,7 @@ https://stream.test/beta-s01e02.m3u8
   });
 
   test('settings repository persists app and playlist settings', () async {
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_settings_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -311,7 +312,7 @@ https://stream.test/beta-s01e02.m3u8
   });
 
   test('settings repository stores multiple playlist source types', () async {
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_playlist_sources_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -414,7 +415,7 @@ https://stream.test/beta-s01e02.m3u8
   });
 
   test('saved playlist ID owns its imported catalog', () async {
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_selected_playlist_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -457,7 +458,7 @@ https://stream.test/second.m3u8
   });
 
   test('cache-only selection does not fetch an unimported playlist', () async {
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_cache_only_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -483,7 +484,7 @@ https://stream.test/second.m3u8
   test(
     'refreshing and selecting a second playlist shows its cached catalog',
     () async {
-      final adapter = SqfliteDatabaseAdapter(
+      final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_second_playlist_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
@@ -556,7 +557,7 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/324255
 #EXTINF:-1 xui-id="{XUI_ID}" tvg-id="" tvg-name="90-talet FHD SE [NXT Play SE]" tvg-logo="https://github.com/9967pilo724share324/pilo896to9967share324/blob/main/Sport/Back/piciconportalfull.png?raw=true" group-title="NXT Play - Sweden",90-talet FHD SE [NXT Play SE]
 http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
 ''';
-      final adapter = SqfliteDatabaseAdapter(
+      final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_xui_refresh_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
@@ -612,7 +613,7 @@ https://stream.test/pine-gap-s01e06.m3u8
 https://stream.test/the-last-signal.m3u8
 ''');
 
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_import_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -664,7 +665,7 @@ https://stream.test/the-last-signal.m3u8
 #EXTINF:-1 group-title="News",Shared Channel
 https://stream.test/shared.m3u8
 ''';
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_multiple_playlists_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -703,7 +704,7 @@ https://stream.test/shared.m3u8
   test(
     'preserves legacy cached media IDs when refreshed with strong IDs',
     () async {
-      final adapter = SqfliteDatabaseAdapter(
+      final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_legacy_identity_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
@@ -832,7 +833,7 @@ https://stream.test/pine-gap-s01e05.m3u8
       second: '',
     );
 
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_staging_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -881,7 +882,7 @@ https://stream.test/channel-a.m3u8
       second: '',
     );
 
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_cache_first_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
@@ -926,7 +927,7 @@ https://stream.test/channel-c.m3u8
 ''',
       );
 
-      final adapter = SqfliteDatabaseAdapter(
+      final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_refresh_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
@@ -1058,7 +1059,7 @@ https://stream.test/broken-show.m3u8
 ''',
       );
 
-      final adapter = SqfliteDatabaseAdapter(
+      final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_failed_refresh_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
@@ -1150,7 +1151,7 @@ https://stream.test/good.m3u8
 https://stream.test/rejected.m3u8
 ''',
     );
-    final adapter = SqfliteDatabaseAdapter(
+    final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_partial_import_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );

@@ -5,7 +5,6 @@ import 'package:sqflite/sqflite.dart';
 import '../catalog/catalog_query.dart';
 import '../catalog/id_identity.dart';
 import '../security/url_redaction.dart';
-import '../storage/database_adapter.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
 
@@ -233,9 +232,9 @@ abstract interface class SettingsRepository {
 
 class SqliteSettingsRepository implements SettingsRepository {
   SqliteSettingsRepository({
-    DatabaseAdapter? databaseAdapter,
+    required DatabaseAdapter databaseAdapter,
     PlaylistSecretStore? secretStore,
-  }) : _databaseAdapter = databaseAdapter ?? SqfliteDatabaseAdapter(),
+  }) : _databaseAdapter = databaseAdapter,
        _secretStore = secretStore ?? InMemoryPlaylistSecretStore();
 
   final DatabaseAdapter _databaseAdapter;

@@ -24,7 +24,12 @@ class AppDependencies {
     required PlatformProfile profile,
     AppLogger logger = const DebugAppLogger(),
   }) {
-    final databaseAdapter = SqfliteDatabaseAdapter();
+    final databaseFactory = profile.createDatabaseFactory();
+    final databaseAdapter = SqfliteDatabaseAdapter(
+      databaseFactory: databaseFactory,
+      databaseDirectoryProvider: () =>
+          profile.getDatabaseDirectory(databaseFactory),
+    );
     final secretStore = profile.createSecretStore();
     final catalogRepository = SqliteCatalogRepository(
       databaseAdapter: databaseAdapter,

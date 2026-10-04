@@ -4,6 +4,8 @@ import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/database_adapter.dart';
+
 const String _twoLiveChannels = '''#EXTM3U
 #EXTINF:-1 group-title="News",Alpha News
 https://stream.test/alpha.m3u8
@@ -57,7 +59,7 @@ ORDER BY f.title
   }
 
   setUp(() {
-    adapter = SqfliteDatabaseAdapter(
+    adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_search_index_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );

@@ -1,18 +1,17 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 
 import 'storage_contracts.dart';
 import 'storage_migrations.dart';
 
 class SqfliteDatabaseAdapter implements DatabaseAdapter {
   SqfliteDatabaseAdapter({
+    required DatabaseFactory databaseFactory,
+    this.databaseDirectoryProvider,
     this.fileName = 'iptv_app.sqlite',
     List<StorageMigration>? migrations,
-  }) : _migrations =
+  }) : _databaseFactory = databaseFactory,
+       _migrations =
            migrations ??
            const [
              InitialSchemaV1Migration(),
@@ -28,6 +27,8 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
            ];
 
   final String fileName;
+  final DatabaseFactory _databaseFactory;
+  final Future<String> Function()? databaseDirectoryProvider;
   final List<StorageMigration> _migrations;
 
   Database? _database;
@@ -51,47 +52,38 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
       return;
     }
 
-    if (!kIsWeb &&
-        (Platform.isAndroid || Platform.isWindows || Platform.isLinux)) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
-
-    final String basePath;
-    if (!kIsWeb && Platform.isAndroid) {
-      final supportDirectory = await getApplicationSupportDirectory();
-      basePath = p.join(supportDirectory.path, 'databases');
-      await Directory(basePath).create(recursive: true);
-    } else {
-      basePath = await getDatabasesPath();
-    }
+    final basePath =
+        await (databaseDirectoryProvider?.call() ??
+            _databaseFactory.getDatabasesPath());
     final fullPath = p.join(basePath, fileName);
 
-    _database = await openDatabase(
+    _database = await _databaseFactory.openDatabase(
       fullPath,
-      version: _targetVersion,
-      onConfigure: (db) async {
-        await db.execute('PRAGMA foreign_keys = ON');
-        // The catalog is a rebuildable cache, so trading the last few
-        // transactions on power loss for far fewer fsyncs is worth it.
-        // WAL is deliberately not enabled: a playlist import is one very
-        // large write transaction, and growing the WAL past the page cache
-        // makes every page read go through the wal-index instead.
-        await db.execute('PRAGMA synchronous = NORMAL');
-        // Negative values are KiB rather than pages; bounded so a TV with
-        // little free memory cannot be pushed into swap by an import.
-        await db.execute('PRAGMA cache_size = -8000');
-      },
-      onCreate: (db, version) async {
-        await _runMigrations(db, fromVersion: 0, toVersion: version);
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        await _runMigrations(
-          db,
-          fromVersion: oldVersion,
-          toVersion: newVersion,
-        );
-      },
+      options: OpenDatabaseOptions(
+        version: _targetVersion,
+        onConfigure: (db) async {
+          await db.execute('PRAGMA foreign_keys = ON');
+          // The catalog is a rebuildable cache, so trading the last few
+          // transactions on power loss for far fewer fsyncs is worth it.
+          // WAL is deliberately not enabled: a playlist import is one very
+          // large write transaction, and growing the WAL past the page cache
+          // makes every page read go through the wal-index instead.
+          await db.execute('PRAGMA synchronous = NORMAL');
+          // Negative values are KiB rather than pages; bounded so a TV with
+          // little free memory cannot be pushed into swap by an import.
+          await db.execute('PRAGMA cache_size = -8000');
+        },
+        onCreate: (db, version) async {
+          await _runMigrations(db, fromVersion: 0, toVersion: version);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          await _runMigrations(
+            db,
+            fromVersion: oldVersion,
+            toVersion: newVersion,
+          );
+        },
+      ),
     );
   }
 

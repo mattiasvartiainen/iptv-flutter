@@ -48,7 +48,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | DONE (2026-10-04): Added platform identity, injected capability environment, centralized build flags, and platform detection tests; analyzer and all 135 tests pass. |
 | WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | DONE (2026-10-04): Added platform profiles and `AppDependencies`; removed storage singleton/default controller dependencies and moved startup/disposal to the composition root; all 135 tests pass. Analyzer has one unrelated `unawaited_futures` info in `webos/flutter/main.dart`. |
 | WP-2.3 | Move playback backend selection into profiles | 2 Platform boundary | WP-2.2 | S | DONE (2026-10-04): Profiles now choose video_player, MediaKit, or fake playback and initialize MediaKit only for desktop; removed the platform-aware service factory and trivial desktop wrappers. All 140 tests pass; analyzer has one unrelated webOS info. |
-| WP-2.4 | Move database factory selection into profiles | 2 Platform boundary | WP-2.2 | S | TODO |
+| WP-2.4 | Move database factory selection into profiles | 2 Platform boundary | WP-2.2 | S | DONE (2026-10-04): `SqfliteDatabaseAdapter` now takes an injected `DatabaseFactory`; profiles initialize/provide FFI for Android/Windows/Linux/webOS and preserve Android's support-directory path. Removed platform checks/global assignment; all 141 tests pass. Analyzer has one unrelated webOS info. |
 | WP-2.5 | Replace `isDesktop` layout check with width + input | 2 Platform boundary | WP-2.1 | S | TODO |
 | WP-3.1 | Typed route stack + `Navigator.pages` | 3 Navigation & state | WP-1.3, D-1 | M | TODO |
 | WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | TODO |
@@ -140,9 +140,9 @@ flowchart TD
 | Where | What decides | Mechanism |
 |-------|--------------|-----------|
 | [main.dart](../lib/main.dart) | Which profile is initialized and dependencies are built | `detectAppPlatform()` → `PlatformProfile` → `AppDependencies` |
-| [platform_profile.dart](../lib/platform/platform_profile.dart) | Playback backend and MediaKit initialization | Exhaustive `AppPlatform` profile selection plus desktop build flags |
+| [platform_profile.dart](../lib/platform/platform_profile.dart) | Playback/database backends, initialization, and secret store | Exhaustive `AppPlatform` profile selection plus desktop build flags |
 | [playback_adapter.dart](../lib/services/playback/playback_adapter.dart) | Playback contract and implementation exports | No platform-selection logic |
-| [database_adapter.dart](../lib/services/storage/database_adapter.dart) | Whether to use the FFI database factory | `Platform.isAndroid/isIOS/isWindows/isLinux` |
+| [database_adapter.dart](../lib/services/storage/database_adapter.dart) | Open the database and run migrations | Uses the injected database factory and directory resolver |
 | [catalog_screen.dart](../lib/screens/catalog_screen.dart) | Whether the group sidebar is shown | `defaultTargetPlatform` ∈ {windows, linux, macOS} **and** width ≥ 1050 |
 
 Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlatform` alone cannot identify webOS. That is why the `IPTV_WEBOS` define exists — this constraint is real and must be kept.

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/platform/app_platform.dart';
 import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/platform/platform_profile.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   test('platform profile selection provides platform capabilities', () {
@@ -46,5 +47,25 @@ void main() {
       resolvePlaybackBackend(AppPlatform.other, desktopBackend: desktopBackend),
       PlaybackBackend.fake,
     );
+  });
+
+  test('native platform profiles provide the FFI database factory', () {
+    sqfliteFfiInit();
+
+    for (final platform in const [
+      AppPlatform.android,
+      AppPlatform.windows,
+      AppPlatform.linux,
+      AppPlatform.webos,
+    ]) {
+      expect(
+        identical(
+          platformProfileFor(platform).createDatabaseFactory(),
+          databaseFactoryFfi,
+        ),
+        isTrue,
+        reason: '$platform must retain the existing FFI SQLite backend',
+      );
+    }
   });
 }

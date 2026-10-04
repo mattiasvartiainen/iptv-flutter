@@ -9,8 +9,17 @@ import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'synthetic_playlist.dart';
+
+final DatabaseFactory _benchmarkDatabaseFactory =
+    _createBenchmarkDatabaseFactory();
+
+DatabaseFactory _createBenchmarkDatabaseFactory() {
+  sqfliteFfiInit();
+  return databaseFactoryFfi;
+}
 
 /// Phase 0 measurement harness for the current download -> parse -> import
 /// pipeline. It is intentionally kept separate from production diagnostics so
@@ -131,7 +140,10 @@ Future<Map<String, Object?>> _runV9Scenario({
 
   final fileName =
       'iptv_v9_benchmark_${scenario}_${DateTime.now().microsecondsSinceEpoch}.sqlite';
-  final adapter = SqfliteDatabaseAdapter(fileName: fileName);
+  final adapter = SqfliteDatabaseAdapter(
+    databaseFactory: _benchmarkDatabaseFactory,
+    fileName: fileName,
+  );
   final importer = CatalogImporter(databaseAdapter: adapter);
   final playlistId = 'benchmark-v9-$scenario';
   try {
@@ -241,7 +253,10 @@ Future<Map<String, Object?>> _runAllScenarios({
   }
   final dbFileName =
       'iptv_benchmark_all_${DateTime.now().microsecondsSinceEpoch}.sqlite';
-  final adapter = SqfliteDatabaseAdapter(fileName: dbFileName);
+  final adapter = SqfliteDatabaseAdapter(
+    databaseFactory: _benchmarkDatabaseFactory,
+    fileName: dbFileName,
+  );
   final repository = SqliteCatalogRepository(
     source: options.useNetwork ? const HttpPlaylistSource() : source,
     databaseAdapter: adapter,
@@ -315,7 +330,10 @@ Future<Map<String, Object?>> _runScenario({
 
   final dbFileName =
       'iptv_benchmark_${scenario}_${DateTime.now().microsecondsSinceEpoch}.sqlite';
-  final adapter = SqfliteDatabaseAdapter(fileName: dbFileName);
+  final adapter = SqfliteDatabaseAdapter(
+    databaseFactory: _benchmarkDatabaseFactory,
+    fileName: dbFileName,
+  );
   final repository = SqliteCatalogRepository(
     source: options.useNetwork ? const HttpPlaylistSource() : source,
     databaseAdapter: adapter,

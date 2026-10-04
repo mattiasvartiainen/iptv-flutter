@@ -8,6 +8,8 @@ import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/database_adapter.dart';
+
 class _PausedPlaylistSource implements PlaylistSource, StreamingPlaylistSource {
   final firstChunkAccepted = Completer<void>();
   final releaseNextChunk = Completer<void>();
@@ -44,7 +46,7 @@ void main() {
   late SqfliteDatabaseAdapter adapter;
 
   setUp(() {
-    adapter = SqfliteDatabaseAdapter(
+    adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_import_sessions_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
