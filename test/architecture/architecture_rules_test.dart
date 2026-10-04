@@ -8,11 +8,6 @@ const _knownPlatformViolations = <String, Set<String>>{
     'defaultTargetPlatform',
     'TargetPlatform',
   },
-  'lib/services/playback/playback_adapter.dart': {
-    'defaultTargetPlatform',
-    'TargetPlatform',
-    'kIsWeb',
-  },
   'lib/services/storage/database_adapter.dart': {'Platform.is', 'kIsWeb'},
 };
 

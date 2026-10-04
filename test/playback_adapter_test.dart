@@ -1,7 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
-import 'package:iptv_flutter/services/playback/playback_adapter.dart';
+import 'package:iptv_flutter/platform/app_platform.dart';
+import 'package:iptv_flutter/platform/platform_profile.dart';
+import 'package:iptv_flutter/services/playback/fake_playback.dart';
+import 'package:iptv_flutter/services/playback/playback_contract.dart';
+import 'package:iptv_flutter/services/playback/video_player_playback.dart';
 
 void main() {
   const item = ContentItem(
@@ -44,18 +47,19 @@ void main() {
     expect(adapter.state.position, const Duration(minutes: 2));
   });
 
-  test('webOS selection does not use the desktop media backend', () {
-    final adapter = createPlatformPlaybackAdapter(webOs: true);
+  test('webOS profile selects the video_player adapter', () {
+    final adapter = platformProfileFor(
+      AppPlatform.webos,
+    ).createPlaybackAdapter();
     addTearDown(adapter.dispose);
 
     expect(adapter, isA<VideoPlayerPlaybackAdapter>());
   });
 
-  test('Android selects the video_player adapter', () {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-
-    final adapter = createPlatformPlaybackAdapter();
+  test('Android profile selects the video_player adapter', () {
+    final adapter = platformProfileFor(
+      AppPlatform.android,
+    ).createPlaybackAdapter();
     addTearDown(adapter.dispose);
 
     expect(adapter, isA<VideoPlayerPlaybackAdapter>());

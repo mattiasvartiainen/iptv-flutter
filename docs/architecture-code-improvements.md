@@ -47,8 +47,8 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | BLOCKED (2026-10-03): Android now selects the video_player adapter and the factory regression test passes; Android debug build fails compiling generated package_info_plus/wakelock_plus registrant references, so stream playback is not yet verified. |
 | WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | DONE (2026-10-04): Added platform identity, injected capability environment, centralized build flags, and platform detection tests; analyzer and all 135 tests pass. |
 | WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | DONE (2026-10-04): Added platform profiles and `AppDependencies`; removed storage singleton/default controller dependencies and moved startup/disposal to the composition root; all 135 tests pass. Analyzer has one unrelated `unawaited_futures` info in `webos/flutter/main.dart`. |
-| WP-2.3 | Move playback backend selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
-| WP-2.4 | Move database factory selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
+| WP-2.3 | Move playback backend selection into profiles | 2 Platform boundary | WP-2.2 | S | DONE (2026-10-04): Profiles now choose video_player, MediaKit, or fake playback and initialize MediaKit only for desktop; removed the platform-aware service factory and trivial desktop wrappers. All 140 tests pass; analyzer has one unrelated webOS info. |
+| WP-2.4 | Move database factory selection into profiles | 2 Platform boundary | WP-2.2 | S | TODO |
 | WP-2.5 | Replace `isDesktop` layout check with width + input | 2 Platform boundary | WP-2.1 | S | TODO |
 | WP-3.1 | Typed route stack + `Navigator.pages` | 3 Navigation & state | WP-1.3, D-1 | M | TODO |
 | WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | TODO |
@@ -140,10 +140,10 @@ flowchart TD
 | Where | What decides | Mechanism |
 |-------|--------------|-----------|
 | [main.dart](../lib/main.dart) | Which profile is initialized and dependencies are built | `detectAppPlatform()` → `PlatformProfile` → `AppDependencies` |
-| [playback_adapter.dart](../lib/services/playback/playback_adapter.dart) | Which playback backend | `IPTV_WEBOS`, `kIsWeb`, `defaultTargetPlatform`, `IPTV_DESKTOP_BACKEND` |
+| [platform_profile.dart](../lib/platform/platform_profile.dart) | Playback backend and MediaKit initialization | Exhaustive `AppPlatform` profile selection plus desktop build flags |
+| [playback_adapter.dart](../lib/services/playback/playback_adapter.dart) | Playback contract and implementation exports | No platform-selection logic |
 | [database_adapter.dart](../lib/services/storage/database_adapter.dart) | Whether to use the FFI database factory | `Platform.isAndroid/isIOS/isWindows/isLinux` |
 | [catalog_screen.dart](../lib/screens/catalog_screen.dart) | Whether the group sidebar is shown | `defaultTargetPlatform` ∈ {windows, linux, macOS} **and** width ≥ 1050 |
-| [platform_profile.dart](../lib/platform/platform_profile.dart) | Playback initialization/backend and secret store | Profile delegates to current factories; backend/database selection is moved in WP-2.3/WP-2.4 |
 
 Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlatform` alone cannot identify webOS. That is why the `IPTV_WEBOS` define exists — this constraint is real and must be kept.
 
@@ -176,10 +176,10 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 ### Critical / High
 
 **F-01 — Android plays nothing.** Critical · High · Platform/Media
-- Location: `createPlatformPlaybackAdapter()` in [playback_adapter.dart](../lib/services/playback/playback_adapter.dart).
-- Problem: Android previously fell through to `FakePlaybackAdapter`; the factory now selects `VideoPlayerPlaybackAdapter`. Android build and device-stream validation remain blocked/pending.
+- Location: `PlatformProfile.createPlaybackAdapter()` in [platform_profile.dart](../lib/platform/platform_profile.dart).
+- Problem: Android now selects `VideoPlayerPlaybackAdapter`; Android build and device-stream validation remain blocked/pending.
 - Why it matters: Android is a declared target; playback is the product.
-- Recommendation: reuse the `video_player`-based adapter for Android. → **WP-1.6**
+- Recommendation: reuse the `video_player`-based adapter for Android. → **WP-1.6** (selection moved into profiles by WP-2.3)
 - Effort: S · Risk: Low.
 
 **F-02 — Android release build has no network permission and no TV launcher.** Critical · High · Platform
@@ -269,11 +269,8 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 **F-18 — `loadMore` scheduled from `itemBuilder`.** Low · High · Flutter
 - `_PagedGrid` and the search list register a post-frame callback for every item built in the last 30 slots. `loadMore()` is idempotent, so this is wasteful rather than wrong. Replace with one scroll-position/notification-driven trigger in the shared paged view. → **WP-5.2**.
 
-**F-19 — Trivial subclasses / aliases.** Low · High · Maintainability
-- `WindowsPlaybackAdapter` and `LinuxPlaybackAdapter` are empty subclasses of `DesktopMediaKitPlaybackAdapter`; `typedef WebOsPlaybackAdapterStub = WebOsPlaybackAdapter;`. → **WP-2.3**.
-
-**F-20 — Hard-coded English strings.** Low · High · Maintainability
-- No localization. Not urgent; do not introduce `gen-l10n` until a second language is required. WP-5.1 should at least keep strings inside widgets (not in controllers) so extraction is mechanical later.
+**~~F-19 — Trivial subclasses / aliases.~~** Low · High · Maintainability · Resolved by WP-1.6 and WP-2.3
+- Removed `WebOsPlaybackAdapterStub` during WP-1.6 and the empty Windows/Linux wrappers during WP-2.3; platform profiles construct shared adapters directly.
 
 ### Explicitly *not* findings
 
@@ -575,19 +572,19 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Acceptance:** no `AppStorageBootstrap` references; `main.dart` matches §6.4 in shape; all tests green.
 - **Skills:** `flutter-apply-architecture-best-practices` (constructor injection part only — no `get_it`).
 
-#### WP-2.3 — Playback backend selection in profiles
+#### WP-2.3 | Move playback backend selection into profiles
 - **Fixes:** F-09, F-19.
 - **Touches:** `lib/services/playback/*`, `lib/platform/*_profile.dart`, `lib/main.dart`.
 - **Steps:** move `createPlatformPlaybackAdapter`/`shouldInitializeMediaKit` logic into the profiles; `MediaKit.ensureInitialized()` lives in `DesktopProfile.initialize()`; delete `WindowsPlaybackAdapter`, `LinuxPlaybackAdapter`; `main.dart` no longer imports `media_kit`. Optionally move backend implementations to `lib/platform/playback/` (contract stays in `lib/services/playback/playback_contract.dart`).
 - **Acceptance:** architecture test allowlist no longer contains `main.dart` or `playback_adapter.dart`.
 
-#### WP-2.4 — Database factory in profiles
+#### WP-2.4 | Move database factory selection into profiles
 - **Fixes:** F-09.
 - **Touches:** `lib/services/storage/database_adapter.dart`, profiles.
 - **Steps:** `SqfliteDatabaseAdapter` takes a `DatabaseFactory` in its constructor instead of reading `Platform.is*` and mutating the global `databaseFactory`. Profiles provide `databaseFactoryFfi` (after `sqfliteFfiInit()`) for Android/Windows/Linux/webOS as today. **Do not change the webOS backend in this WP**; just move the decision. Replace the two `print` calls with the injected logger (if WP-0.2 did not already).
 - **Acceptance:** `database_adapter.dart` has no `dart:io` `Platform` usage; tests inject `databaseFactoryFfi` explicitly (also removes the repeated "databaseFactory reassigned" warnings noted in repo memory).
 
-#### WP-2.5 — Width + input instead of `isDesktop`
+#### WP-2.5 | Replace `isDesktop` layout check with width + input
 - **Fixes:** F-09, responsive guidance.
 - **Touches:** `lib/screens/catalog_screen.dart` (`_DesktopGroupLayout`), `test/widget_test.dart`.
 - **Steps:**

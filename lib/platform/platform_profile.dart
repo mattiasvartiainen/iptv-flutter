@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../services/playback/desktop_media_kit_playback.dart';
 import '../services/playback/playback_adapter.dart';
 import '../services/storage/secure_storage_service.dart';
 import 'app_platform.dart';
@@ -16,10 +18,25 @@ abstract interface class PlatformProfile {
   PlaylistSecretStore createSecretStore();
 }
 
+enum PlaybackBackend { videoPlayer, mediaKit, fake }
+
+@visibleForTesting
+PlaybackBackend resolvePlaybackBackend(
+  AppPlatform platform, {
+  required String desktopBackend,
+}) => switch (platform) {
+  AppPlatform.android || AppPlatform.webos => PlaybackBackend.videoPlayer,
+  AppPlatform.linux || AppPlatform.windows when desktopBackend == 'media_kit' =>
+    PlaybackBackend.mediaKit,
+  AppPlatform.linux ||
+  AppPlatform.windows ||
+  AppPlatform.other => PlaybackBackend.fake,
+};
+
 PlatformProfile platformProfileFor(AppPlatform platform) => switch (platform) {
   AppPlatform.android => const AndroidProfile(),
-  AppPlatform.windows => const WindowsProfile(),
-  AppPlatform.linux => const LinuxProfile(),
+  AppPlatform.windows ||
+  AppPlatform.linux => DesktopProfile(platform: platform),
   AppPlatform.webos => const WebOsProfile(),
   AppPlatform.other => const OtherPlatformProfile(),
 };
@@ -37,15 +54,21 @@ abstract base class _PlatformProfile implements PlatformProfile {
   bool get autoRunPlaybackSpike => build_flags.autoRunPlaybackSpike;
 
   @override
-  Future<void> initialize() async {
-    if (shouldInitializeMediaKit(webOs: platform == AppPlatform.webos)) {
-      MediaKit.ensureInitialized();
-    }
-  }
+  Future<void> initialize() async {}
 
   @override
-  PlaybackAdapter createPlaybackAdapter() =>
-      createPlatformPlaybackAdapter(webOs: platform == AppPlatform.webos);
+  PlaybackAdapter createPlaybackAdapter() => switch (resolvePlaybackBackend(
+    platform,
+    desktopBackend: build_flags.desktopPlaybackBackend,
+  )) {
+    PlaybackBackend.videoPlayer => VideoPlayerPlaybackAdapter(),
+    PlaybackBackend.mediaKit => DesktopMediaKitPlaybackAdapter(
+      disableVideoOutput: build_flags.disableDesktopVideoOutput,
+      enableHardwareAcceleration:
+          !build_flags.disableDesktopHardwareAcceleration,
+    ),
+    PlaybackBackend.fake => FakePlaybackAdapter(),
+  };
 
   @override
   PlaylistSecretStore createSecretStore() => MigratingPlaylistSecretStore(
@@ -66,28 +89,26 @@ final class AndroidProfile extends _PlatformProfile {
       );
 }
 
-final class WindowsProfile extends _PlatformProfile {
-  const WindowsProfile()
+final class DesktopProfile extends _PlatformProfile {
+  const DesktopProfile({required super.platform})
     : super(
-        platform: AppPlatform.windows,
         capabilities: const PlatformCapabilities(
           primaryInput: PrimaryInput.pointer,
           hasHardwareBack: false,
           supportsHover: true,
         ),
       );
-}
 
-final class LinuxProfile extends _PlatformProfile {
-  const LinuxProfile()
-    : super(
-        platform: AppPlatform.linux,
-        capabilities: const PlatformCapabilities(
-          primaryInput: PrimaryInput.pointer,
-          hasHardwareBack: false,
-          supportsHover: true,
-        ),
-      );
+  @override
+  Future<void> initialize() async {
+    if (resolvePlaybackBackend(
+          platform,
+          desktopBackend: build_flags.desktopPlaybackBackend,
+        ) ==
+        PlaybackBackend.mediaKit) {
+      MediaKit.ensureInitialized();
+    }
+  }
 }
 
 final class WebOsProfile extends _PlatformProfile {

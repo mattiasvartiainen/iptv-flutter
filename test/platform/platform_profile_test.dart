@@ -16,4 +16,35 @@ void main() {
     expect(webOs.capabilities.primaryInput, PrimaryInput.remote);
     expect(webOs.capabilities.isRemoteFirst, isTrue);
   });
+
+  test('profiles resolve playback backend by target platform', () {
+    const desktopBackend = 'media_kit';
+
+    expect(
+      resolvePlaybackBackend(
+        AppPlatform.android,
+        desktopBackend: desktopBackend,
+      ),
+      PlaybackBackend.videoPlayer,
+    );
+    expect(
+      resolvePlaybackBackend(AppPlatform.webos, desktopBackend: desktopBackend),
+      PlaybackBackend.videoPlayer,
+    );
+    expect(
+      resolvePlaybackBackend(
+        AppPlatform.windows,
+        desktopBackend: desktopBackend,
+      ),
+      PlaybackBackend.mediaKit,
+    );
+    expect(
+      resolvePlaybackBackend(AppPlatform.linux, desktopBackend: 'fake'),
+      PlaybackBackend.fake,
+    );
+    expect(
+      resolvePlaybackBackend(AppPlatform.other, desktopBackend: desktopBackend),
+      PlaybackBackend.fake,
+    );
+  });
 }
