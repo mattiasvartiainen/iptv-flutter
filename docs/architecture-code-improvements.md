@@ -46,7 +46,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-1.5 | Honest secret storage (rename + platform secure store) | 1 Critical fixes | D-3 | M | DONE (2026-10-03): Renamed the file store, added secure plugin storage and lazy migration; analyzer/tests pass. Android/Windows native builds and webOS hardware verification remain pending. |
 | WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | BLOCKED (2026-10-03): Android now selects the video_player adapter and the factory regression test passes; Android debug build fails compiling generated package_info_plus/wakelock_plus registrant references, so stream playback is not yet verified. |
 | WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | DONE (2026-10-04): Added platform identity, injected capability environment, centralized build flags, and platform detection tests; analyzer and all 135 tests pass. |
-| WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | TODO |
+| WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | DONE (2026-10-04): Added platform profiles and `AppDependencies`; removed storage singleton/default controller dependencies and moved startup/disposal to the composition root; all 135 tests pass. Analyzer has one unrelated `unawaited_futures` info in `webos/flutter/main.dart`. |
 | WP-2.3 | Move playback backend selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
 | WP-2.4 | Move database factory selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
 | WP-2.5 | Replace `isDesktop` layout check with width + input | 2 Platform boundary | WP-2.1 | S | TODO |
@@ -108,41 +108,42 @@ The fix is **not** a new framework. The current choices — `ChangeNotifier` + `
 
 ```mermaid
 flowchart TD
-    main[main.dart<br/>MediaKit init via platform check] --> app[IptvApp / AppShell<br/>switch on AppScreen enum]
-    app --> scope[AppScope<br/>InheritedNotifier&lt;AppController&gt;]
-    scope --> screens[Screens<br/>home / catalog / search / details / player / settings]
-    screens -->|AppScope.of: everything| ctrl[AppController<br/>nav + playlists + settings + playback + issues]
-    screens -->|ListenableBuilder| cvs[CatalogViewState<br/>PagedCollection&lt;T&gt;]
-    screens -->|buildVideoView / states stream| pa[PlaybackAdapter]
-    ctrl --> cvs
-    ctrl -->|default ctor arg| boot[AppStorageBootstrap.instance<br/>global singleton]
-    ctrl -->|is SqliteCatalogRepository downcast| repo
-    ctrl --> settings[SettingsRepository]
-    ctrl -->|createPlatformPlaybackAdapter| pa
-    cvs --> qs[CatalogQueryService]
-    boot --> repo[SqliteCatalogRepository<br/>implements CatalogRepository + CatalogQueryService]
-    boot --> settings
-    boot --> secrets[PlaylistSecretStore<br/>plaintext JSON files]
-    repo -->|useCatalogImporterV9=true| importer[CatalogImporter v9<br/>+ CatalogImportWorker isolate]
-    repo -->|legacy path, tests only| legacy[_loadInternal / staging reconcile / legacy FTS]
-    repo --> db[(SQLite via sqflite_common_ffi)]
-    importer --> db
-    settings --> db
-    settings --> secrets
-    pa --> vp[VideoPlayerPlaybackAdapter<br/>Android + webOS]
-    pa --> mk[DesktopMediaKitPlaybackAdapter<br/>Windows/Linux]
-    pa --> fake[FakePlaybackAdapter<br/>web, unsupported/default]
+  main[main.dart] --> profile[PlatformProfile<br/>identity + initialization]
+  profile --> deps[AppDependencies<br/>storage + repositories + controller]
+  deps --> app[IptvApp / AppShell<br/>switch on AppScreen enum]
+  app --> scope[AppScope<br/>InheritedNotifier&lt;AppController&gt;]
+  scope --> screens[Screens<br/>home / catalog / search / details / player / settings]
+  screens -->|AppScope.of: everything| ctrl[AppController<br/>nav + playlists + settings + playback + issues]
+  screens -->|ListenableBuilder| cvs[CatalogViewState<br/>PagedCollection&lt;T&gt;]
+  screens -->|buildVideoView / states stream| pa[PlaybackAdapter]
+  ctrl --> cvs
+  ctrl -->|is SqliteCatalogRepository downcast| repo
+  ctrl --> settings[SettingsRepository]
+  ctrl -->|createPlatformPlaybackAdapter| pa
+  cvs --> qs[CatalogQueryService]
+  deps --> repo[SqliteCatalogRepository<br/>implements CatalogRepository + CatalogQueryService]
+  deps --> settings
+  deps --> secrets[PlaylistSecretStore<br/>secure store + lazy file migration]
+  repo -->|useCatalogImporterV9=true| importer[CatalogImporter v9<br/>+ CatalogImportWorker isolate]
+  repo -->|legacy path, tests only| legacy[_loadInternal / staging reconcile / legacy FTS]
+  repo --> db[(SQLite via sqflite_common_ffi)]
+  importer --> db
+  settings --> db
+  settings --> secrets
+  pa --> vp[VideoPlayerPlaybackAdapter<br/>Android + webOS]
+  pa --> mk[DesktopMediaKitPlaybackAdapter<br/>Windows/Linux]
+  pa --> fake[FakePlaybackAdapter<br/>web, unsupported/default]
 ```
 
 ### 3.2 Platform boundaries today
 
 | Where | What decides | Mechanism |
 |-------|--------------|-----------|
-| [main.dart](../lib/main.dart) | Whether `MediaKit.ensureInitialized()` runs | `shouldInitializeMediaKit()` → `defaultTargetPlatform` + `IPTV_WEBOS` define |
+| [main.dart](../lib/main.dart) | Which profile is initialized and dependencies are built | `detectAppPlatform()` → `PlatformProfile` → `AppDependencies` |
 | [playback_adapter.dart](../lib/services/playback/playback_adapter.dart) | Which playback backend | `IPTV_WEBOS`, `kIsWeb`, `defaultTargetPlatform`, `IPTV_DESKTOP_BACKEND` |
 | [database_adapter.dart](../lib/services/storage/database_adapter.dart) | Whether to use the FFI database factory | `Platform.isAndroid/isIOS/isWindows/isLinux` |
 | [catalog_screen.dart](../lib/screens/catalog_screen.dart) | Whether the group sidebar is shown | `defaultTargetPlatform` ∈ {windows, linux, macOS} **and** width ≥ 1050 |
-| [storage_bootstrap.dart](../lib/services/storage/storage_bootstrap.dart) | Secret store implementation | Hard-coded file store for every platform |
+| [platform_profile.dart](../lib/platform/platform_profile.dart) | Playback initialization/backend and secret store | Profile delegates to current factories; backend/database selection is moved in WP-2.3/WP-2.4 |
 
 Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlatform` alone cannot identify webOS. That is why the `IPTV_WEBOS` define exists — this constraint is real and must be kept.
 
@@ -160,7 +161,7 @@ Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlat
 | Leak | Evidence | Consequence |
 |------|----------|-------------|
 | Platform checks in UI | `_DesktopGroupLayout.build` reads `defaultTargetPlatform` | Layout depends on OS, not on space/input; webOS TV can never get the sidebar even at 1920 px. |
-| Global singleton behind default args | `AppController(...)` falls back to `AppStorageBootstrap.instance` | Hidden dependency; tests must remember to inject everything. |
+| ~~Global singleton behind default args~~ | `AppStorageBootstrap` and optional `AppController` repository/playback args | Resolved by WP-2.2: `AppDependencies` constructs and owns application services; tests inject dependencies. |
 | Concrete-type downcast in app state | `if (repository is SqliteCatalogRepository) { recoverAbandonedImports(); resumeSearchIndexing(); }` | App state knows the storage implementation; startup maintenance is invisible to other repositories. |
 | Settings keys as strings across layers | `'show_home_live_tv'` in `settings_screen.dart`, `app_controller.dart`, `database_adapter.dart` | A typo silently creates a new setting; no type safety. |
 | Screens pass raw exception text to users | `PagedCollection._errorMessage = '$error'`, shown by `_PagedGrid` | Users see `SqliteException(...)` strings. |

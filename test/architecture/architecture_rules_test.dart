@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 const _knownPlatformViolations = <String, Set<String>>{
-  'lib/app.dart': {'fromEnvironment'},
   'lib/screens/catalog_screen.dart': {
     'defaultTargetPlatform',
     'TargetPlatform',

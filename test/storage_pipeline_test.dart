@@ -4,10 +4,10 @@ import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/id_identity.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/errors/app_issue.dart';
+import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
-import 'package:iptv_flutter/services/storage/storage_bootstrap.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
 import 'package:iptv_flutter/services/storage/storage_migrations.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
@@ -269,16 +269,6 @@ https://stream.test/beta-s01e02.m3u8
     expect(seriesTable, hasLength(1));
   });
 
-  test('storage bootstrap shares a single adapter instance', () {
-    final bootstrap = AppStorageBootstrap.instance;
-    final repoA = bootstrap.catalogRepository;
-    final repoB = bootstrap.settingsRepository;
-
-    expect(repoA, isNotNull);
-    expect(repoB, isNotNull);
-    expect(identical(bootstrap.adapter, bootstrap.adapter), isTrue);
-  });
-
   test('settings repository persists app and playlist settings', () async {
     final adapter = SqfliteDatabaseAdapter(
       fileName:
@@ -532,6 +522,8 @@ https://stream.test/second.m3u8
       final controller = AppController(
         catalogRepository: catalog,
         settingsRepository: settings,
+        playbackAdapter: FakePlaybackAdapter(),
+        storageInitializer: () async {},
       );
       addTearDown(controller.dispose);
 
@@ -587,6 +579,8 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
           secretStore: store,
         ),
         settingsRepository: settings,
+        playbackAdapter: FakePlaybackAdapter(),
+        storageInitializer: () async {},
       );
       addTearDown(controller.dispose);
 
@@ -818,6 +812,8 @@ https://stream.test/channel-a.m3u8
           'show_home_series': 'false',
         },
       ),
+      playbackAdapter: FakePlaybackAdapter(),
+      storageInitializer: () async {},
     );
 
     await controller.refreshHomeSectionVisibility();

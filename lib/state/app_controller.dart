@@ -7,13 +7,11 @@ import '../services/catalog/catalog_import_worker.dart';
 import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/catalog/catalog_repository.dart';
-import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/errors/app_issue.dart';
 import '../services/logging/app_logger.dart';
 import '../services/playback/playback_adapter.dart';
 import '../services/security/url_redaction.dart';
 import '../services/settings/settings_repository.dart';
-import '../services/storage/storage_bootstrap.dart';
 import 'catalog_view_state.dart';
 
 enum AppScreen {
@@ -35,19 +33,16 @@ enum LoadStatus { idle, loading, ready, error }
 
 class AppController extends ChangeNotifier {
   AppController({
-    CatalogRepository? catalogRepository,
+    required CatalogRepository catalogRepository,
     CatalogQueryService? catalogQueryService,
-    SettingsRepository? settingsRepository,
-    PlaybackAdapter? playbackAdapter,
+    required SettingsRepository settingsRepository,
+    required this.playbackAdapter,
+    required this.storageInitializer,
     AppLogger? logger,
-  }) : _catalogRepository =
-           catalogRepository ?? AppStorageBootstrap.instance.catalogRepository,
+  }) : _catalogRepository = catalogRepository,
        _injectedQueryService = catalogQueryService,
-       _settingsRepository =
-           settingsRepository ??
-           AppStorageBootstrap.instance.settingsRepository,
-       _logger = logger ?? const DebugAppLogger(),
-       playbackAdapter = playbackAdapter ?? createPlatformPlaybackAdapter() {
+       _settingsRepository = settingsRepository,
+       _logger = logger ?? const DebugAppLogger() {
     _queryService =
         _injectedQueryService ??
         (_catalogRepository is CatalogQueryService
@@ -68,6 +63,7 @@ class AppController extends ChangeNotifier {
   final CatalogRepository _catalogRepository;
   final CatalogQueryService? _injectedQueryService;
   final SettingsRepository _settingsRepository;
+  final Future<void> Function() storageInitializer;
   final AppLogger _logger;
   final PlaybackAdapter playbackAdapter;
 
@@ -126,14 +122,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    await AppStorageBootstrap.instance.initialize();
-    final repository = _catalogRepository;
-    if (repository is SqliteCatalogRepository) {
-      await repository.recoverAbandonedImports();
-      // Resume after recovery so an interrupted cold import cannot enqueue
-      // partial catalog rows while they are being removed.
-      unawaited(repository.resumeSearchIndexing());
-    }
+    await storageInitializer();
     await refreshHomeSectionVisibility();
     await refreshVerboseRefreshInfoSetting();
     await refreshPlaylists();

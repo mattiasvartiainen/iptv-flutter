@@ -1,35 +1,36 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'app/app_dependencies.dart';
+import 'platform/app_environment.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/details_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
-import 'services/storage/storage_bootstrap.dart';
 import 'state/app_controller.dart';
 import 'widgets/app_scope.dart';
 
 class IptvApp extends StatefulWidget {
-  const IptvApp({super.key, this.controller});
-  static const bool autoRunPlaybackSpike = bool.fromEnvironment(
-    'PLAYBACK_SPIKE_AUTORUN',
-    defaultValue: false,
-  );
-  final AppController? controller;
+  const IptvApp({super.key, required this.dependencies});
+
+  final AppDependencies dependencies;
+
   @override
   State<IptvApp> createState() => _IptvAppState();
 }
 
 class _IptvAppState extends State<IptvApp> {
-  late final AppController controller = widget.controller ?? AppController();
+  AppController get controller => widget.dependencies.controller;
 
   @override
   void initState() {
     super.initState();
-    if (widget.controller == null) controller.initialize();
-    if (IptvApp.autoRunPlaybackSpike) {
+    unawaited(widget.dependencies.initialize());
+    if (widget.dependencies.autoRunPlaybackSpike) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         controller.openPlaybackSpike();
       });
@@ -38,10 +39,7 @@ class _IptvAppState extends State<IptvApp> {
 
   @override
   void dispose() {
-    if (widget.controller == null) {
-      controller.dispose();
-      AppStorageBootstrap.instance.dispose();
-    }
+    unawaited(widget.dependencies.dispose());
     super.dispose();
   }
 
@@ -52,7 +50,10 @@ class _IptvAppState extends State<IptvApp> {
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xff071412),
       ),
-      home: AppScope(controller: controller, child: const AppShell()),
+      home: AppEnvironment(
+        capabilities: widget.dependencies.capabilities,
+        child: AppScope(controller: controller, child: const AppShell()),
+      ),
     );
   }
 }

@@ -17,3 +17,8 @@ const bool disableDesktopHardwareAcceleration = bool.fromEnvironment(
   'IPTV_DISABLE_HW_ACCEL',
   defaultValue: true,
 );
+
+const bool autoRunPlaybackSpike = bool.fromEnvironment(
+  'PLAYBACK_SPIKE_AUTORUN',
+  defaultValue: false,
+);

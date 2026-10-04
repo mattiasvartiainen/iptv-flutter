@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
+import 'package:iptv_flutter/app/app_dependencies.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/screens/catalog_screen.dart';
 import 'package:iptv_flutter/screens/search_screen.dart';
@@ -34,10 +35,13 @@ void main() {
       playbackAdapter: FakePlaybackAdapter(
         transitionDelay: const Duration(milliseconds: 1),
       ),
+      storageInitializer: () async {},
     );
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(IptvApp(controller: controller));
+    await tester.pumpWidget(
+      IptvApp(dependencies: AppDependencies.forTesting(controller: controller)),
+    );
     await controller.loadPlaylist(
       playlist.playlistId,
       policy: CatalogLoadPolicy.networkOnly,
@@ -64,6 +68,7 @@ void main() {
       ),
       settingsRepository: settings,
       playbackAdapter: FakePlaybackAdapter(),
+      storageInitializer: () async {},
     );
     addTearDown(controller.dispose);
 
@@ -180,6 +185,8 @@ void main() {
       catalogRepository: const FixtureCatalogRepository(),
       catalogQueryService: service,
       settingsRepository: _TestSettingsRepository(),
+      playbackAdapter: FakePlaybackAdapter(),
+      storageInitializer: () async {},
     );
     addTearDown(controller.dispose);
     controller.screen = AppScreen.search;
@@ -229,6 +236,7 @@ void main() {
         catalogQueryService: service,
         settingsRepository: settings,
         playbackAdapter: FakePlaybackAdapter(),
+        storageInitializer: () async {},
       );
       addTearDown(controller.dispose);
       controller.screen = AppScreen.liveCatalog;
