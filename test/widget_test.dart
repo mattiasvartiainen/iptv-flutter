@@ -217,7 +217,7 @@ void main() {
   });
 
   testWidgets(
-    'desktop group menu defaults to all and filters one group',
+    'wide group sidebar filters with pointer and keyboard and hides when narrow',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1440, 900);
@@ -269,8 +269,43 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.catalogView.selectedGroupId, isNull);
       expect(controller.catalogView.items.total, 3);
+
+      var sportsFocused = false;
+      for (var attempt = 0; attempt < 30 && !sportsFocused; attempt++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        final tile = FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<ListTile>();
+        sportsFocused =
+            tile?.title is Text && (tile!.title! as Text).data == 'Sports';
+      }
+      expect(sportsFocused, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      final previousTile = FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<ListTile>();
+      expect((previousTile?.title as Text?)?.data, 'News');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      final selectedTile = FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<ListTile>();
+      expect((selectedTile?.title as Text?)?.data, 'Sports');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(controller.catalogView.items.total, 1);
+      expect(controller.catalogView.items.items.single.title, 'World Sports');
+
+      tester.view.physicalSize = const Size(1000, 900);
+      await tester.pumpAndSettle();
+      expect(find.text('GROUPS'), findsNothing);
+      expect(find.text('All groups'), findsNothing);
+      expect(find.text('World Sports'), findsOneWidget);
+
+      tester.view.physicalSize = const Size(1440, 900);
+      await tester.pumpAndSettle();
+      expect(find.text('GROUPS'), findsOneWidget);
+      expect(controller.catalogView.items.total, 1);
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 }
 

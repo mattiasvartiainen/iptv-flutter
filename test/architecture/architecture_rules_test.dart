@@ -3,12 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-const _knownPlatformViolations = <String, Set<String>>{
-  'lib/screens/catalog_screen.dart': {
-    'defaultTargetPlatform',
-    'TargetPlatform',
-  },
-};
+const _knownPlatformViolations = <String, Set<String>>{};
 
 final _platformPatterns = <String, RegExp>{
   'defaultTargetPlatform': RegExp(r'\bdefaultTargetPlatform\b'),

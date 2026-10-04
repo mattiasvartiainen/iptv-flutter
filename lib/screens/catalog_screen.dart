@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../services/catalog/catalog_query.dart';
@@ -126,7 +124,7 @@ class _ContentGrid extends StatelessWidget {
       showBack: true,
       title: title,
       child: _GridFrame(
-        child: _DesktopGroupLayout(
+        child: _GroupSidebarLayout(
           kind: groupKind,
           collection: collection,
           seriesCollection: null,
@@ -186,7 +184,7 @@ class _SeriesGrid extends StatelessWidget {
       showBack: true,
       title: 'Series',
       child: _GridFrame(
-        child: _DesktopGroupLayout(
+        child: _GroupSidebarLayout(
           kind: groupKind,
           collection: null,
           seriesCollection: collection,
@@ -229,8 +227,8 @@ class _SeriesGrid extends StatelessWidget {
   }
 }
 
-class _DesktopGroupLayout extends StatelessWidget {
-  const _DesktopGroupLayout({
+class _GroupSidebarLayout extends StatelessWidget {
+  const _GroupSidebarLayout({
     required this.kind,
     required this.collection,
     required this.seriesCollection,
@@ -242,7 +240,7 @@ class _DesktopGroupLayout extends StatelessWidget {
   final PagedCollection<SeriesSummary>? seriesCollection;
   final Widget child;
 
-  static const double _desktopBreakpoint = 1050;
+  static const double _sidebarBreakpoint = 1050;
   static const double _sidebarWidth = 250;
 
   @override
@@ -250,11 +248,7 @@ class _DesktopGroupLayout extends StatelessWidget {
     final view = AppScope.of(context).catalogView;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isDesktop =
-            defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.linux ||
-            defaultTargetPlatform == TargetPlatform.macOS;
-        if (!isDesktop || constraints.maxWidth < _desktopBreakpoint) {
+        if (constraints.maxWidth < _sidebarBreakpoint) {
           return child;
         }
         return Row(
