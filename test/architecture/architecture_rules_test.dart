@@ -13,7 +13,6 @@ const _knownPlatformViolations = <String, Set<String>>{
     'defaultTargetPlatform',
     'TargetPlatform',
     'kIsWeb',
-    'fromEnvironment',
   },
   'lib/services/storage/database_adapter.dart': {'Platform.is', 'kIsWeb'},
 };

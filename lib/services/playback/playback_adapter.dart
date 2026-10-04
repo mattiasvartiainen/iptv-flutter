@@ -1,34 +1,16 @@
 import 'package:flutter/foundation.dart';
 
+import '../../platform/build_flags.dart';
 import 'fake_playback.dart';
 import 'linux_playback.dart';
 import 'playback_contract.dart';
 import 'video_player_playback.dart';
 import 'windows_playback.dart';
 
+export '../../platform/build_flags.dart';
 export 'fake_playback.dart';
 export 'playback_contract.dart';
 export 'video_player_playback.dart';
-
-const bool isWebOsBuild = bool.fromEnvironment(
-  'IPTV_WEBOS',
-  defaultValue: false,
-);
-
-const String desktopPlaybackBackend = String.fromEnvironment(
-  'IPTV_DESKTOP_BACKEND',
-  defaultValue: 'media_kit',
-);
-
-const bool disableDesktopVideoOutput = bool.fromEnvironment(
-  'IPTV_DISABLE_VIDEO_OUTPUT',
-  defaultValue: false,
-);
-
-const bool disableDesktopHardwareAcceleration = bool.fromEnvironment(
-  'IPTV_DISABLE_HW_ACCEL',
-  defaultValue: true,
-);
 
 bool shouldInitializeMediaKit({bool? webOs}) {
   final useWebOsAdapter = webOs ?? isWebOsBuild;

@@ -45,7 +45,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-1.4 | Stop displaying/logging credential-bearing URLs | 1 Critical fixes | – | S | DONE (2026-10-03): Removed raw URL UI fields; centralized URL/error redaction and added unit/widget coverage. |
 | WP-1.5 | Honest secret storage (rename + platform secure store) | 1 Critical fixes | D-3 | M | DONE (2026-10-03): Renamed the file store, added secure plugin storage and lazy migration; analyzer/tests pass. Android/Windows native builds and webOS hardware verification remain pending. |
 | WP-1.6 | Real playback on Android | 1 Critical fixes | D-4 | S | BLOCKED (2026-10-03): Android now selects the video_player adapter and the factory regression test passes; Android debug build fails compiling generated package_info_plus/wakelock_plus registrant references, so stream playback is not yet verified. |
-| WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | TODO |
+| WP-2.1 | `lib/platform/`: platform identity + capabilities | 2 Platform boundary | WP-0.3 | S | DONE (2026-10-04): Added platform identity, injected capability environment, centralized build flags, and platform detection tests; analyzer and all 135 tests pass. |
 | WP-2.2 | Composition root (`AppDependencies`) | 2 Platform boundary | WP-2.1 | M | TODO |
 | WP-2.3 | Move playback backend selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
 | WP-2.4 | Move database factory selection into platform profiles | 2 Platform boundary | WP-2.2 | S | TODO |
