@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../models/content_item.dart';
 import '../services/playback/playback_adapter.dart';
 import '../widgets/app_scope.dart';
 
 class PlayerScreen extends StatelessWidget {
-  const PlayerScreen({super.key});
+  const PlayerScreen({super.key, required this.item});
+
+  final ContentItem item;
 
   String _statusLabel(String status) {
     return switch (status) {
@@ -39,7 +42,7 @@ class PlayerScreen extends StatelessWidget {
         stream: c.playbackAdapter.states,
         builder: (context, snapshot) {
           final state = snapshot.data ?? c.playbackAdapter.state;
-          final item = state.item;
+          final activeItem = state.item ?? item;
           return Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(32),
@@ -61,9 +64,9 @@ class PlayerScreen extends StatelessWidget {
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 12),
-                    Text(item?.title ?? 'No stream selected'),
+                    Text(activeItem.title),
                     const SizedBox(height: 8),
-                    Text(item?.group ?? ''),
+                    Text(activeItem.group),
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,

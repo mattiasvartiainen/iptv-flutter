@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../app/navigation/app_route.dart';
 import '../services/catalog/catalog_query.dart';
-import '../state/app_controller.dart';
 import '../state/catalog_view_state.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
@@ -17,33 +17,35 @@ const SliverGridDelegate _cardGrid = SliverGridDelegateWithMaxCrossAxisExtent(
 );
 
 class CatalogScreen extends StatelessWidget {
-  const CatalogScreen({super.key});
+  const CatalogScreen({super.key, required this.route});
+
+  final AppRoute route;
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final view = controller.catalogView;
-    return switch (controller.screen) {
-      AppScreen.liveCatalog => _ContentGrid(
+    return switch (route) {
+      CatalogRoute(kind: CatalogItemKind.live) => _ContentGrid(
         title: 'Live TV',
         groupKind: CatalogGroupKind.live,
         collection: view.items,
         emptyText: 'No live channels found yet.',
       ),
-      AppScreen.movieCatalog => _ContentGrid(
+      CatalogRoute(kind: CatalogItemKind.movie) => _ContentGrid(
         title: 'Movies',
         groupKind: CatalogGroupKind.movie,
         collection: view.items,
         emptyText: 'No movies found yet.',
       ),
-      AppScreen.seriesCatalog => _SeriesGrid(
+      SeriesRoute() => _SeriesGrid(
         groupKind: CatalogGroupKind.series,
         collection: view.series,
       ),
-      AppScreen.seasonCatalog => _SeasonGrid(series: controller.selectedSeries),
-      AppScreen.episodeCatalog => _EpisodeGrid(
-        series: controller.selectedSeries,
-        season: controller.selectedSeason,
+      SeasonsRoute(:final series) => _SeasonGrid(series: series),
+      EpisodesRoute(:final series, :final season) => _EpisodeGrid(
+        series: series,
+        season: season,
         collection: view.episodes,
       ),
       _ => const SizedBox.shrink(),
@@ -400,7 +402,10 @@ class _SeasonGrid extends StatelessWidget {
                       final season = seasons[index];
                       return Card(
                         child: InkWell(
-                          onTap: () => controller.openSeriesEpisodes(season),
+                          onTap: () => controller.openSeriesEpisodes(
+                            selectedSeries,
+                            season,
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(

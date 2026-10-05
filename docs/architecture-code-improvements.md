@@ -50,7 +50,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-2.3 | Move playback backend selection into profiles | 2 Platform boundary | WP-2.2 | S | DONE (2026-10-04): Profiles now choose video_player, MediaKit, or fake playback and initialize MediaKit only for desktop; removed the platform-aware service factory and trivial desktop wrappers. All 140 tests pass; analyzer has one unrelated webOS info. |
 | WP-2.4 | Move database factory selection into profiles | 2 Platform boundary | WP-2.2 | S | DONE (2026-10-04): `SqfliteDatabaseAdapter` now takes an injected `DatabaseFactory`; profiles initialize/provide FFI for Android/Windows/Linux/webOS and preserve Android's support-directory path. Removed platform checks/global assignment; all 141 tests pass. Analyzer has one unrelated webOS info. |
 | WP-2.5 | Replace `isDesktop` layout check with width + input | 2 Platform boundary | WP-2.1 | S | DONE (2026-10-04): Sidebar uses available width >= 1050 on every platform; pointer, arrow-key/Enter filtering and narrow/wide resize coverage pass. Platform exception allowlist is empty; all 141 tests pass. Analyzer retains one unrelated webOS info. |
-| WP-3.1 | Typed route stack + `Navigator.pages` | 3 Navigation & state | WP-1.3, D-1 | M | TODO |
+| WP-3.1 | Typed route stack + `Navigator.pages` | 3 Navigation & state | WP-1.3, D-1 | M | DONE (2026-10-05): Added sealed route types and a Home-rooted `NavigationController`; `Navigator.pages` retains prior screens, typed params replace navigation side fields, and Back/Escape plus scroll restoration tests pass. |
 | WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | TODO |
 | WP-3.3 | Typed app preferences (no magic setting keys) | 3 Navigation & state | WP-3.2 | S | TODO |
 | WP-3.4 | Remove dead code + dedupe error handling in controllers | 3 Navigation & state | WP-3.2 | S | TODO |
@@ -110,7 +110,8 @@ The fix is **not** a new framework. The current choices — `ChangeNotifier` + `
 flowchart TD
   main[main.dart] --> profile[PlatformProfile<br/>identity + initialization]
   profile --> deps[AppDependencies<br/>storage + repositories + controller]
-  deps --> app[IptvApp / AppShell<br/>switch on AppScreen enum]
+  deps --> app[IptvApp / AppShell<br/>Navigator.pages]
+  app --> nav[NavigationController<br/>typed AppRoute stack]
   app --> scope[AppScope<br/>InheritedNotifier&lt;AppController&gt;]
   scope --> screens[Screens<br/>home / catalog / search / details / player / settings]
   screens -->|AppScope.of: everything| ctrl[AppController<br/>nav + playlists + settings + playback + issues]
@@ -165,7 +166,7 @@ Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlat
 | Concrete-type downcast in app state | `if (repository is SqliteCatalogRepository) { recoverAbandonedImports(); resumeSearchIndexing(); }` | App state knows the storage implementation; startup maintenance is invisible to other repositories. |
 | Settings keys as strings across layers | `'show_home_live_tv'` in `settings_screen.dart`, `app_controller.dart`, `database_adapter.dart` | A typo silently creates a new setting; no type safety. |
 | Screens pass raw exception text to users | `PagedCollection._errorMessage = '$error'`, shown by `_PagedGrid` | Users see `SqliteException(...)` strings. |
-| Navigation is a mutable enum on the god controller | `AppScreen` + 40-line `goBack()` switch | Back history is reconstructed from side fields (`selectedSeries`, `selectedSeason`, `catalogType`), focus/scroll are lost on every screen change. |
+| ~~Navigation is a mutable enum on the god controller~~ | Typed `AppRoute` stack in `NavigationController`, rendered by `Navigator.pages` | Resolved by WP-3.1: route parameters replace navigation side fields; Back pops actual page history and covered page state is retained. |
 
 ---
 
@@ -189,9 +190,9 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 - Recommendation: → **WP-1.1**. Effort: XS · Risk: Low.
 
 **F-03 — System Back exits the app; leaving the player keeps playing.** High · High · TV UX/Media
-- Location: [app.dart](../lib/app.dart) (`MaterialApp(home: ...)` with no routes, no `PopScope`), `AppController.goBack()` `case AppScreen.player`.
-- Problem: there is a single route, so Android's system Back (remote Back on Android TV) pops the root and closes the app. The in-app Back from the player only sets `screen = AppScreen.details`; `playbackAdapter.stop()` is never called and `PlayerScreen` is stateless, so audio continues with no video surface.
-- Recommendation: quick fix in **WP-1.2** and **WP-1.3**; structural fix in **WP-3.1** and **WP-7.1**.
+- Location: [app.dart](../lib/app.dart) (`AppShell` and `Navigator.pages`), route-change handling in [app_controller.dart](../lib/state/app_controller.dart).
+- Problem: the original single-route and continued-playback defects are addressed by WP-1.2, WP-1.3, and WP-3.1. System Back/Escape and player-stop behavior have widget coverage; Android TV/webOS hardware Back still needs device validation.
+- Recommendation: retain hardware validation as a release check; player-session ownership remains **WP-7.1**.
 - Effort: XS–S · Risk: Low.
 
 **F-04 — No remote-control interaction model.** High · High · TV UX
@@ -220,12 +221,12 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 - Recommendation: port behaviour-protecting tests to v9, delete the legacy path, then split the remainder by responsibility. → **WP-6.1 → WP-6.3** (needs decision **D-2**).
 - Effort: L · Risk: Medium (well covered by tests once ported).
 
-**F-08 — `AppController` is a god object and the only navigation mechanism.** High · High · Architecture/State
+**F-08 — `AppController` remains a god object across application features.** High · High · Architecture/State
 - Location: [app_controller.dart](../lib/state/app_controller.dart) (~770 non-blank lines).
-- Responsibilities: navigation (`AppScreen`, `goBack`, `open*`), playlist CRUD/import/refresh/progress, app preferences, home section visibility, playback orchestration, playback spike, error/issue state, startup sequencing, catalog binding.
-- Complexity: `goBack()` ≈ cyclomatic 14 (nested switch + ternaries over three side fields); `loadPlaylist()` ≈ 12 with five boolean parameters (`activateScreen`, `allowEmptyCatalog`, `updateActivePlaylist`, `updateActiveCatalog`, plus `policy`).
+- Responsibilities still include playlist CRUD/import/refresh/progress, app preferences, home section visibility, playback orchestration, playback spike, error/issue state, startup sequencing, and catalog binding. Navigation now lives in `NavigationController` (WP-3.1).
+- `loadPlaylist()` remains ≈ 12 with five boolean parameters (`activateScreen`, `allowEmptyCatalog`, `updateActivePlaylist`, `updateActiveCatalog`, plus `policy`).
 - Rebuild scope: `AppShell` and every screen depend on `AppScope` (`InheritedNotifier<AppController>`), so **every** `notifyListeners()` (including throttled import progress every 200 ms) rebuilds the active screen.
-- Recommendation: typed route stack (**WP-3.1**), then split into feature controllers (**WP-3.2**).
+- Recommendation: split the remaining feature responsibilities into controllers (**WP-3.2**).
 - Effort: L · Risk: Medium.
 
 **F-09 — Platform knowledge is scattered.** High · High · Platform/Architecture
@@ -597,7 +598,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 ### Batch 3 — Navigation & state decomposition
 
 #### WP-3.1 — Typed route stack rendered with `Navigator.pages`
-- **Fixes:** F-03, F-08 (navigation half), enables focus restoration (WP-4.4). **Blocked by decision D-1** (recommended option A).
+- **Fixes:** F-03, F-08 (navigation half), enables focus restoration (WP-4.4). **Decision D-1 resolved: option A.**
 - **Touches:** new `lib/app/navigation/app_route.dart`, `lib/app/navigation/navigation_controller.dart`, `lib/app.dart`, `lib/state/app_controller.dart`, all screens' `open*`/`goBack` call sites, tests asserting `controller.screen`.
 - **Design:**
   ```dart
@@ -612,14 +613,14 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   final class SearchRoute extends AppRoute { const SearchRoute(); }
   final class SettingsRoute extends AppRoute { const SettingsRoute(); }
   ```
-  `NavigationController extends ChangeNotifier` holds `List<AppRoute> stack` with `push`, `pop`, `replaceTop`, `resetTo(HomeRoute)` (used by top-nav buttons). `AppShell` renders `Navigator(pages: [for (r in stack) MaterialPage(key: ValueKey(r), child: screenFor(r))], onDidRemovePage: ...)` with `PopScope` only on the root page.
+  `NavigationController extends ChangeNotifier` holds `List<AppRoute> stack` with `push`, `pop`, `replaceTop`, and `resetTo`. Home remains the root; top-level section navigation resets to Home and pushes the selected section. `AppShell` renders `Navigator(pages: [for (r in stack) MaterialPage(key: ValueKey(r), child: screenFor(r))], onDidRemovePage: ...)`; system Back is allowed to leave only when Home is the sole page.
 - **Steps:**
-  1. Introduce routes + controller alongside `AppScreen`; map `AppScreen` getters to `stack.last` so existing tests keep passing.
-  2. Rewrite `open*` methods to push routes; `goBack()` becomes `pop()`; delete the `goBack` switch and the `selectedSeries/selectedSeason/catalogType` side fields (they are now route parameters).
-  3. Screens read their parameters from the route (constructor args), not from the controller.
-  4. Remove `AppScreen` and `PrimaryNavItem` mapping hacks; active top-nav item = derived from the first non-home route.
-  5. Remove WP-1.3's `PopScope` workaround if superseded.
-- **Acceptance:** Back from Episodes → Seasons → Series → Home works via system Back, Escape and on-screen Back; scroll position in a catalog grid is preserved after Details → Back (widget test).
+  1. Add the sealed route hierarchy and `NavigationController`; replace `AppScreen` and navigation side fields rather than keeping compatibility state.
+  2. Make top-level section navigation preserve Home as root; push nested series, details, player, and settings routes so Back returns to the exact prior context.
+  3. Pass route parameters into screen constructors; render the full route list with `Navigator.pages` and synchronize Navigator page removals back to the controller.
+  4. Keep system Back and Escape routed through the stack; stop playback when the active PlayerRoute is removed.
+  5. Test stack transitions, Home-rooted system Back/Escape, and catalog scroll restoration after Details → Back.
+- **Acceptance:** Back from Episodes → Seasons → Series → Home follows route history; system Back and Escape return to Home from a top-level section; catalog scroll position is preserved after Details → Back. Unit and widget coverage added.
 - **Skills:** `dart-use-pattern-matching`.
 
 #### WP-3.2 — Split `AppController` into feature controllers
@@ -847,7 +848,7 @@ Agents must not resolve these on their own. Record the answer in `docs/decisions
 
 | ID | Question | Options | Recommendation |
 |----|----------|---------|----------------|
-| D-1 | Navigation mechanism | **A.** Hand-rolled `sealed AppRoute` stack + `Navigator.pages` (no new dependency). **B.** `go_router` (URL-based; adds dependency; deep links not needed on TV). | A |
+| D-1 | Navigation mechanism | **A.** Hand-rolled `sealed AppRoute` stack + `Navigator.pages` (no new dependency). **B.** `go_router` (URL-based; adds dependency; deep links not needed on TV). | **Resolved 2026-10-05: A**, implemented in WP-3.1. |
 | D-2 | May legacy (v1–v7) catalog tables and code be removed, and is losing legacy-only user data (favorites/history keyed to `media_items`) acceptable? There is no favorites/history UI today. | Remove + drop tables in v11 / remove code but keep tables / keep both | Remove code; drop tables in v11 |
 | D-3 | Secret storage backend per platform | `flutter_secure_storage` (Android/Windows) + LG `flutter_secure_storage_webos`; lazy migration from the file store | **Resolved 2026-10-03**; webOS hardware verification pending |
 | D-4 | Android playback backend | `video_player` (shared with webOS, ExoPlayer) / `media_kit` (shared with desktop, bigger APK) | **Resolved 2026-10-03: `video_player`**, selected during WP-1.6 implementation |

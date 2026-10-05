@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../app/navigation/app_route.dart';
+import '../app/navigation/navigation_controller.dart';
 import '../models/content_item.dart';
 import '../services/catalog/catalog_import_worker.dart';
 import '../services/catalog/catalog_query.dart';
@@ -13,21 +15,6 @@ import '../services/playback/playback_adapter.dart';
 import '../services/security/url_redaction.dart';
 import '../services/settings/settings_repository.dart';
 import 'catalog_view_state.dart';
-
-enum AppScreen {
-  home,
-  liveCatalog,
-  movieCatalog,
-  seriesCatalog,
-  seasonCatalog,
-  episodeCatalog,
-  details,
-  player,
-  search,
-  settings,
-}
-
-enum PrimaryNavItem { home, liveTv, movies, series, search }
 
 enum LoadStatus { idle, loading, ready, error }
 
@@ -48,6 +35,8 @@ class AppController extends ChangeNotifier {
         (_catalogRepository is CatalogQueryService
             ? _catalogRepository as CatalogQueryService
             : null);
+    _observedRoute = navigationController.currentRoute;
+    navigationController.addListener(_handleNavigationChanged);
   }
 
   static const ContentItem playbackSpikeItem = ContentItem(
@@ -71,30 +60,15 @@ class AppController extends ChangeNotifier {
 
   /// Owns the visible page window; the controller never holds the full catalog.
   final CatalogViewState catalogView = CatalogViewState();
-
-  AppScreen _screen = AppScreen.home;
+  final NavigationController navigationController = NavigationController();
+  late AppRoute _observedRoute;
   int _playbackLoadGeneration = 0;
 
-  AppScreen get screen => _screen;
-
-  set screen(AppScreen value) {
-    final leavingPlayer = _screen == AppScreen.player && value != _screen;
-    _screen = value;
-    if (leavingPlayer) {
-      _playbackLoadGeneration++;
-      unawaited(_stopPlayback());
-    }
-  }
-
   LoadStatus playlistStatus = LoadStatus.idle;
-  ContentItem? selectedItem;
   String? playlistUrl;
   String? activePlaylistId;
   String? refreshingPlaylistId;
   String? errorMessage;
-  ContentType? catalogType;
-  SeriesSummary? selectedSeries;
-  SeasonSummary? selectedSeason;
   List<ManagedPlaylist> playlists = const [];
   bool showHomeLiveTv = true;
   bool showHomeMovies = true;
@@ -108,18 +82,7 @@ class AppController extends ChangeNotifier {
 
   int get catalogItemCount => catalogView.itemCount;
 
-  PrimaryNavItem get activeNavItem {
-    return switch (screen) {
-      AppScreen.home => PrimaryNavItem.home,
-      AppScreen.liveCatalog => PrimaryNavItem.liveTv,
-      AppScreen.movieCatalog => PrimaryNavItem.movies,
-      AppScreen.seriesCatalog ||
-      AppScreen.seasonCatalog ||
-      AppScreen.episodeCatalog => PrimaryNavItem.series,
-      AppScreen.search => PrimaryNavItem.search,
-      _ => PrimaryNavItem.home,
-    };
-  }
+  PrimaryNavItem get activeNavItem => navigationController.activeNavItem;
 
   Future<void> initialize() async {
     await storageInitializer();
@@ -145,7 +108,9 @@ class AppController extends ChangeNotifier {
     playlists = await _settingsRepository.listPlaylists();
     if (playlists.isEmpty) {
       activePlaylistId = null;
-      if (!catalogView.hasContent) screen = AppScreen.home;
+      if (!catalogView.hasContent) {
+        navigationController.resetTo(const HomeRoute());
+      }
     }
     notifyListeners();
   }
@@ -479,13 +444,9 @@ class AppController extends ChangeNotifier {
       }
       await refreshHomeSectionVisibility();
       await refreshPlaylists();
-      if (updateActiveCatalog) {
-        selectedSeries = null;
-        selectedSeason = null;
-      }
       playlistStatus = LoadStatus.ready;
       if (activateScreen) {
-        screen = AppScreen.home;
+        navigationController.resetTo(const HomeRoute());
       }
       _logger.info(
         'playlist_import_succeeded',
@@ -646,8 +607,6 @@ class AppController extends ChangeNotifier {
       await _settingsRepository.setAppSetting(_activePlaylistSettingKey, '');
       playlistUrl = null;
       catalogView.unbind();
-      selectedSeries = null;
-      selectedSeason = null;
       playlistStatus = LoadStatus.idle;
       if (playlists.isNotEmpty) {
         await loadPlaylist(
@@ -655,7 +614,7 @@ class AppController extends ChangeNotifier {
           policy: CatalogLoadPolicy.cacheFirst,
         );
       } else {
-        screen = AppScreen.home;
+        navigationController.resetTo(const HomeRoute());
         notifyListeners();
       }
     }
@@ -688,63 +647,44 @@ class AppController extends ChangeNotifier {
   }
 
   void openHome() {
-    screen = AppScreen.home;
-    catalogType = null;
-    selectedSeries = null;
-    selectedSeason = null;
-    notifyListeners();
+    navigationController.resetTo(const HomeRoute());
   }
 
   void openLiveTv() {
-    screen = AppScreen.liveCatalog;
-    catalogType = ContentType.live;
-    selectedSeries = null;
-    selectedSeason = null;
-    notifyListeners();
+    navigationController.resetToHomeAndPush(
+      const CatalogRoute(CatalogItemKind.live),
+    );
     catalogView.showItems(CatalogItemKind.live);
   }
 
   void openMovies() {
-    screen = AppScreen.movieCatalog;
-    catalogType = ContentType.vod;
-    selectedSeries = null;
-    selectedSeason = null;
-    notifyListeners();
+    navigationController.resetToHomeAndPush(
+      const CatalogRoute(CatalogItemKind.movie),
+    );
     catalogView.showItems(CatalogItemKind.movie);
   }
 
   void openSeries() {
-    screen = AppScreen.seriesCatalog;
-    catalogType = ContentType.vod;
-    selectedSeason = null;
-    notifyListeners();
+    navigationController.resetToHomeAndPush(const SeriesRoute());
     catalogView.showSeries();
   }
 
   void openSearch() {
-    screen = AppScreen.search;
-    notifyListeners();
+    navigationController.resetToHomeAndPush(const SearchRoute());
   }
 
   void openSeriesSeasons(SeriesSummary series) {
-    selectedSeries = series;
-    selectedSeason = null;
-    screen = AppScreen.seasonCatalog;
-    notifyListeners();
+    navigationController.push(SeasonsRoute(series));
     catalogView.showSeasons(series);
   }
 
-  void openSeriesEpisodes(SeasonSummary season) {
-    selectedSeason = season;
-    screen = AppScreen.episodeCatalog;
-    notifyListeners();
+  void openSeriesEpisodes(SeriesSummary series, SeasonSummary season) {
+    navigationController.push(EpisodesRoute(series, season));
     catalogView.showEpisodes(season);
   }
 
   void openDetails(ContentItem item) {
-    selectedItem = item;
-    screen = AppScreen.details;
-    notifyListeners();
+    navigationController.push(DetailsRoute(item));
   }
 
   /// Grids only carry summaries, so the full row is fetched on selection.
@@ -754,24 +694,22 @@ class AppController extends ChangeNotifier {
     openDetails(item);
   }
 
-  Future<void> openPlayer() async {
-    final item = selectedItem;
-    if (item == null) return;
+  Future<void> openPlayer(ContentItem item) async {
     await _openPlayerFor(item);
   }
 
   Future<void> openPlaybackSpike() async {
-    selectedItem = playbackSpikeItem;
     await _openPlayerFor(playbackSpikeItem);
   }
 
   Future<void> _openPlayerFor(ContentItem item) async {
     final generation = ++_playbackLoadGeneration;
-    screen = AppScreen.player;
-    notifyListeners();
+    final route = PlayerRoute(item);
+    navigationController.push(route);
     try {
       await playbackAdapter.load(item);
-      if (generation != _playbackLoadGeneration || screen != AppScreen.player) {
+      if (generation != _playbackLoadGeneration ||
+          !identical(navigationController.currentRoute, route)) {
         await _stopPlayback();
         return;
       }
@@ -794,8 +732,9 @@ class AppController extends ChangeNotifier {
   }
 
   void openSettings() {
-    screen = AppScreen.settings;
-    notifyListeners();
+    if (navigationController.currentRoute is! SettingsRoute) {
+      navigationController.push(const SettingsRoute());
+    }
   }
 
   void goHome() {
@@ -803,54 +742,17 @@ class AppController extends ChangeNotifier {
   }
 
   void goBack() {
-    switch (screen) {
-      case AppScreen.home:
-        return;
-      case AppScreen.liveCatalog:
-      case AppScreen.movieCatalog:
-      case AppScreen.seriesCatalog:
-      case AppScreen.search:
-        openHome();
-      case AppScreen.seasonCatalog:
-        openSeries();
-      case AppScreen.episodeCatalog:
-        final selected = selectedSeries;
-        if (selected != null) {
-          openSeriesSeasons(selected);
-          return;
-        }
-        openSeries();
-      case AppScreen.details:
-        if (selectedSeason != null) {
-          screen = AppScreen.episodeCatalog;
-        } else if (selectedSeries != null) {
-          screen = AppScreen.seasonCatalog;
-        } else {
-          screen = switch (catalogType) {
-            ContentType.live => AppScreen.liveCatalog,
-            ContentType.vod => AppScreen.movieCatalog,
-            null => AppScreen.home,
-          };
-        }
-        notifyListeners();
-      case AppScreen.player:
-        screen = AppScreen.details;
-        notifyListeners();
-      case AppScreen.settings:
-        screen = switch (activeNavItem) {
-          PrimaryNavItem.home => AppScreen.home,
-          PrimaryNavItem.liveTv => AppScreen.liveCatalog,
-          PrimaryNavItem.movies => AppScreen.movieCatalog,
-          PrimaryNavItem.series =>
-            selectedSeason != null
-                ? AppScreen.episodeCatalog
-                : (selectedSeries != null
-                      ? AppScreen.seasonCatalog
-                      : AppScreen.seriesCatalog),
-          PrimaryNavItem.search => AppScreen.search,
-        };
-        notifyListeners();
+    navigationController.pop();
+  }
+
+  void _handleNavigationChanged() {
+    final route = navigationController.currentRoute;
+    if (_observedRoute is PlayerRoute && !identical(_observedRoute, route)) {
+      _playbackLoadGeneration++;
+      unawaited(_stopPlayback());
     }
+    _observedRoute = route;
+    notifyListeners();
   }
 
   /// Points the view state at the freshly imported playlist.
@@ -905,6 +807,8 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    navigationController.removeListener(_handleNavigationChanged);
+    navigationController.dispose();
     catalogView.dispose();
     playbackAdapter.dispose();
     super.dispose();

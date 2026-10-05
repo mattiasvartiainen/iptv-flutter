@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
 import 'package:iptv_flutter/app/app_dependencies.dart';
+import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/screens/catalog_screen.dart';
 import 'package:iptv_flutter/screens/search_screen.dart';
@@ -97,7 +98,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'See all').first);
     await tester.pumpAndSettle();
 
-    expect(controller.screen, AppScreen.liveCatalog);
+    expect(controller.navigationController.currentRoute, isA<CatalogRoute>());
     expect(controller.catalogView.items.items, hasLength(3));
     expect(controller.catalogView.items.hasMore, isFalse);
     expect(find.text('News 24'), findsOneWidget);
@@ -114,12 +115,12 @@ void main() {
 
     controller.openLiveTv();
     await tester.pumpAndSettle();
-    expect(controller.screen, AppScreen.liveCatalog);
+    expect(controller.navigationController.currentRoute, isA<CatalogRoute>());
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
-    expect(controller.screen, AppScreen.home);
+    expect(controller.navigationController.currentRoute, isA<HomeRoute>());
     expect(find.byType(IptvApp), findsOneWidget);
     expect(appDisposed, isFalse);
   });
@@ -128,12 +129,12 @@ void main() {
     final (controller, _) = await pumpLoadedApp(tester);
     controller.openLiveTv();
     await tester.pumpAndSettle();
-    expect(controller.screen, AppScreen.liveCatalog);
+    expect(controller.navigationController.currentRoute, isA<CatalogRoute>());
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(controller.screen, AppScreen.home);
+    expect(controller.navigationController.currentRoute, isA<HomeRoute>());
     expect(find.byType(IptvApp), findsOneWidget);
   });
 
@@ -147,23 +148,86 @@ void main() {
     await tester.tap(find.text('News 24'));
     await tester.pumpAndSettle();
 
-    expect(controller.screen, AppScreen.details);
-    expect(controller.selectedItem?.id, 'news-24');
-    expect(
-      controller.selectedItem?.streamUrl,
-      'https://example.invalid/live/news-24.m3u8',
-    );
+    final route = controller.navigationController.currentRoute;
+    expect(route, isA<DetailsRoute>());
+    expect((route as DetailsRoute).item.id, 'news-24');
+    expect((route).item.streamUrl, 'https://example.invalid/live/news-24.m3u8');
     expect(
       find.text('https://example.invalid/live/news-24.m3u8'),
       findsNothing,
     );
   });
 
+  testWidgets('catalog scroll position is preserved after Details Back', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(600, 500);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    const playlistId = 'scroll-playlist';
+    final items = List.generate(
+      40,
+      (index) => ContentItem(
+        id: 'channel-$index',
+        title: 'Channel $index',
+        type: ContentType.live,
+        streamUrl: 'https://example.invalid/channel-$index.m3u8',
+        group: 'News',
+        sourceIndex: index,
+      ),
+    );
+    final service = InMemoryCatalogQueryService(playlistId, items);
+    final controller = AppController(
+      catalogRepository: const FixtureCatalogRepository(),
+      catalogQueryService: service,
+      settingsRepository: _TestSettingsRepository(),
+      playbackAdapter: FakePlaybackAdapter(),
+      storageInitializer: () async {},
+    );
+    addTearDown(controller.dispose);
+    await controller.catalogView.bind(service: service, playlistId: playlistId);
+    await controller.catalogView.showItems(CatalogItemKind.live);
+    controller.navigationController.resetTo(
+      const CatalogRoute(CatalogItemKind.live),
+    );
+
+    await tester.pumpWidget(
+      IptvApp(dependencies: AppDependencies.forTesting(controller: controller)),
+    );
+    await tester.pumpAndSettle();
+
+    final grid = find.byType(GridView).first;
+    await tester.drag(grid, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    final scrollable = find.descendant(
+      of: grid,
+      matching: find.byType(Scrollable),
+    );
+    final scrollOffset = tester
+        .state<ScrollableState>(scrollable.first)
+        .position
+        .pixels;
+    expect(scrollOffset, greaterThan(0));
+
+    controller.openDetails(items.first);
+    await tester.pumpAndSettle();
+    controller.goBack();
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.state<ScrollableState>(scrollable.first).position.pixels,
+      closeTo(scrollOffset, 0.1),
+    );
+  });
+
   testWidgets('leaving the player stops playback', (tester) async {
     final (controller, _) = await pumpLoadedApp(tester);
-    controller.selectedItem = fixtureCatalog.first;
-
-    final openingPlayer = controller.openPlayer();
+    controller.openDetails(fixtureCatalog.first);
+    final openingPlayer = controller.openPlayer(fixtureCatalog.first);
     await tester.pump(const Duration(milliseconds: 1));
     await openingPlayer;
     expect(controller.playbackAdapter.state.status, PlaybackStatus.playing);
@@ -172,7 +236,7 @@ void main() {
     controller.goBack();
     await tester.pumpAndSettle();
 
-    expect(controller.screen, AppScreen.details);
+    expect(controller.navigationController.currentRoute, isA<DetailsRoute>());
     expect(controller.playbackAdapter.state.status, PlaybackStatus.stopped);
   });
 
@@ -189,7 +253,7 @@ void main() {
       storageInitializer: () async {},
     );
     addTearDown(controller.dispose);
-    controller.screen = AppScreen.search;
+    controller.navigationController.resetTo(const SearchRoute());
     await controller.catalogView.bind(service: service, playlistId: playlistId);
     await tester.pumpWidget(
       MaterialApp(
@@ -212,8 +276,9 @@ void main() {
     expect(find.text('News 24'), findsOneWidget);
     await tester.tap(find.text('News 24'));
     await tester.pumpAndSettle();
-    expect(controller.screen, AppScreen.details);
-    expect(controller.selectedItem?.id, 'news-24');
+    final route = controller.navigationController.currentRoute;
+    expect(route, isA<DetailsRoute>());
+    expect((route as DetailsRoute).item.id, 'news-24');
   });
 
   testWidgets(
@@ -239,8 +304,9 @@ void main() {
         storageInitializer: () async {},
       );
       addTearDown(controller.dispose);
-      controller.screen = AppScreen.liveCatalog;
-      controller.catalogType = ContentType.live;
+      controller.navigationController.resetTo(
+        const CatalogRoute(CatalogItemKind.live),
+      );
       await controller.catalogView.bind(
         service: service,
         playlistId: 'desktop-playlist',
@@ -249,7 +315,12 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: AppScope(controller: controller, child: const CatalogScreen()),
+          home: AppScope(
+            controller: controller,
+            child: const CatalogScreen(
+              route: CatalogRoute(CatalogItemKind.live),
+            ),
+          ),
         ),
       );
       await tester.pumpAndSettle();

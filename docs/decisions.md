@@ -78,3 +78,11 @@ Default is Skia. Evaluate enabling Impeller via `webos/meta/flutter-conf.json` a
 during on-device testing; not a day-one change.
 - Affects: `webos/meta/flutter-conf.json`.
 
+## Architecture Work Package Decisions
+
+### D-1 — Navigation mechanism ✅
+Use a hand-rolled sealed `AppRoute` hierarchy and `NavigationController` rendered through
+`Navigator.pages`. Keep Home as the root; top-level section navigation resets to Home and pushes the
+selected section, while nested details/player/settings routes preserve their exact parent context.
+- Affects: WP-3.1 in [architecture-code-improvements.md](architecture-code-improvements.md).
+

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app/app_dependencies.dart';
+import 'app/navigation/app_route.dart';
 import 'platform/app_environment.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/details_screen.dart';
@@ -64,44 +65,65 @@ class AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    return Shortcuts(
-      shortcuts: {
-        SingleActivator(LogicalKeyboardKey.escape): _BackIntent(),
-        SingleActivator(LogicalKeyboardKey.goBack): _BackIntent(),
+    final navigation = controller.navigationController;
+    return ListenableBuilder(
+      listenable: navigation,
+      builder: (context, _) {
+        final routes = navigation.stack;
+        return Shortcuts(
+          shortcuts: {
+            SingleActivator(LogicalKeyboardKey.escape): const _BackIntent(),
+            SingleActivator(LogicalKeyboardKey.goBack): const _BackIntent(),
+          },
+          child: Actions(
+            actions: {
+              _BackIntent: CallbackAction<_BackIntent>(
+                onInvoke: (_) {
+                  controller.goBack();
+                  return null;
+                },
+              ),
+            },
+            child: Focus(
+              autofocus: true,
+              child: PopScope(
+                canPop: routes.length == 1,
+                onPopInvokedWithResult: (didPop, _) {
+                  if (!didPop) controller.goBack();
+                },
+                child: Navigator(
+                  pages: [
+                    for (final route in routes)
+                      MaterialPage<void>(
+                        key: ValueKey<AppRoute>(route),
+                        arguments: route,
+                        child: _screenForRoute(route),
+                      ),
+                  ],
+                  onDidRemovePage: (page) {
+                    final route = page.arguments;
+                    if (route is AppRoute) navigation.popIfCurrent(route);
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
       },
-      child: Actions(
-        actions: {
-          _BackIntent: CallbackAction<_BackIntent>(
-            onInvoke: (_) {
-              controller.goBack();
-              return null;
-            },
-          ),
-        },
-        child: Focus(
-          autofocus: true,
-          child: PopScope(
-            canPop: controller.screen == AppScreen.home,
-            onPopInvokedWithResult: (didPop, _) {
-              if (!didPop) controller.goBack();
-            },
-            child: switch (controller.screen) {
-              AppScreen.home => const HomeScreen(),
-              AppScreen.liveCatalog => const CatalogScreen(),
-              AppScreen.movieCatalog => const CatalogScreen(),
-              AppScreen.seriesCatalog => const CatalogScreen(),
-              AppScreen.seasonCatalog => const CatalogScreen(),
-              AppScreen.episodeCatalog => const CatalogScreen(),
-              AppScreen.details => const DetailsScreen(),
-              AppScreen.player => const PlayerScreen(),
-              AppScreen.search => const SearchScreen(),
-              AppScreen.settings => const SettingsScreen(),
-            },
-          ),
-        ),
-      ),
     );
   }
+
+  Widget _screenForRoute(AppRoute route) => switch (route) {
+    HomeRoute() => const HomeScreen(),
+    CatalogRoute() ||
+    SeriesRoute() ||
+    SeasonsRoute() ||
+    EpisodesRoute() => CatalogScreen(route: route),
+    DetailsRoute(:final item) => DetailsScreen(item: item),
+    PlayerRoute(:final item) => PlayerScreen(item: item),
+    SearchRoute() => const SearchScreen(),
+    SettingsRoute() => const SettingsScreen(),
+  };
 }
 
 class _BackIntent extends Intent {

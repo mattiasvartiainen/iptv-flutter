@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../state/app_controller.dart';
+import '../app/navigation/navigation_controller.dart';
 import 'app_scope.dart';
 
 class AppShellScaffold extends StatelessWidget {
