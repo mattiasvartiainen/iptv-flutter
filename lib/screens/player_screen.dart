@@ -33,7 +33,8 @@ class PlayerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppScope.of(context);
+    final c = AppScope.playerControllerOf(context);
+    final navigation = AppScope.navigationControllerOf(context);
     final capabilities = c.playbackAdapter.capabilities;
     return Scaffold(
       appBar: AppBar(title: const Text('Player')),
@@ -170,7 +171,7 @@ class PlayerScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton(
-                      onPressed: c.goBack,
+                      onPressed: navigation.pop,
                       child: const Text('Back'),
                     ),
                   ],

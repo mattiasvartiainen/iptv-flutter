@@ -23,7 +23,7 @@ class CatalogScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     final view = controller.catalogView;
     return switch (route) {
       CatalogRoute(kind: CatalogItemKind.live) => _ContentGrid(
@@ -121,7 +121,7 @@ class _ContentGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     return AppShellScaffold(
       showBack: true,
       title: title,
@@ -181,7 +181,7 @@ class _SeriesGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     return AppShellScaffold(
       showBack: true,
       title: 'Series',
@@ -247,7 +247,7 @@ class _GroupSidebarLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final view = AppScope.of(context).catalogView;
+    final view = AppScope.appControllerOf(context).catalogView;
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < _sidebarBreakpoint) {
@@ -258,14 +258,21 @@ class _GroupSidebarLayout extends StatelessWidget {
           children: [
             SizedBox(
               width: _sidebarWidth,
-              child: _GroupFilterMenu(
-                kind: kind,
-                groups: view.browseGroups,
-                selectedGroupId: view.selectedGroupId,
-                loading: view.isLoadingGroups,
-                error: view.groupsErrorMessage,
-                totalItems: collection?.total ?? seriesCollection?.total ?? 0,
-                onSelected: view.selectBrowseGroup,
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  view,
+                  ?collection,
+                  ?seriesCollection,
+                ]),
+                builder: (context, _) => _GroupFilterMenu(
+                  kind: kind,
+                  groups: view.browseGroups,
+                  selectedGroupId: view.selectedGroupId,
+                  loading: view.isLoadingGroups,
+                  error: view.groupsErrorMessage,
+                  totalItems: collection?.total ?? seriesCollection?.total ?? 0,
+                  onSelected: view.selectBrowseGroup,
+                ),
               ),
             ),
             const SizedBox(width: 24),
@@ -372,7 +379,7 @@ class _SeasonGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     final selectedSeries = series;
     return AppShellScaffold(
       showBack: true,
@@ -446,7 +453,7 @@ class _EpisodeGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     final selectedSeries = series;
     final selectedSeason = season;
     return AppShellScaffold(

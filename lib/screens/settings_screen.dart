@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import '../services/catalog/catalog_import_progress.dart';
 
 import '../services/settings/settings_repository.dart';
-import '../state/app_controller.dart';
+import '../state/app_preferences_controller.dart';
+import '../state/playlists_controller.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -14,101 +15,113 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppScope.of(context);
-    return AppShellScaffold(
-      showBack: true,
-      title: 'Settings',
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(40, 8, 40, 28),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Manage saved playlists, refresh them manually, and keep home section visibility in one place.',
+    final playlists = AppScope.playlistsControllerOf(context);
+    final preferences = AppScope.preferencesControllerOf(context);
+    final app = AppScope.appControllerOf(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge([playlists, preferences]),
+      builder: (context, _) => AppShellScaffold(
+        showBack: true,
+        title: 'Settings',
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(40, 8, 40, 28),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Manage saved playlists, refresh them manually, and keep home section visibility in one place.',
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  FilledButton.icon(
-                    onPressed: () =>
-                        _showPlaylistEditor(context, controller: c),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add playlist'),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    FilledButton.icon(
+                      onPressed: () =>
+                          _showPlaylistEditor(context, controller: playlists),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add playlist'),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          _PlaylistSection(controller: c),
-          const SizedBox(height: 20),
-          Card(
-            child: SwitchListTile(
-              title: const Text('Show Live TV on Home'),
-              subtitle: const Text(
-                'Displays the Live TV row on the Home screen.',
-              ),
-              value: c.showHomeLiveTv,
-              onChanged: (value) => c.setHomeSectionVisibility(
-                settingKey: 'show_home_live_tv',
-                enabled: value,
+            const SizedBox(height: 16),
+            _PlaylistSection(
+              controller: playlists,
+              preferencesController: preferences,
+            ),
+            const SizedBox(height: 20),
+            Card(
+              child: SwitchListTile(
+                title: const Text('Show Live TV on Home'),
+                subtitle: const Text(
+                  'Displays the Live TV row on the Home screen.',
+                ),
+                value: preferences.showHomeLiveTv,
+                onChanged: (value) => preferences.setHomeSectionVisibility(
+                  settingKey: 'show_home_live_tv',
+                  enabled: value,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: SwitchListTile(
-              title: const Text('Show Movies on Home'),
-              subtitle: const Text(
-                'Displays the Movies row on the Home screen.',
-              ),
-              value: c.showHomeMovies,
-              onChanged: (value) => c.setHomeSectionVisibility(
-                settingKey: 'show_home_movies',
-                enabled: value,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: SwitchListTile(
-              title: const Text('Show Series on Home'),
-              subtitle: const Text(
-                'Displays the Series row on the Home screen.',
-              ),
-              value: c.showHomeSeries,
-              onChanged: (value) => c.setHomeSectionVisibility(
-                settingKey: 'show_home_series',
-                enabled: value,
+            const SizedBox(height: 12),
+            Card(
+              child: SwitchListTile(
+                title: const Text('Show Movies on Home'),
+                subtitle: const Text(
+                  'Displays the Movies row on the Home screen.',
+                ),
+                value: preferences.showHomeMovies,
+                onChanged: (value) => preferences.setHomeSectionVisibility(
+                  settingKey: 'show_home_movies',
+                  enabled: value,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: SwitchListTile(
-              title: const Text('Display verbose information'),
-              subtitle: const Text(
-                'Shows download and import progress while a playlist refreshes.',
+            const SizedBox(height: 12),
+            Card(
+              child: SwitchListTile(
+                title: const Text('Show Series on Home'),
+                subtitle: const Text(
+                  'Displays the Series row on the Home screen.',
+                ),
+                value: preferences.showHomeSeries,
+                onChanged: (value) => preferences.setHomeSectionVisibility(
+                  settingKey: 'show_home_series',
+                  enabled: value,
+                ),
               ),
-              value: c.verboseRefreshInfo,
-              onChanged: (value) => c.setVerboseRefreshInfo(value),
             ),
-          ),
-          const SizedBox(height: 20),
-          OutlinedButton(onPressed: c.goBack, child: const Text('Back')),
-        ],
+            const SizedBox(height: 12),
+            Card(
+              child: SwitchListTile(
+                title: const Text('Display verbose information'),
+                subtitle: const Text(
+                  'Shows download and import progress while a playlist refreshes.',
+                ),
+                value: preferences.verboseRefreshInfo,
+                onChanged: (value) => preferences.setVerboseRefreshInfo(value),
+              ),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton(onPressed: app.goBack, child: const Text('Back')),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _PlaylistSection extends StatelessWidget {
-  const _PlaylistSection({required this.controller});
+  const _PlaylistSection({
+    required this.controller,
+    required this.preferencesController,
+  });
 
-  final AppController controller;
+  final PlaylistsController controller;
+  final AppPreferencesController preferencesController;
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +168,7 @@ class _PlaylistSection extends StatelessWidget {
                     progress:
                         playlist.playlistId ==
                                 controller.refreshingPlaylistId &&
-                            controller.verboseRefreshInfo
+                            preferencesController.verboseRefreshInfo
                         ? controller.importProgress
                         : null,
                     onSelect: () =>
@@ -427,7 +440,7 @@ class _ImportProgressIndicatorState extends State<_ImportProgressIndicator> {
 class _PlaylistEditorDialog extends StatefulWidget {
   const _PlaylistEditorDialog({required this.controller, this.playlist});
 
-  final AppController controller;
+  final PlaylistsController controller;
 
   final ManagedPlaylist? playlist;
 
@@ -608,7 +621,7 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
 
 Future<void> _showPlaylistEditor(
   BuildContext context, {
-  required AppController controller,
+  required PlaylistsController controller,
   ManagedPlaylist? playlist,
 }) async {
   await showDialog<bool>(
@@ -620,7 +633,7 @@ Future<void> _showPlaylistEditor(
 
 Future<void> _confirmDelete(
   BuildContext context,
-  AppController controller,
+  PlaylistsController controller,
   ManagedPlaylist playlist,
 ) async {
   final confirmed = await showDialog<bool>(

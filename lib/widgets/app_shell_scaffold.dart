@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/navigation/navigation_controller.dart';
+import '../state/app_controller.dart';
 import 'app_scope.dart';
 
 class AppShellScaffold extends StatelessWidget {
@@ -17,7 +18,15 @@ class AppShellScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
+    final navigation = AppScope.navigationControllerOf(context);
+    return ListenableBuilder(
+      listenable: navigation,
+      builder: (context, _) => _buildScaffold(context, controller),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, AppController controller) {
     final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(

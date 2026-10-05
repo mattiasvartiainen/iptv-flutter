@@ -51,7 +51,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-2.4 | Move database factory selection into profiles | 2 Platform boundary | WP-2.2 | S | DONE (2026-10-04): `SqfliteDatabaseAdapter` now takes an injected `DatabaseFactory`; profiles initialize/provide FFI for Android/Windows/Linux/webOS and preserve Android's support-directory path. Removed platform checks/global assignment; all 141 tests pass. Analyzer has one unrelated webOS info. |
 | WP-2.5 | Replace `isDesktop` layout check with width + input | 2 Platform boundary | WP-2.1 | S | DONE (2026-10-04): Sidebar uses available width >= 1050 on every platform; pointer, arrow-key/Enter filtering and narrow/wide resize coverage pass. Platform exception allowlist is empty; all 141 tests pass. Analyzer retains one unrelated webOS info. |
 | WP-3.1 | Typed route stack + `Navigator.pages` | 3 Navigation & state | WP-1.3, D-1 | M | DONE (2026-10-05): Added sealed route types and a Home-rooted `NavigationController`; `Navigator.pages` retains prior screens, typed params replace navigation side fields, and Back/Escape plus scroll restoration tests pass. |
-| WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | TODO |
+| WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | DONE (2026-10-05): Extracted playlist, preferences, initial player, and startup owners; explicit load intents replace flags, narrow subscriptions isolate rebuilds, and AppController is a thin catalog/navigation facade. All 163 tests pass; analyzer retains one unrelated webOS info. |
 | WP-3.3 | Typed app preferences (no magic setting keys) | 3 Navigation & state | WP-3.2 | S | TODO |
 | WP-3.4 | Remove dead code + dedupe error handling in controllers | 3 Navigation & state | WP-3.2 | S | TODO |
 | WP-4.1 | Design tokens + 10-foot theme | 4 TV UX | – | S | TODO |
@@ -112,15 +112,21 @@ flowchart TD
   profile --> deps[AppDependencies<br/>storage + repositories + controller]
   deps --> app[IptvApp / AppShell<br/>Navigator.pages]
   app --> nav[NavigationController<br/>typed AppRoute stack]
-  app --> scope[AppScope<br/>InheritedNotifier&lt;AppController&gt;]
+  app --> scope[AppScope<br/>narrow controller accessors]
   scope --> screens[Screens<br/>home / catalog / search / details / player / settings]
-  screens -->|AppScope.of: everything| ctrl[AppController<br/>nav + playlists + settings + playback + issues]
+  screens -->|catalog/navigation commands| ctrl[AppController<br/>thin command facade]
+  screens --> player[PlayerController<br/>initial playback ownership]
+  screens --> prefs[AppPreferencesController]
+  screens --> lists[PlaylistsController]
   screens -->|ListenableBuilder| cvs[CatalogViewState<br/>PagedCollection&lt;T&gt;]
   screens -->|buildVideoView / states stream| pa[PlaybackAdapter]
   ctrl --> cvs
-  ctrl -->|is SqliteCatalogRepository downcast| repo
-  ctrl --> settings[SettingsRepository]
-  ctrl -->|createPlatformPlaybackAdapter| pa
+  lists --> repo
+  lists --> settings[SettingsRepository]
+  prefs --> settings
+  lists --> cvs
+  player --> pa
+  deps --> startup[AppStartup<br/>storage then preferences then playlists]
   cvs --> qs[CatalogQueryService]
   deps --> repo[SqliteCatalogRepository<br/>implements CatalogRepository + CatalogQueryService]
   deps --> settings
@@ -221,12 +227,12 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 - Recommendation: port behaviour-protecting tests to v9, delete the legacy path, then split the remainder by responsibility. → **WP-6.1 → WP-6.3** (needs decision **D-2**).
 - Effort: L · Risk: Medium (well covered by tests once ported).
 
-**F-08 — `AppController` remains a god object across application features.** High · High · Architecture/State
-- Location: [app_controller.dart](../lib/state/app_controller.dart) (~770 non-blank lines).
-- Responsibilities still include playlist CRUD/import/refresh/progress, app preferences, home section visibility, playback orchestration, playback spike, error/issue state, startup sequencing, and catalog binding. Navigation now lives in `NavigationController` (WP-3.1).
-- `loadPlaylist()` remains ≈ 12 with five boolean parameters (`activateScreen`, `allowEmptyCatalog`, `updateActivePlaylist`, `updateActiveCatalog`, plus `policy`).
-- Rebuild scope: `AppShell` and every screen depend on `AppScope` (`InheritedNotifier<AppController>`), so **every** `notifyListeners()` (including throttled import progress every 200 ms) rebuilds the active screen.
-- Recommendation: split the remaining feature responsibilities into controllers (**WP-3.2**).
+**F-08 — Application state was concentrated in `AppController`.** High · High · Architecture/State
+- Location: [app_controller.dart](../lib/state/app_controller.dart) (original audit: ~770 non-blank lines).
+- Original responsibilities included navigation, playlist CRUD/import/refresh/progress, preferences, playback orchestration, startup sequencing, and catalog binding.
+- Resolved in WP-3.1/WP-3.2: navigation is owned by `NavigationController`; playlist state and operations by `PlaylistsController`; preferences by `AppPreferencesController`; initial playback orchestration by `PlayerController`; startup sequencing by `AppStartup`. `AppController` is a thin catalog/navigation command facade, scheduled for later removal.
+- Screens subscribe to the narrow controller state they render; playlist progress no longer notifies Home/Catalog through one application-wide notifier.
+- The richer playback state bridge and session command API remain **WP-7.1**.
 - Effort: L · Risk: Medium.
 
 **F-09 — Platform knowledge is scattered.** High · High · Platform/Architecture
@@ -640,6 +646,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   2. Provide each via its own `InheritedNotifier` (or a single `AppScope` exposing separate `Listenable`s with `static X xOf(context)` accessors). Screens depend only on what they use — this fixes the whole-app rebuild on import progress.
   3. Replace `loadPlaylist`'s five boolean flags with an explicit intent: `enum PlaylistLoadIntent { startup, activate, refreshActive, refreshInactive, setup }` mapped to policy/flags inside the controller.
   4. Each controller gets a unit test file in `test/state/` covering its transitions with fakes.
+- **Implementation notes (2026-10-05):** `AppScope` provides separate controller accessors; widgets subscribe through `ListenableBuilder` to the state they render. Added `activateNext` (cache-first next-playlist fallback after deletion) and `refreshCompleted` (cache-only rebind without navigation when selection changed during refresh) load intents to preserve the existing behaviors without public boolean flags. `PlayerController` initially owns adapter loading, spike, exit stopping, and late-load protection; the WP-7.1 state bridge is deferred. `AppController` retains only catalog/navigation commands and is scheduled for later removal.
 - **Acceptance:** `app_controller.dart` is deleted or reduced to a thin façade scheduled for removal; no screen calls `AppScope.of(context)` to get a do-everything object; controller unit tests exist.
 - **Skills:** `flutter-apply-architecture-best-practices`, `dart-add-unit-test`.
 

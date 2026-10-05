@@ -24,7 +24,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     if (identical(controller, _controller)) return;
     _controller = controller;
     unawaited(controller.catalogView.refreshSearchIndexStatus());
@@ -59,7 +59,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
+    final controller = AppScope.appControllerOf(context);
     final view = controller.catalogView;
     return AppShellScaffold(
       showBack: true,

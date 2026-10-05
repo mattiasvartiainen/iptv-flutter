@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
 import 'package:iptv_flutter/app/app_dependencies.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
+import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/screens/catalog_screen.dart';
 import 'package:iptv_flutter/screens/search_screen.dart';
@@ -15,10 +16,64 @@ import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
+import 'package:iptv_flutter/state/app_preferences_controller.dart';
+import 'package:iptv_flutter/state/catalog_view_state.dart';
+import 'package:iptv_flutter/state/player_controller.dart';
+import 'package:iptv_flutter/state/playlists_controller.dart';
 import 'package:iptv_flutter/widgets/app_scope.dart';
 
+typedef _TestControllers = ({
+  AppController app,
+  PlayerController player,
+  PlaylistsController playlists,
+  AppPreferencesController preferences,
+});
+
+_TestControllers _createTestControllers({
+  required CatalogRepository catalogRepository,
+  CatalogQueryService? catalogQueryService,
+  required SettingsRepository settingsRepository,
+  required PlaybackAdapter playbackAdapter,
+}) {
+  final catalogView = CatalogViewState();
+  final navigationController = NavigationController();
+  final preferences = AppPreferencesController(
+    settingsRepository: settingsRepository,
+  );
+  final playlists = PlaylistsController(
+    catalogRepository: catalogRepository,
+    catalogQueryService: catalogQueryService,
+    settingsRepository: settingsRepository,
+    catalogView: catalogView,
+    navigationController: navigationController,
+    preferencesController: preferences,
+  );
+  final app = AppController(
+    catalogView: catalogView,
+    navigationController: navigationController,
+  );
+  final player = PlayerController(
+    playbackAdapter: playbackAdapter,
+    navigationController: navigationController,
+  );
+  return (
+    app: app,
+    player: player,
+    playlists: playlists,
+    preferences: preferences,
+  );
+}
+
+void _disposeTestControllers(_TestControllers controllers) {
+  controllers.player.dispose();
+  controllers.playlists.dispose();
+  controllers.preferences.dispose();
+  controllers.app.catalogView.dispose();
+  controllers.app.navigationController.dispose();
+}
+
 void main() {
-  Future<(AppController, String)> pumpLoadedApp(WidgetTester tester) async {
+  Future<(_TestControllers, String)> pumpLoadedApp(WidgetTester tester) async {
     final settings = _TestSettingsRepository();
     final playlist = await settings.upsertPlaylist(
       const PlaylistSourceConfig.url(
@@ -26,7 +81,7 @@ void main() {
         url: 'https://fixture.test/playlist.m3u',
       ),
     );
-    final controller = AppController(
+    final controllers = _createTestControllers(
       catalogRepository: const FixtureCatalogRepository(),
       catalogQueryService: InMemoryCatalogQueryService(
         playlist.playlistId,
@@ -36,19 +91,25 @@ void main() {
       playbackAdapter: FakePlaybackAdapter(
         transitionDelay: const Duration(milliseconds: 1),
       ),
-      storageInitializer: () async {},
     );
-    addTearDown(controller.dispose);
+    addTearDown(() => _disposeTestControllers(controllers));
 
     await tester.pumpWidget(
-      IptvApp(dependencies: AppDependencies.forTesting(controller: controller)),
+      IptvApp(
+        dependencies: AppDependencies.forTesting(
+          appController: controllers.app,
+          playerController: controllers.player,
+          playlistsController: controllers.playlists,
+          preferencesController: controllers.preferences,
+        ),
+      ),
     );
-    await controller.loadPlaylist(
+    await controllers.playlists.loadPlaylist(
       playlist.playlistId,
-      policy: CatalogLoadPolicy.networkOnly,
+      intent: PlaylistLoadIntent.setup,
     );
     await tester.pumpAndSettle();
-    return (controller, playlist.playlistId);
+    return (controllers, playlist.playlistId);
   }
 
   test('worker timeout is not reported as a playlist parse error', () async {
@@ -59,7 +120,7 @@ void main() {
         url: 'https://provider.test/playlist.m3u',
       ),
     );
-    final controller = AppController(
+    final controllers = _createTestControllers(
       catalogRepository: _FailingCatalogRepository(
         const CatalogImportWorkerException(
           errorType: 'TimeoutException',
@@ -69,38 +130,96 @@ void main() {
       ),
       settingsRepository: settings,
       playbackAdapter: FakePlaybackAdapter(),
-      storageInitializer: () async {},
     );
-    addTearDown(controller.dispose);
+    addTearDown(() => _disposeTestControllers(controllers));
 
-    expect(await controller.loadPlaylist(playlist.playlistId), isFalse);
-    expect(controller.activeIssue?.kind, AppIssueKind.timeout);
-    expect(controller.errorMessage, isNot(contains('parsed')));
+    expect(
+      await controllers.playlists.loadPlaylist(
+        playlist.playlistId,
+        intent: PlaylistLoadIntent.setup,
+      ),
+      isFalse,
+    );
+    expect(controllers.playlists.activeIssue?.kind, AppIssueKind.timeout);
+    expect(controllers.playlists.errorMessage, isNot(contains('parsed')));
   });
 
   testWidgets('home rows render preview pages from the query service', (
     tester,
   ) async {
-    final (controller, _) = await pumpLoadedApp(tester);
+    final (controllers, _) = await pumpLoadedApp(tester);
 
-    expect(controller.catalogItemCount, 5);
-    expect(controller.catalogView.homeLive, hasLength(3));
-    expect(controller.catalogView.homeMovies, hasLength(2));
+    expect(controllers.app.catalogItemCount, 5);
+    expect(controllers.app.catalogView.homeLive, hasLength(3));
+    expect(controllers.app.catalogView.homeMovies, hasLength(2));
     expect(find.text('News 24'), findsOneWidget);
+    expect(find.text('Northbound'), findsOneWidget);
+  });
+
+  testWidgets(
+    'playlist notifications do not rebuild unrelated scope consumers',
+    (tester) async {
+      final controllers = _createTestControllers(
+        catalogRepository: const FixtureCatalogRepository(),
+        settingsRepository: _TestSettingsRepository(),
+        playbackAdapter: FakePlaybackAdapter(),
+      );
+      addTearDown(() => _disposeTestControllers(controllers));
+      var builds = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppScope(
+            appController: controllers.app,
+            playerController: controllers.player,
+            playlistsController: controllers.playlists,
+            preferencesController: controllers.preferences,
+            navigationController: controllers.app.navigationController,
+            child: Builder(
+              builder: (context) {
+                AppScope.appControllerOf(context);
+                builds++;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      final initialBuilds = builds;
+      await controllers.playlists.savePlaylistUrl(
+        name: 'Fixture',
+        url: 'https://fixture.test/list.m3u',
+      );
+      await tester.pump();
+      expect(builds, initialBuilds);
+    },
+  );
+
+  testWidgets('Home reacts to independent preference updates', (tester) async {
+    final (controllers, _) = await pumpLoadedApp(tester);
+    expect(find.text('News 24'), findsOneWidget);
+    await controllers.preferences.setHomeSectionVisibility(
+      settingKey: 'show_home_live_tv',
+      enabled: false,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('News 24'), findsNothing);
     expect(find.text('Northbound'), findsOneWidget);
   });
 
   testWidgets('See all opens a paged grid backed by a catalog query', (
     tester,
   ) async {
-    final (controller, _) = await pumpLoadedApp(tester);
+    final (controllers, _) = await pumpLoadedApp(tester);
 
     await tester.tap(find.widgetWithText(TextButton, 'See all').first);
     await tester.pumpAndSettle();
 
-    expect(controller.navigationController.currentRoute, isA<CatalogRoute>());
-    expect(controller.catalogView.items.items, hasLength(3));
-    expect(controller.catalogView.items.hasMore, isFalse);
+    expect(
+      controllers.app.navigationController.currentRoute,
+      isA<CatalogRoute>(),
+    );
+    expect(controllers.app.catalogView.items.items, hasLength(3));
+    expect(controllers.app.catalogView.items.hasMore, isFalse);
     expect(find.text('News 24'), findsOneWidget);
     expect(find.text('World Sports'), findsOneWidget);
     expect(find.text('Northbound'), findsNothing);
@@ -109,46 +228,52 @@ void main() {
   testWidgets('system Back returns from catalog without exiting the app', (
     tester,
   ) async {
-    final (controller, _) = await pumpLoadedApp(tester);
+    final (controllers, _) = await pumpLoadedApp(tester);
     var appDisposed = false;
     addTearDown(() => appDisposed = true);
 
-    controller.openLiveTv();
+    controllers.app.openLiveTv();
     await tester.pumpAndSettle();
-    expect(controller.navigationController.currentRoute, isA<CatalogRoute>());
+    expect(
+      controllers.app.navigationController.currentRoute,
+      isA<CatalogRoute>(),
+    );
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
-    expect(controller.navigationController.currentRoute, isA<HomeRoute>());
+    expect(controllers.app.navigationController.currentRoute, isA<HomeRoute>());
     expect(find.byType(IptvApp), findsOneWidget);
     expect(appDisposed, isFalse);
   });
 
   testWidgets('Escape returns from catalog to Home', (tester) async {
-    final (controller, _) = await pumpLoadedApp(tester);
-    controller.openLiveTv();
+    final (controllers, _) = await pumpLoadedApp(tester);
+    controllers.app.openLiveTv();
     await tester.pumpAndSettle();
-    expect(controller.navigationController.currentRoute, isA<CatalogRoute>());
+    expect(
+      controllers.app.navigationController.currentRoute,
+      isA<CatalogRoute>(),
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(controller.navigationController.currentRoute, isA<HomeRoute>());
+    expect(controllers.app.navigationController.currentRoute, isA<HomeRoute>());
     expect(find.byType(IptvApp), findsOneWidget);
   });
 
   testWidgets('selecting a grid tile loads the full item for details', (
     tester,
   ) async {
-    final (controller, _) = await pumpLoadedApp(tester);
+    final (controllers, _) = await pumpLoadedApp(tester);
 
     await tester.tap(find.widgetWithText(TextButton, 'See all').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('News 24'));
     await tester.pumpAndSettle();
 
-    final route = controller.navigationController.currentRoute;
+    final route = controllers.app.navigationController.currentRoute;
     expect(route, isA<DetailsRoute>());
     expect((route as DetailsRoute).item.id, 'news-24');
     expect((route).item.streamUrl, 'https://example.invalid/live/news-24.m3u8');
@@ -181,22 +306,31 @@ void main() {
       ),
     );
     final service = InMemoryCatalogQueryService(playlistId, items);
-    final controller = AppController(
+    final controllers = _createTestControllers(
       catalogRepository: const FixtureCatalogRepository(),
       catalogQueryService: service,
       settingsRepository: _TestSettingsRepository(),
       playbackAdapter: FakePlaybackAdapter(),
-      storageInitializer: () async {},
     );
-    addTearDown(controller.dispose);
-    await controller.catalogView.bind(service: service, playlistId: playlistId);
-    await controller.catalogView.showItems(CatalogItemKind.live);
-    controller.navigationController.resetTo(
+    addTearDown(() => _disposeTestControllers(controllers));
+    await controllers.app.catalogView.bind(
+      service: service,
+      playlistId: playlistId,
+    );
+    await controllers.app.catalogView.showItems(CatalogItemKind.live);
+    controllers.app.navigationController.resetTo(
       const CatalogRoute(CatalogItemKind.live),
     );
 
     await tester.pumpWidget(
-      IptvApp(dependencies: AppDependencies.forTesting(controller: controller)),
+      IptvApp(
+        dependencies: AppDependencies.forTesting(
+          appController: controllers.app,
+          playerController: controllers.player,
+          playlistsController: controllers.playlists,
+          preferencesController: controllers.preferences,
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -213,9 +347,9 @@ void main() {
         .pixels;
     expect(scrollOffset, greaterThan(0));
 
-    controller.openDetails(items.first);
+    controllers.app.openDetails(items.first);
     await tester.pumpAndSettle();
-    controller.goBack();
+    controllers.app.goBack();
     await tester.pumpAndSettle();
 
     expect(
@@ -225,19 +359,28 @@ void main() {
   });
 
   testWidgets('leaving the player stops playback', (tester) async {
-    final (controller, _) = await pumpLoadedApp(tester);
-    controller.openDetails(fixtureCatalog.first);
-    final openingPlayer = controller.openPlayer(fixtureCatalog.first);
+    final (controllers, _) = await pumpLoadedApp(tester);
+    controllers.app.openDetails(fixtureCatalog.first);
+    final openingPlayer = controllers.player.openPlayer(fixtureCatalog.first);
     await tester.pump(const Duration(milliseconds: 1));
     await openingPlayer;
-    expect(controller.playbackAdapter.state.status, PlaybackStatus.playing);
+    expect(
+      controllers.player.playbackAdapter.state.status,
+      PlaybackStatus.playing,
+    );
     expect(find.text(fixtureCatalog.first.streamUrl), findsNothing);
 
-    controller.goBack();
+    controllers.app.goBack();
     await tester.pumpAndSettle();
 
-    expect(controller.navigationController.currentRoute, isA<DetailsRoute>());
-    expect(controller.playbackAdapter.state.status, PlaybackStatus.stopped);
+    expect(
+      controllers.app.navigationController.currentRoute,
+      isA<DetailsRoute>(),
+    );
+    expect(
+      controllers.player.playbackAdapter.state.status,
+      PlaybackStatus.stopped,
+    );
   });
 
   testWidgets('search filters results and opens the selected item', (
@@ -245,19 +388,28 @@ void main() {
   ) async {
     const playlistId = 'search-playlist';
     final service = InMemoryCatalogQueryService(playlistId, fixtureCatalog);
-    final controller = AppController(
+    final controllers = _createTestControllers(
       catalogRepository: const FixtureCatalogRepository(),
       catalogQueryService: service,
       settingsRepository: _TestSettingsRepository(),
       playbackAdapter: FakePlaybackAdapter(),
-      storageInitializer: () async {},
     );
-    addTearDown(controller.dispose);
-    controller.navigationController.resetTo(const SearchRoute());
-    await controller.catalogView.bind(service: service, playlistId: playlistId);
+    addTearDown(() => _disposeTestControllers(controllers));
+    controllers.app.navigationController.resetTo(const SearchRoute());
+    await controllers.app.catalogView.bind(
+      service: service,
+      playlistId: playlistId,
+    );
     await tester.pumpWidget(
       MaterialApp(
-        home: AppScope(controller: controller, child: const SearchScreen()),
+        home: AppScope(
+          appController: controllers.app,
+          playerController: controllers.player,
+          playlistsController: controllers.playlists,
+          preferencesController: controllers.preferences,
+          navigationController: controllers.app.navigationController,
+          child: const SearchScreen(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -276,7 +428,7 @@ void main() {
     expect(find.text('News 24'), findsOneWidget);
     await tester.tap(find.text('News 24'));
     await tester.pumpAndSettle();
-    final route = controller.navigationController.currentRoute;
+    final route = controllers.app.navigationController.currentRoute;
     expect(route, isA<DetailsRoute>());
     expect((route as DetailsRoute).item.id, 'news-24');
   });
@@ -296,27 +448,30 @@ void main() {
         'desktop-playlist',
         fixtureCatalog,
       );
-      final controller = AppController(
+      final controllers = _createTestControllers(
         catalogRepository: const FixtureCatalogRepository(),
         catalogQueryService: service,
         settingsRepository: settings,
         playbackAdapter: FakePlaybackAdapter(),
-        storageInitializer: () async {},
       );
-      addTearDown(controller.dispose);
-      controller.navigationController.resetTo(
+      addTearDown(() => _disposeTestControllers(controllers));
+      controllers.app.navigationController.resetTo(
         const CatalogRoute(CatalogItemKind.live),
       );
-      await controller.catalogView.bind(
+      await controllers.app.catalogView.bind(
         service: service,
         playlistId: 'desktop-playlist',
       );
-      await controller.catalogView.showItems(CatalogItemKind.live);
+      await controllers.app.catalogView.showItems(CatalogItemKind.live);
 
       await tester.pumpWidget(
         MaterialApp(
           home: AppScope(
-            controller: controller,
+            appController: controllers.app,
+            playerController: controllers.player,
+            playlistsController: controllers.playlists,
+            preferencesController: controllers.preferences,
+            navigationController: controllers.app.navigationController,
             child: const CatalogScreen(
               route: CatalogRoute(CatalogItemKind.live),
             ),
@@ -327,19 +482,22 @@ void main() {
 
       expect(find.text('GROUPS'), findsOneWidget);
       expect(find.text('All groups'), findsOneWidget);
-      expect(controller.catalogView.selectedGroupId, isNull);
-      expect(controller.catalogView.items.total, 3);
+      expect(controllers.app.catalogView.selectedGroupId, isNull);
+      expect(controllers.app.catalogView.items.total, 3);
 
       await tester.tap(find.widgetWithText(ListTile, 'Sports'));
       await tester.pumpAndSettle();
-      expect(controller.catalogView.selectedGroupId, isNotNull);
-      expect(controller.catalogView.items.total, 1);
-      expect(controller.catalogView.items.items.single.title, 'World Sports');
+      expect(controllers.app.catalogView.selectedGroupId, isNotNull);
+      expect(controllers.app.catalogView.items.total, 1);
+      expect(
+        controllers.app.catalogView.items.items.single.title,
+        'World Sports',
+      );
 
       await tester.tap(find.widgetWithText(ListTile, 'All groups'));
       await tester.pumpAndSettle();
-      expect(controller.catalogView.selectedGroupId, isNull);
-      expect(controller.catalogView.items.total, 3);
+      expect(controllers.app.catalogView.selectedGroupId, isNull);
+      expect(controllers.app.catalogView.items.total, 3);
 
       var sportsFocused = false;
       for (var attempt = 0; attempt < 30 && !sportsFocused; attempt++) {
@@ -363,8 +521,11 @@ void main() {
       expect((selectedTile?.title as Text?)?.data, 'Sports');
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-      expect(controller.catalogView.items.total, 1);
-      expect(controller.catalogView.items.items.single.title, 'World Sports');
+      expect(controllers.app.catalogView.items.total, 1);
+      expect(
+        controllers.app.catalogView.items.items.single.title,
+        'World Sports',
+      );
 
       tester.view.physicalSize = const Size(1000, 900);
       await tester.pumpAndSettle();
@@ -375,7 +536,7 @@ void main() {
       tester.view.physicalSize = const Size(1440, 900);
       await tester.pumpAndSettle();
       expect(find.text('GROUPS'), findsOneWidget);
-      expect(controller.catalogView.items.total, 1);
+      expect(controllers.app.catalogView.items.total, 1);
     },
   );
 }
@@ -404,6 +565,7 @@ class _TestSettingsRepository implements SettingsRepository {
 
   @override
   Future<String?> getAppSetting(String key) async {
+    if (_appSettings.containsKey(key)) return _appSettings[key];
     return switch (key) {
       'show_home_live_tv' => 'true',
       'show_home_movies' => 'true',

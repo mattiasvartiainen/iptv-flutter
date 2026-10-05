@@ -8,15 +8,16 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppScope.of(context);
+    final c = AppScope.appControllerOf(context);
+    final preferences = AppScope.preferencesControllerOf(context);
 
     return AppShellScaffold(
       child: ListenableBuilder(
-        listenable: c.catalogView,
+        listenable: Listenable.merge([c.catalogView, preferences]),
         builder: (context, _) => ListView(
           padding: const EdgeInsets.fromLTRB(40, 0, 40, 28),
           children: [
-            if (c.showHomeLiveTv) ...[
+            if (preferences.showHomeLiveTv) ...[
               _SectionHeader(
                 title: 'Live TV',
                 actionLabel: 'See all',
@@ -29,7 +30,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 28),
             ],
-            if (c.showHomeMovies) ...[
+            if (preferences.showHomeMovies) ...[
               _SectionHeader(
                 title: 'Movies',
                 actionLabel: 'See all',
@@ -42,7 +43,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 28),
             ],
-            if (c.showHomeSeries) ...[
+            if (preferences.showHomeSeries) ...[
               _SectionHeader(
                 title: 'Series',
                 actionLabel: 'See all',
@@ -50,7 +51,9 @@ class HomeScreen extends StatelessWidget {
               ),
               _SeriesStrip(series: c.catalogView.homeSeries),
             ],
-            if (!c.showHomeLiveTv && !c.showHomeMovies && !c.showHomeSeries)
+            if (!preferences.showHomeLiveTv &&
+                !preferences.showHomeMovies &&
+                !preferences.showHomeSeries)
               const _EmptyTile(
                 text:
                     'All Home sections are hidden by settings. Re-enable them in storage settings.',
@@ -130,7 +133,7 @@ class _SeriesStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppScope.of(context);
+    final c = AppScope.appControllerOf(context);
     if (series.isEmpty) {
       return const _EmptyTile(text: 'No series episodes recognized yet.');
     }

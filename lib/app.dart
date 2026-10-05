@@ -25,7 +25,7 @@ class IptvApp extends StatefulWidget {
 }
 
 class _IptvAppState extends State<IptvApp> {
-  AppController get controller => widget.dependencies.controller;
+  AppController get controller => widget.dependencies.appController;
 
   @override
   void initState() {
@@ -33,7 +33,7 @@ class _IptvAppState extends State<IptvApp> {
     unawaited(widget.dependencies.initialize());
     if (widget.dependencies.autoRunPlaybackSpike) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.openPlaybackSpike();
+        widget.dependencies.playerController.openPlaybackSpike();
       });
     }
   }
@@ -53,7 +53,14 @@ class _IptvAppState extends State<IptvApp> {
       ),
       home: AppEnvironment(
         capabilities: widget.dependencies.capabilities,
-        child: AppScope(controller: controller, child: const AppShell()),
+        child: AppScope(
+          appController: controller,
+          playerController: widget.dependencies.playerController,
+          playlistsController: widget.dependencies.playlistsController,
+          preferencesController: widget.dependencies.preferencesController,
+          navigationController: controller.navigationController,
+          child: const AppShell(),
+        ),
       ),
     );
   }
@@ -64,8 +71,8 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
-    final navigation = controller.navigationController;
+    final controller = AppScope.appControllerOf(context);
+    final navigation = AppScope.navigationControllerOf(context);
     return ListenableBuilder(
       listenable: navigation,
       builder: (context, _) {

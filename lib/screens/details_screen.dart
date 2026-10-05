@@ -11,7 +11,7 @@ class DetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppScope.of(context);
+    final player = AppScope.playerControllerOf(context);
     return AppShellScaffold(
       showBack: true,
       title: item.title,
@@ -33,7 +33,7 @@ class DetailsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
-                  onPressed: () => c.openPlayer(item),
+                  onPressed: () => player.openPlayer(item),
                   icon: const Icon(Icons.play_arrow),
                   label: const Text('Play selected stream'),
                 ),

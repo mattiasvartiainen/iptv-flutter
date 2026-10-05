@@ -1,15 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/id_identity.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/errors/app_issue.dart';
-import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
 import 'package:iptv_flutter/services/storage/storage_migrations.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
+import 'package:iptv_flutter/state/app_preferences_controller.dart';
+import 'package:iptv_flutter/state/catalog_view_state.dart';
+import 'package:iptv_flutter/state/playlists_controller.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 
 import 'support/database_adapter.dart';
@@ -520,25 +523,44 @@ https://stream.test/second.m3u8
         databaseAdapter: adapter,
         secretStore: store,
       );
-      final controller = AppController(
+      final catalogView = CatalogViewState();
+      final navigation = NavigationController();
+      final preferences = AppPreferencesController(
+        settingsRepository: settings,
+      );
+      final playlistsController = PlaylistsController(
         catalogRepository: catalog,
         settingsRepository: settings,
-        playbackAdapter: FakePlaybackAdapter(),
-        storageInitializer: () async {},
+        catalogView: catalogView,
+        navigationController: navigation,
+        preferencesController: preferences,
       );
-      addTearDown(controller.dispose);
+      final controller = AppController(
+        catalogView: catalogView,
+        navigationController: navigation,
+      );
+      addTearDown(navigation.dispose);
+      addTearDown(catalogView.dispose);
+      addTearDown(playlistsController.dispose);
+      addTearDown(preferences.dispose);
 
-      controller.activePlaylistId = first.playlistId;
-      await controller.loadPlaylist(
+      playlistsController.activePlaylistId = first.playlistId;
+      await playlistsController.loadPlaylist(
         first.playlistId,
-        policy: CatalogLoadPolicy.networkOnly,
+        intent: PlaylistLoadIntent.setup,
       );
 
-      expect(await controller.refreshPlaylist(second.playlistId), isTrue);
-      expect(controller.activePlaylistId, first.playlistId);
+      expect(
+        await playlistsController.refreshPlaylist(second.playlistId),
+        isTrue,
+      );
+      expect(playlistsController.activePlaylistId, first.playlistId);
 
-      expect(await controller.selectPlaylist(second.playlistId), isTrue);
-      expect(controller.activePlaylistId, second.playlistId);
+      expect(
+        await playlistsController.selectPlaylist(second.playlistId),
+        isTrue,
+      );
+      expect(playlistsController.activePlaylistId, second.playlistId);
       expect(controller.catalogItemCount, 1);
       expect(controller.catalogView.homeMovies.single.title, 'Second Movie');
     },
@@ -573,20 +595,39 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
           url: 'https://provider.test/sweden.m3u',
         ),
       );
-      final controller = AppController(
+      final catalogView = CatalogViewState();
+      final navigation = NavigationController();
+      final preferences = AppPreferencesController(
+        settingsRepository: settings,
+      );
+      final playlistsController = PlaylistsController(
         catalogRepository: SqliteCatalogRepository(
           source: const FakePlaylistSource(playlistText),
           databaseAdapter: adapter,
           secretStore: store,
         ),
         settingsRepository: settings,
-        playbackAdapter: FakePlaybackAdapter(),
-        storageInitializer: () async {},
+        catalogView: catalogView,
+        navigationController: navigation,
+        preferencesController: preferences,
       );
-      addTearDown(controller.dispose);
+      final controller = AppController(
+        catalogView: catalogView,
+        navigationController: navigation,
+      );
+      addTearDown(navigation.dispose);
+      addTearDown(catalogView.dispose);
+      addTearDown(playlistsController.dispose);
+      addTearDown(preferences.dispose);
 
-      expect(await controller.refreshPlaylist(playlist.playlistId), isTrue);
-      expect(await controller.selectPlaylist(playlist.playlistId), isTrue);
+      expect(
+        await playlistsController.refreshPlaylist(playlist.playlistId),
+        isTrue,
+      );
+      expect(
+        await playlistsController.selectPlaylist(playlist.playlistId),
+        isTrue,
+      );
 
       expect(controller.catalogItemCount, 4);
       final live = controller.catalogView.homeLive;
@@ -804,8 +845,7 @@ https://stream.test/channel-a.m3u8
   );
 
   test('settings values drive home section visibility in controller', () async {
-    final controller = AppController(
-      catalogRepository: const FixtureCatalogRepository(),
+    final controller = AppPreferencesController(
       settingsRepository: _FakeSettingsRepository(
         values: const {
           'show_home_live_tv': 'false',
@@ -813,8 +853,6 @@ https://stream.test/channel-a.m3u8
           'show_home_series': 'false',
         },
       ),
-      playbackAdapter: FakePlaybackAdapter(),
-      storageInitializer: () async {},
     );
 
     await controller.refreshHomeSectionVisibility();
