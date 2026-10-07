@@ -197,10 +197,7 @@ void main() {
   testWidgets('Home reacts to independent preference updates', (tester) async {
     final (controllers, _) = await pumpLoadedApp(tester);
     expect(find.text('News 24'), findsOneWidget);
-    await controllers.preferences.setHomeSectionVisibility(
-      settingKey: 'show_home_live_tv',
-      enabled: false,
-    );
+    await controllers.preferences.setShowHomeLiveTv(false);
     await tester.pumpAndSettle();
     expect(find.text('News 24'), findsNothing);
     expect(find.text('Northbound'), findsOneWidget);
@@ -564,15 +561,7 @@ class _TestSettingsRepository implements SettingsRepository {
   final Map<String, String> _urls = {};
 
   @override
-  Future<String?> getAppSetting(String key) async {
-    if (_appSettings.containsKey(key)) return _appSettings[key];
-    return switch (key) {
-      'show_home_live_tv' => 'true',
-      'show_home_movies' => 'true',
-      'show_home_series' => 'true',
-      _ => _appSettings[key],
-    };
-  }
+  Future<String?> getAppSetting(String key) async => _appSettings[key];
 
   @override
   Future<void> setAppSetting(String key, String value) async {

@@ -52,8 +52,8 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-2.5 | Replace `isDesktop` layout check with width + input | 2 Platform boundary | WP-2.1 | S | DONE (2026-10-04): Sidebar uses available width >= 1050 on every platform; pointer, arrow-key/Enter filtering and narrow/wide resize coverage pass. Platform exception allowlist is empty; all 141 tests pass. Analyzer retains one unrelated webOS info. |
 | WP-3.1 | Typed route stack + `Navigator.pages` | 3 Navigation & state | WP-1.3, D-1 | M | DONE (2026-10-05): Added sealed route types and a Home-rooted `NavigationController`; `Navigator.pages` retains prior screens, typed params replace navigation side fields, and Back/Escape plus scroll restoration tests pass. |
 | WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | DONE (2026-10-05): Extracted playlist, preferences, initial player, and startup owners; explicit load intents replace flags, narrow subscriptions isolate rebuilds, and AppController is a thin catalog/navigation facade. All 163 tests pass; analyzer retains one unrelated webOS info. |
-| WP-3.3 | Typed app preferences (no magic setting keys) | 3 Navigation & state | WP-3.2 | S | TODO |
-| WP-3.4 | Remove dead code + dedupe error handling in controllers | 3 Navigation & state | WP-3.2 | S | TODO |
+| WP-3.3 | Typed app preferences (no magic setting keys) | 3 Navigation & state | WP-3.2 | S | DONE (2026-10-07): Added typed preference storage and controller commands, including active playlist persistence; keys remain only in the wrapper and unchanged seed. All 182 tests pass; analyzer retains one unrelated webOS info. |
+| WP-3.4 | Remove dead code + dedupe error handling in controllers | 3 Navigation & state | WP-3.2 | S | DONE (2026-10-07): Removed unused save/retry methods and unified playlist failures under one operation boundary; retained activeIssue after checking usages. All 193 tests pass; analyzer retains one unrelated webOS info. |
 | WP-4.1 | Design tokens + 10-foot theme | 4 TV UX | – | S | TODO |
 | WP-4.2 | Shared focusable `MediaTile` | 4 TV UX | WP-4.1 | M | TODO |
 | WP-4.3 | Root key map (Shortcuts/Actions, remote keys) | 4 TV UX | WP-2.1, WP-3.1 | M | TODO |
@@ -255,8 +255,8 @@ Format: **ID — title** · Severity · Confidence · Category. Each finding is 
 - `'show_home_live_tv'`, `'show_home_movies'`, `'show_home_series'`, `'verbose_refresh_info'`, `'active_playlist_id'` are string literals spread across screen, controller and DB seed; booleans parsed by a hand-written `_parseBoolOrDefault`. → **WP-3.3**.
 
 **F-14 — Dead and duplicated code in the controller.** Medium · High · Maintainability
-- Dead: `savePlaylist()` (only called by `retryActiveIssue()`, which has no callers), `retryActiveIssue()`, `openCatalog()`, `goHome()`, `activeIssue` (written in 6 places, never read by UI).
-- Duplicated: the `on AppIssueException` / `catch (_)` + logging block appears in `savePlaylist`, `savePlaylistUrl`, `saveXtreamPlaylist`, `loadPlaylist` with near-identical bodies. → **WP-3.4**.
+- Resolved by **WP-3.4**: Find Usages confirmed the unused `savePlaylist()` / `retryActiveIssue()` chain, which was removed. `openCatalog()` / `goHome()` were already absent after the controller split; `activeIssue` is retained because regression tests consume its typed error state.
+- `savePlaylistUrl`, `saveXtreamPlaylist`, and `loadPlaylist` now share one `_runPlaylistOperation` failure boundary for issue conversion, redacted logging, and error-state updates. Worker error classification and refresh cleanup remain covered by tests.
 
 **F-15 — Raw exception text in UI; silent swallows.** Medium · High · Error handling
 - `PagedCollection._fetch` stores `'$error'`; `_loadBrowseGroups` stores `'$error'`; both are rendered.
@@ -654,11 +654,13 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Fixes:** F-13.
 - **Touches:** new `lib/services/settings/app_preferences.dart`, `AppPreferencesController`, `settings_screen.dart`, `database_adapter.dart` (seed), `_TestSettingsRepository`.
 - **Steps:** define `enum AppPreference<T>`-style keys or a small `AppPreferences` class with typed getters/setters (`Future<bool> showHomeLiveTv()`, ...) over `SettingsRepository.get/setAppSetting`. Move `_parseBoolOrDefault` there. Keys appear exactly once in `lib/` (plus the migration seed, which must keep its literals).
+- **Implementation notes (2026-10-07):** Added `AppPreferences` with named boolean getters/setters and active-playlist ID accessors. The preferences controller and Settings screen no longer accept raw setting keys; `PlaylistsController` also uses the wrapper for startup restoration, activation, and clearing. Preserved existing boolean aliases/defaults, canonical writes, notifications, and empty-string playlist clearing. The seed in `database_adapter.dart` remains unchanged; the widget-test repository now leaves missing-setting defaults to the wrapper. Added unit coverage for parsing, fallback, persistence, notifications, and startup restoration. Full suite: 182 passing; `flutter analyze` reports only the existing `unawaited_futures` info in `webos/flutter/main.dart`.
 - **Acceptance:** `grep "'show_home_" lib` → only `app_preferences.dart` and the migration seed.
 
 #### WP-3.4 — Remove dead code, dedupe controller error handling
 - **Fixes:** F-14.
 - **Steps:** delete `savePlaylist`, `retryActiveIssue`, `openCatalog`, `goHome` and `activeIssue` if still unused after WP-3.2 (re-check with *Find usages*). Introduce one private `Future<bool> _runPlaylistOperation(String op, {required String host, required Future<void> Function() body})` that does the `AppIssueException`/generic catch + logging once.
+- **Implementation notes (2026-10-07):** Removed the reference-confirmed dead save/retry chain from `PlaylistsController`. The navigation methods were already absent; `activeIssue` remains because controller/widget tests read its kind. URL/Xtream saves and catalog loads share one catch-and-log boundary, with source/context parameters preserving setup versus import messages, log event names, supplied issue metadata, and worker-specific classification. Caller-owned progress cleanup and load policies are unchanged. Worker stack traces are now redacted consistently. Added 11 regression cases covering both save paths, typed/generic/worker failures, redaction, recovery, and refresh cleanup. All 193 tests pass; analyzer reports only the existing `unawaited_futures` info in `webos/flutter/main.dart`.
 - **Acceptance:** no duplicate catch blocks; tests green.
 
 ### Batch 4 — TV / 10-foot UX

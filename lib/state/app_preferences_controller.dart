@@ -1,19 +1,18 @@
 import 'package:flutter/foundation.dart';
 
+import '../services/settings/app_preferences.dart';
 import '../services/settings/settings_repository.dart';
 
 class AppPreferencesController extends ChangeNotifier {
   AppPreferencesController({required SettingsRepository settingsRepository})
-    : _settingsRepository = settingsRepository;
+    : _preferences = AppPreferences(settingsRepository: settingsRepository);
 
-  final SettingsRepository _settingsRepository;
+  final AppPreferences _preferences;
 
   bool showHomeLiveTv = true;
   bool showHomeMovies = true;
   bool showHomeSeries = true;
   bool verboseRefreshInfo = false;
-
-  static const _verboseRefreshInfoSettingKey = 'verbose_refresh_info';
 
   Future<void> initialize() async {
     await refreshHomeSectionVisibility();
@@ -21,49 +20,38 @@ class AppPreferencesController extends ChangeNotifier {
   }
 
   Future<void> refreshHomeSectionVisibility() async {
-    final live = await _settingsRepository.getAppSetting('show_home_live_tv');
-    final movies = await _settingsRepository.getAppSetting('show_home_movies');
-    final series = await _settingsRepository.getAppSetting('show_home_series');
+    final live = await _preferences.showHomeLiveTv();
+    final movies = await _preferences.showHomeMovies();
+    final series = await _preferences.showHomeSeries();
 
-    showHomeLiveTv = _parseBoolOrDefault(live, defaultValue: true);
-    showHomeMovies = _parseBoolOrDefault(movies, defaultValue: true);
-    showHomeSeries = _parseBoolOrDefault(series, defaultValue: true);
+    showHomeLiveTv = live;
+    showHomeMovies = movies;
+    showHomeSeries = series;
     notifyListeners();
   }
 
-  Future<void> setHomeSectionVisibility({
-    required String settingKey,
-    required bool enabled,
-  }) async {
-    await _settingsRepository.setAppSetting(
-      settingKey,
-      enabled ? 'true' : 'false',
-    );
+  Future<void> setShowHomeLiveTv(bool enabled) async {
+    await _preferences.setShowHomeLiveTv(enabled);
+    await refreshHomeSectionVisibility();
+  }
+
+  Future<void> setShowHomeMovies(bool enabled) async {
+    await _preferences.setShowHomeMovies(enabled);
+    await refreshHomeSectionVisibility();
+  }
+
+  Future<void> setShowHomeSeries(bool enabled) async {
+    await _preferences.setShowHomeSeries(enabled);
     await refreshHomeSectionVisibility();
   }
 
   Future<void> refreshVerboseRefreshInfoSetting() async {
-    final stored = await _settingsRepository.getAppSetting(
-      _verboseRefreshInfoSettingKey,
-    );
-    verboseRefreshInfo = _parseBoolOrDefault(stored, defaultValue: false);
+    verboseRefreshInfo = await _preferences.verboseRefreshInfo();
     notifyListeners();
   }
 
   Future<void> setVerboseRefreshInfo(bool enabled) async {
-    await _settingsRepository.setAppSetting(
-      _verboseRefreshInfoSettingKey,
-      enabled ? 'true' : 'false',
-    );
+    await _preferences.setVerboseRefreshInfo(enabled);
     await refreshVerboseRefreshInfoSetting();
-  }
-
-  bool _parseBoolOrDefault(String? value, {required bool defaultValue}) {
-    if (value == null) return defaultValue;
-    return switch (value.trim().toLowerCase()) {
-      '1' || 'true' || 'yes' || 'on' => true,
-      '0' || 'false' || 'no' || 'off' => false,
-      _ => defaultValue,
-    };
   }
 }

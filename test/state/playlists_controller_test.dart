@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
+import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/errors/app_issue.dart';
+import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 import 'package:iptv_flutter/state/app_preferences_controller.dart';
@@ -15,6 +17,215 @@ import 'package:iptv_flutter/state/playlists_controller.dart';
 import '../support/in_memory_settings_repository.dart';
 
 void main() {
+  const sensitiveUrl = 'https://provider.test/live/private-user/private-pass/1';
+  final suppliedIssue = AppIssueException(
+    const AppIssue(
+      kind: AppIssueKind.storageUnavailable,
+      source: AppIssueSource.storage,
+      title: 'Storage unavailable',
+      message: 'Failed $sensitiveUrl',
+      details: sensitiveUrl,
+      retryable: false,
+    ),
+    cause: StateError(sensitiveUrl),
+    stackTrace: StackTrace.fromString('provider stack $sensitiveUrl'),
+  );
+
+  for (final xtream in [false, true]) {
+    for (final typed in [false, true]) {
+      test(
+        'save xtream=$xtream typed=$typed handles failure and recovery',
+        () async {
+          final settings = _FailingSettingsRepository();
+          final logger = _RecordingLogger();
+          final fixture = await _Fixture.create(
+            settings: settings,
+            logger: logger,
+          );
+          addTearDown(fixture.dispose);
+          settings.failure = typed ? suppliedIssue : StateError(sensitiveUrl);
+          Future<bool> save() => xtream
+              ? fixture.playlists.saveXtreamPlaylist(
+                  name: 'Saved',
+                  server: 'https://provider.test',
+                  username: 'private-user',
+                  password: 'private-pass',
+                )
+              : fixture.playlists.savePlaylistUrl(
+                  name: 'Saved',
+                  url: sensitiveUrl,
+                );
+          final states = <LoadStatus>[];
+          fixture.playlists.addListener(
+            () => states.add(fixture.playlists.playlistStatus),
+          );
+
+          expect(await save(), isFalse);
+          expect(
+            fixture.playlists.activeIssue?.kind,
+            typed ? AppIssueKind.storageUnavailable : AppIssueKind.unknown,
+          );
+          expect(
+            fixture.playlists.activeIssue?.source,
+            typed ? AppIssueSource.storage : AppIssueSource.setup,
+          );
+          expect(
+            fixture.playlists.errorMessage,
+            typed
+                ? startsWith('Failed ')
+                : 'Could not load that playlist. Try again.',
+          );
+          expect(states, [LoadStatus.error]);
+          final entry = logger.errors.single;
+          expect(entry.message, 'playlist_import_failed');
+          expect(entry.context['playlistHost'], 'provider.test');
+          expect(entry.context['retryable'], !typed);
+          expect(entry.error, typed ? isNotNull : isNull);
+          expect(entry.stackTrace, typed ? isNotNull : isNull);
+          expect(
+            '${fixture.playlists.activeIssue?.details} ${fixture.playlists.errorMessage} $entry',
+            isNot(contains('private-user')),
+          );
+          expect(
+            '${fixture.playlists.activeIssue?.details} $entry',
+            isNot(contains('private-pass')),
+          );
+          expect(fixture.repository.calls, isEmpty);
+
+          settings.failure = null;
+          expect(await save(), isTrue);
+          expect(fixture.playlists.activeIssue, isNull);
+          expect(fixture.playlists.errorMessage, isNull);
+          expect(fixture.playlists.playlistStatus, LoadStatus.ready);
+          expect(logger.errors, hasLength(1));
+          expect(fixture.playlists.playlists, hasLength(3));
+        },
+      );
+    }
+  }
+
+  final failures = <(Object, AppIssueKind, String)>[
+    (suppliedIssue, AppIssueKind.storageUnavailable, 'Failed '),
+    (
+      const FormatException(sensitiveUrl),
+      AppIssueKind.playlistFormatInvalid,
+      'The playlist could not be parsed.',
+    ),
+    (
+      StateError(sensitiveUrl),
+      AppIssueKind.unknown,
+      'Could not load that playlist. Try again.',
+    ),
+    for (final worker in [
+      (
+        'TimeoutException',
+        'Timed out',
+        AppIssueKind.timeout,
+        'The playlist server took too long to respond.',
+      ),
+      (
+        'SocketException',
+        'Offline',
+        AppIssueKind.networkUnavailable,
+        'Could not connect to the playlist server.',
+      ),
+      (
+        'HttpException',
+        'HTTP 401',
+        AppIssueKind.authorizationFailure,
+        'The playlist server rejected the request.',
+      ),
+      (
+        'HttpException',
+        'HTTP 403',
+        AppIssueKind.authorizationFailure,
+        'The playlist server rejected the request.',
+      ),
+      (
+        'HttpException',
+        'HTTP 500',
+        AppIssueKind.unknown,
+        'Could not load that playlist. Try again.',
+      ),
+    ])
+      (
+        CatalogImportWorkerException(
+          errorType: worker.$1,
+          message: worker.$2,
+          workerStackTrace: 'worker stack $sensitiveUrl',
+        ),
+        worker.$3,
+        worker.$4,
+      ),
+  ];
+  for (final failure in failures) {
+    test(
+      'refresh maps ${failure.$1.runtimeType} ${failure.$2.name} and cleans up',
+      () async {
+        final logger = _RecordingLogger();
+        final fixture = await _Fixture.create(logger: logger);
+        addTearDown(fixture.dispose);
+        await fixture.playlists.selectPlaylist('first');
+        final firstItem = fixture.view.homeLive.first;
+        await fixture.preferences.setVerboseRefreshInfo(true);
+        fixture.repository.failure = failure.$1;
+
+        expect(await fixture.playlists.refreshPlaylist('first'), isFalse);
+
+        expect(fixture.playlists.activeIssue?.kind, failure.$2);
+        expect(fixture.playlists.errorMessage, startsWith(failure.$3));
+        expect(fixture.view.homeLive.first, same(firstItem));
+        expect(fixture.playlists.playlistStatus, LoadStatus.error);
+        expect(fixture.playlists.refreshingPlaylistId, isNull);
+        expect(fixture.playlists.importProgress, isNull);
+        final entry = logger.errors.single;
+        expect(entry.message, 'playlist_import_failed');
+        expect(entry.context['playlistId'], 'first');
+        expect(
+          entry.context['source'],
+          failure.$1 is AppIssueException ? 'storage' : 'playlistImport',
+        );
+        expect(entry.context['kind'], failure.$2.name);
+        expect(entry.context, isNot(contains('playlistHost')));
+        if (failure.$1 is CatalogImportWorkerException) {
+          expect(entry.error, isNull);
+          expect(entry.stackTrace.toString(), contains('worker stack'));
+          expect(
+            entry.context['workerErrorType'],
+            (failure.$1 as CatalogImportWorkerException).errorType,
+          );
+        } else {
+          expect(entry.error, isNotNull);
+        }
+        expect(
+          '${fixture.playlists.activeIssue?.details} ${fixture.playlists.errorMessage} $entry',
+          isNot(contains('private-user')),
+        );
+        expect(
+          '${fixture.playlists.activeIssue?.details} $entry',
+          isNot(contains('private-pass')),
+        );
+      },
+    );
+  }
+
+  test(
+    'startup restores the stored active playlist with cache-only policy',
+    () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      fixture.settings.appSettings['active_playlist_id'] = 'second';
+
+      await fixture.playlists.initialize();
+
+      expect(fixture.playlists.activePlaylistId, 'second');
+      expect(fixture.repository.calls.single, (
+        'second',
+        CatalogLoadPolicy.cacheOnly,
+      ));
+    },
+  );
+
   test(
     'loading a playlist activates it and binds the catalog query view',
     () async {
@@ -190,8 +401,11 @@ class _Fixture {
   final AppPreferencesController preferences;
   final PlaylistsController playlists;
 
-  static Future<_Fixture> create() async {
-    final settings = InMemorySettingsRepository();
+  static Future<_Fixture> create({
+    InMemorySettingsRepository? settings,
+    AppLogger logger = const DebugAppLogger(),
+  }) async {
+    settings ??= InMemorySettingsRepository();
     for (final id in ['first', 'second']) {
       await settings.upsertPlaylist(
         PlaylistSourceConfig.url(
@@ -212,6 +426,7 @@ class _Fixture {
       catalogView: view,
       navigationController: navigation,
       preferencesController: preferences,
+      logger: logger,
     );
     return _Fixture(
       settings,
@@ -261,5 +476,47 @@ class _RecordingRepository implements CatalogRepository {
       playlistId: playlistId,
       itemCount: fixtureCatalog.length,
     );
+  }
+}
+
+class _FailingSettingsRepository extends InMemorySettingsRepository {
+  Object? failure;
+
+  @override
+  Future<ManagedPlaylist> upsertPlaylist(PlaylistSourceConfig config) async {
+    if (failure case final error?) throw error;
+    return super.upsertPlaylist(config);
+  }
+}
+
+typedef _LogEntry = ({
+  String message,
+  Object? error,
+  StackTrace? stackTrace,
+  Map<String, Object?> context,
+});
+
+class _RecordingLogger implements AppLogger {
+  final List<_LogEntry> errors = [];
+
+  @override
+  void info(String message, {Map<String, Object?> context = const {}}) {}
+
+  @override
+  void warning(String message, {Map<String, Object?> context = const {}}) {}
+
+  @override
+  void error(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?> context = const {},
+  }) {
+    errors.add((
+      message: message,
+      error: error,
+      stackTrace: stackTrace,
+      context: context,
+    ));
   }
 }
