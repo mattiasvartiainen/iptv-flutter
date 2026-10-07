@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/catalog/catalog_query.dart';
 import '../ui/theme/app_tokens.dart';
+import '../ui/widgets/media_tile.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -122,7 +123,18 @@ class _ContentStrip extends StatelessWidget {
             const SizedBox(width: AppTokens.homeStripGap),
         itemBuilder: (context, index) {
           final item = items[index];
-          return _ContentCard(item: item, onTap: () => onTap(item));
+          return SizedBox(
+            width: AppTokens.tileWidth,
+            child: MediaTile(
+              title: item.title,
+              subtitle: item.group,
+              icon: item.kind == CatalogItemKind.live
+                  ? Icons.live_tv
+                  : Icons.movie,
+              imageUrl: item.artworkUrl ?? item.logoUrl,
+              onActivate: () => onTap(item),
+            ),
+          );
         },
       ),
     );
@@ -152,78 +164,16 @@ class _SeriesStrip extends StatelessWidget {
           final value = series[index];
           return SizedBox(
             width: AppTokens.episodeTileWidth,
-            child: Card(
-              child: InkWell(
-                onTap: () => c.openSeriesSeasons(value),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppTokens.compactCardPadding),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.tv),
-                      const Spacer(),
-                      Text(
-                        value.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${value.seasonCount} seasons · ${value.episodeCount} episodes',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            child: MediaTile(
+              title: value.title,
+              subtitle:
+                  '${value.seasonCount} seasons · ${value.episodeCount} episodes',
+              icon: Icons.tv,
+              imageUrl: value.artworkUrl,
+              onActivate: () => c.openSeriesSeasons(value),
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _ContentCard extends StatelessWidget {
-  const _ContentCard({required this.item, required this.onTap});
-
-  final CatalogItemSummary item;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: AppTokens.tileWidth,
-      child: Card(
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(AppTokens.compactCardPadding),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  item.kind == CatalogItemKind.live
-                      ? Icons.live_tv
-                      : Icons.movie,
-                ),
-                const Spacer(),
-                Text(
-                  item.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  item.group ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

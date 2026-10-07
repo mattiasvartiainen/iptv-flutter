@@ -4,6 +4,7 @@ import '../app/navigation/app_route.dart';
 import '../services/catalog/catalog_query.dart';
 import '../state/catalog_view_state.dart';
 import '../ui/theme/app_tokens.dart';
+import '../ui/widgets/media_tile.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -135,37 +136,14 @@ class _ContentGrid extends StatelessWidget {
             collection: collection,
             emptyText: emptyText,
             gridDelegate: _cardGrid,
-            itemBuilder: (context, item) => Card(
-              child: InkWell(
-                onTap: () => controller.openDetailsById(item.id),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppTokens.cardPadding),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        item.kind == CatalogItemKind.live
-                            ? Icons.live_tv
-                            : Icons.movie,
-                      ),
-                      const Spacer(),
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        item.group ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            itemBuilder: (context, item) => MediaTile(
+              title: item.title,
+              subtitle: item.group,
+              icon: item.kind == CatalogItemKind.live
+                  ? Icons.live_tv
+                  : Icons.movie,
+              imageUrl: item.artworkUrl ?? item.logoUrl,
+              onActivate: () => controller.openDetailsById(item.id),
             ),
           ),
         ),
@@ -195,33 +173,13 @@ class _SeriesGrid extends StatelessWidget {
             collection: collection,
             emptyText: 'No series episodes recognized yet.',
             gridDelegate: _cardGrid,
-            itemBuilder: (context, item) => Card(
-              child: InkWell(
-                onTap: () => controller.openSeriesSeasons(item),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppTokens.cardPadding),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.tv),
-                      const Spacer(),
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${item.seasonCount} seasons · ${item.episodeCount} episodes',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            itemBuilder: (context, item) => MediaTile(
+              title: item.title,
+              subtitle:
+                  '${item.seasonCount} seasons · ${item.episodeCount} episodes',
+              icon: Icons.tv,
+              imageUrl: item.artworkUrl,
+              onActivate: () => controller.openSeriesSeasons(item),
             ),
           ),
         ),
@@ -408,30 +366,13 @@ class _SeasonGrid extends StatelessWidget {
                     itemCount: seasons.length,
                     itemBuilder: (context, index) {
                       final season = seasons[index];
-                      return Card(
-                        child: InkWell(
-                          onTap: () => controller.openSeriesEpisodes(
-                            selectedSeries,
-                            season,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(
-                              AppTokens.cardPadding,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Season ${season.seasonNumber}',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const Spacer(),
-                                Text('${season.episodeCount} episodes'),
-                              ],
-                            ),
-                          ),
+                      return MediaTile(
+                        title: 'Season ${season.seasonNumber}',
+                        subtitle: '${season.episodeCount} episodes',
+                        icon: Icons.video_library,
+                        onActivate: () => controller.openSeriesEpisodes(
+                          selectedSeries,
+                          season,
                         ),
                       );
                     },
@@ -476,37 +417,13 @@ class _EpisodeGrid extends StatelessWidget {
                   crossAxisSpacing: AppTokens.gridGap,
                   mainAxisSpacing: AppTokens.gridGap,
                 ),
-                itemBuilder: (context, episode) => Card(
-                  child: InkWell(
-                    onTap: () => controller.openDetailsById(episode.id),
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppTokens.cardPadding),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Episode ${episode.episodeNumber ?? '-'}',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: Text(
-                              episode.title,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            episode.group ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                itemBuilder: (context, episode) => MediaTile(
+                  title: episode.title,
+                  subtitle:
+                      'Episode ${episode.episodeNumber ?? '-'}${episode.group == null || episode.group!.isEmpty ? '' : ' · ${episode.group}'}',
+                  icon: Icons.play_circle_outline,
+                  imageUrl: episode.artworkUrl ?? episode.logoUrl,
+                  onActivate: () => controller.openDetailsById(episode.id),
                 ),
               ),
       ),

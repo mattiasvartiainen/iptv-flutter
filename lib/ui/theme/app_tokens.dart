@@ -41,6 +41,10 @@ abstract final class AppTokens {
   static const compactTargetSize = 48.0;
   static const remoteTargetSize = 56.0;
   static const focusDuration = Duration(milliseconds: 150);
+  static const tileFocusInset = 6.0;
+  static const tileFocusScale = 1.02;
+  static const artworkDecodeWidth = 640;
+  static const artworkDecodeHeight = 360;
   static const pagePadding = EdgeInsets.fromLTRB(
     pageInset,
     8,

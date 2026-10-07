@@ -22,6 +22,7 @@ import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/player_controller.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 import 'package:iptv_flutter/ui/theme/app_tokens.dart';
+import 'package:iptv_flutter/ui/widgets/media_tile.dart';
 import 'package:iptv_flutter/widgets/app_scope.dart';
 
 typedef _TestControllers = ({
@@ -232,6 +233,31 @@ void main() {
     expect(find.text('News 24'), findsOneWidget);
     expect(find.text('Northbound'), findsOneWidget);
   });
+
+  testWidgets(
+    'Home MediaTile focus does not navigate and Select opens Details once',
+    (tester) async {
+      final (controllers, _) = await pumpLoadedApp(tester);
+      final tile = find.ancestor(
+        of: find.text('News 24'),
+        matching: find.byType(MediaTile),
+      );
+      expect(tile, findsOneWidget);
+      Focus.of(tester.element(find.text('News 24'))).requestFocus();
+      await tester.pumpAndSettle();
+      expect(
+        controllers.app.navigationController.currentRoute,
+        isA<HomeRoute>(),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      expect(
+        controllers.app.navigationController.currentRoute,
+        isA<DetailsRoute>(),
+      );
+      expect(controllers.app.navigationController.stack, hasLength(2));
+    },
+  );
 
   testWidgets(
     'playlist notifications do not rebuild unrelated scope consumers',
