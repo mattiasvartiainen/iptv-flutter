@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/navigation/app_route.dart';
 import '../services/catalog/catalog_query.dart';
 import '../state/catalog_view_state.dart';
+import '../ui/theme/app_tokens.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -10,10 +11,10 @@ import '../widgets/app_shell_scaffold.dart';
 const int _prefetchThreshold = 30;
 
 const SliverGridDelegate _cardGrid = SliverGridDelegateWithMaxCrossAxisExtent(
-  maxCrossAxisExtent: 300,
-  mainAxisExtent: 180,
-  crossAxisSpacing: 20,
-  mainAxisSpacing: 20,
+  maxCrossAxisExtent: AppTokens.tileWidth,
+  mainAxisExtent: AppTokens.tileHeight,
+  crossAxisSpacing: AppTokens.gridGap,
+  mainAxisSpacing: AppTokens.gridGap,
 );
 
 class CatalogScreen extends StatelessWidget {
@@ -138,7 +139,7 @@ class _ContentGrid extends StatelessWidget {
               child: InkWell(
                 onTap: () => controller.openDetailsById(item.id),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppTokens.cardPadding),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -198,7 +199,7 @@ class _SeriesGrid extends StatelessWidget {
               child: InkWell(
                 onTap: () => controller.openSeriesSeasons(item),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppTokens.cardPadding),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -399,10 +400,10 @@ class _SeasonGrid extends StatelessWidget {
                   return GridView.builder(
                     gridDelegate:
                         const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 300,
-                          mainAxisExtent: 150,
-                          crossAxisSpacing: 20,
-                          mainAxisSpacing: 20,
+                          maxCrossAxisExtent: AppTokens.tileWidth,
+                          mainAxisExtent: AppTokens.seasonTileHeight,
+                          crossAxisSpacing: AppTokens.gridGap,
+                          mainAxisSpacing: AppTokens.gridGap,
                         ),
                     itemCount: seasons.length,
                     itemBuilder: (context, index) {
@@ -414,7 +415,9 @@ class _SeasonGrid extends StatelessWidget {
                             season,
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(
+                              AppTokens.cardPadding,
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -468,16 +471,16 @@ class _EpisodeGrid extends StatelessWidget {
                 collection: collection,
                 emptyText: 'No episodes found.',
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 320,
-                  mainAxisExtent: 170,
-                  crossAxisSpacing: 20,
-                  mainAxisSpacing: 20,
+                  maxCrossAxisExtent: AppTokens.episodeTileWidth,
+                  mainAxisExtent: AppTokens.episodeTileHeight,
+                  crossAxisSpacing: AppTokens.gridGap,
+                  mainAxisSpacing: AppTokens.gridGap,
                 ),
                 itemBuilder: (context, episode) => Card(
                   child: InkWell(
                     onTap: () => controller.openDetailsById(episode.id),
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(AppTokens.cardPadding),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -518,10 +521,7 @@ class _GridFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 8, 40, 28),
-      child: child,
-    );
+    return Padding(padding: AppTokens.pagePadding, child: child);
   }
 }
 

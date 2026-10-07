@@ -54,12 +54,13 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-3.2 | Split `AppController` into feature controllers | 3 Navigation & state | WP-3.1, WP-2.2 | L | DONE (2026-10-05): Extracted playlist, preferences, initial player, and startup owners; explicit load intents replace flags, narrow subscriptions isolate rebuilds, and AppController is a thin catalog/navigation facade. All 163 tests pass; analyzer retains one unrelated webOS info. |
 | WP-3.3 | Typed app preferences (no magic setting keys) | 3 Navigation & state | WP-3.2 | S | DONE (2026-10-07): Added typed preference storage and controller commands, including active playlist persistence; keys remain only in the wrapper and unchanged seed. All 182 tests pass; analyzer retains one unrelated webOS info. |
 | WP-3.4 | Remove dead code + dedupe error handling in controllers | 3 Navigation & state | WP-3.2 | S | DONE (2026-10-07): Removed unused save/retry methods and unified playlist failures under one operation boundary; retained activeIssue after checking usages. All 193 tests pass; analyzer retains one unrelated webOS info. |
-| WP-4.1 | Design tokens + 10-foot theme | 4 TV UX | – | S | TODO |
+| WP-4.1 | Design tokens + 10-foot theme | 4 TV UX | – | S | DONE (2026-10-07): Extracted shared geometry and current dark theme; capability-based 16/18px body text, 48/56px command targets, input-aware focus and reduced motion. All 203 tests pass; analyzer retains one unrelated webOS info. Native TV readability checks pending. |
 | WP-4.2 | Shared focusable `MediaTile` | 4 TV UX | WP-4.1 | M | TODO |
 | WP-4.3 | Root key map (Shortcuts/Actions, remote keys) | 4 TV UX | WP-2.1, WP-3.1 | M | TODO |
-| WP-4.4 | Focus groups, initial focus, focus restoration | 4 TV UX | WP-4.2, WP-4.3 | M | TODO |
-| WP-4.5 | TV-grade player screen | 4 TV UX | WP-3.2, WP-4.3 | M | TODO |
-| WP-4.6 | Focus/remote widget tests | 4 TV UX | WP-4.4 | M | TODO |
+| WP-4.4 | Focus groups, initial focus, focus restoration | 4 TV UX | WP-4.2, WP-4.3, WP-4.7 | M | TODO |
+| WP-4.5 | Adaptive fullscreen player screen | 4 TV UX | WP-3.2, WP-4.3, WP-7.1 | M | TODO |
+| WP-4.6 | Cross-device accessibility and focus tests | 4 TV UX | WP-4.4, WP-4.5 | M | TODO |
+| WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | TODO (2026-10-07): Added for compact/medium/expanded layouts; navigation composition requires D-10 approval. |
 | WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | TODO |
 | WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | TODO |
 | WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | TODO |
@@ -665,14 +666,22 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 
 ### Batch 4 — TV / 10-foot UX
 
+**Design baseline (2026-10-07):** Read [Cross-Device Design Contract](design-guidelines.md) before every UI package. The [Kanal concept](Kanal_%20IPTV%20TV%20experience%20concept.html) supplies visual/interaction direction, not approval for new product behavior. Product intent remains in [Product & UX Requirements](IPTV_App_Product_UX_Requirements.md); the scoped WPs and [decisions](decisions.md) control delivery. Do not copy the concept's fixed canvas or sample data into production.
+
+**Order:** WP-4.1 first; WP-4.2, WP-4.3, and WP-4.7 can then proceed as their dependencies permit; WP-4.4 follows the adaptive shell. Complete WP-7.1 before WP-4.5. WP-4.6 consolidates cross-device coverage, but every implementation WP must add its own scoped tests immediately. Existing stop-on-player-exit, All-group defaults, and activation destinations remain unchanged unless a separately approved behavioral package changes them.
+
+**Scope boundary:** Mini player/system PiP, EPG/live preview, quality folding, metadata/rating sorting, history-backed Home/resume, autoplay, sports/recommendations, voice search, theme selection, and branding are follow-up product work. Track candidate follow-ups in the design contract; define independent packages and prerequisites before implementing them. D-7/D-8/D-9/D-10 are pending choices, not implicit approvals.
+
 #### WP-4.1 — Design tokens + 10-foot theme
 - **Fixes:** F-10 (foundation), consistency.
-- **Touches:** new `lib/ui/theme/app_tokens.dart`, `lib/ui/theme/app_theme.dart`, `lib/app.dart`.
+- **Touches:** new `lib/ui/theme/app_tokens.dart`, `lib/ui/theme/app_theme.dart`, `lib/app.dart`, screens/widgets containing the extracted literals, focused theme tests.
 - **Steps:**
   1. Tokens for the values repeated across screens today: page horizontal padding `40`, section gap `28`, card padding `14/16`, grid spacing `20`, tile extents (`300×180`, `320×170`), focus ring width/color, corner radius.
-  2. `AppTheme.dark()` builds `ThemeData` with `colorScheme` seeded from the current background `0xff071412`, a `focusColor`, `CardThemeData`, button themes whose focused state is clearly visible (outline/scale), and text sizes readable at 3 m (body ≥ 18 logical px on TV-sized windows; use `MediaQuery.sizeOf` breakpoints, not platform).
+  2. `AppTheme.dark()` builds `ThemeData` with semantic color roles initially preserving the current background `0xff071412`, a `focusColor`, `CardThemeData`, and visibly focused button states. Add discrete compact and remote-first typography/target-size tokens; remote-first body starts at 18 logical px, compact at 16. Use constraints for space, injected capabilities for distant-viewing defaults, and highlight mode for focus visuals; width or keyboard activity alone must not classify a device as TV. Preserve text scaling and reduced motion.
   3. Replace literals in screens with tokens (mechanical; no layout changes).
-- **Acceptance:** `app.dart` uses `AppTheme.dark()`; no layout regressions in widget tests.
+- **Acceptance:** `app.dart` uses `AppTheme.dark()`; scoped tests verify semantic roles, focus/selection distinction, minimum targets, large text and compact/remote density without overflow. Measure token contrast. No shell/navigation redesign in this WP; new palette/light variant requires D-9 approval, but extracting the current dark theme is unblocked.
+- **Implementation notes (2026-10-07):** Added `AppTokens` and `AppTheme.dark()` preserving the existing dark ColorScheme and scaffold background. Extracted repeated page/card/grid/tile/radius values across screens and the shell without changing their numeric values. Injected remote-first capabilities select discrete body typography and button/icon target sizes; highlight-mode updates control focus borders without changing routes or density, and reduced-motion settings disable button/navigation-indicator animation. Home section titles now flex to avoid overflow from accessible command sizing at compact widths. Ten new theme/app tests verify palette, geometry roles, color contrast thresholds (text >= 4.5:1, focus >= 3:1), command targets, 2x text-scaled controls, keyboard activation, compact/wide capability selection, and focus-mode updates. All 203 tests pass; analyzer retains only the existing webOS entrypoint info. This does not certify every screen at 2x text scale or native TV viewing distance; adaptive composition and broader screen coverage remain WP-4.7/WP-4.6, shared tile focus remains WP-4.2. D-9/D-10 are unchanged.
+- **Skills:** `flutter-build-responsive-layout`, `dart-add-unit-test`.
 
 #### WP-4.2 — Shared focusable `MediaTile`
 - **Fixes:** F-10, F-04.
@@ -681,7 +690,8 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   1. `MediaTile({required String title, String? subtitle, IconData? icon, String? imageUrl, required VoidCallback onActivate, bool autofocus = false, FocusNode? focusNode})`.
   2. Implementation: `FocusableActionDetector` (or `InkWell` with `onFocusChange`) + `ActivateIntent`; when focused **and** `FocusManager.instance.highlightMode == FocusHighlightMode.traditional`, show a thick focus border + slight scale (respect `MediaQuery.disableAnimationsOf`). `Semantics(button: true, label: title)`.
   3. Replace the six duplicated tiles. Keep per-variant content via `subtitle`/`icon`, not via boolean flags.
-- **Acceptance:** one tile implementation; widget test: tile shows focus decoration after `FocusNode.requestFocus()` and activates on `LogicalKeyboardKey.select` and `enter`.
+  4. Use stable token-backed dimensions/aspect ratios per layout, distinct selected/focused semantics, and missing/failed-artwork fallback. Focus/hover never activates content; keep existing onActivate destinations. Motion cannot resize tracks or obscure adjacent tiles.
+- **Acceptance:** one tile implementation; widget tests cover Select/Enter and touch activation exactly once, focus distinct from selection, reduced motion, artwork fallback, target sizes, and large-text overflow at compact and expanded widths.
 
 #### WP-4.3 — Root key map
 - **Fixes:** F-04.
@@ -690,30 +700,41 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   1. Intents: `BackIntent`, `PlayPauseIntent`, `SeekIntent(Duration)`, `ChannelStepIntent(int)`.
   2. Common shortcuts at the app root (`MaterialApp.shortcuts` merged with `WidgetsApp.defaultShortcuts`): `select`/`enter`/`gameButtonA` → `ActivateIntent`; `escape`/`goBack`/`browserBack` → `BackIntent`; `mediaPlayPause`/`mediaPlay`/`mediaPause` → `PlayPauseIntent`; `mediaFastForward`/`mediaRewind` → `SeekIntent`; `channelUp`/`channelDown` → `ChannelStepIntent`.
   3. Platform-specific keys come from `profile.extraShortcuts` (e.g. the webOS remote Back key if it does not arrive as `goBack`). **The actual webOS key values must be captured on hardware** — add a debug-only key logger (`HardwareKeyboard.instance.addHandler`) behind the verbose setting, and record results in `docs/decisions.md`.
-  4. `BackIntent` → `NavigationController.pop()`; media intents handled by `Actions` inside the player screen.
-- **Acceptance:** widget tests send each mapped key and assert the effect.
+  4. Route Back through the nearest active context: modal dismissal/local transient handler first, then `NavigationController.pop()`. System Back and keyboard Back must follow the same policy; preserve root exit behavior. Media intents are handled inside the player, not on covered routes. Keep distinct play and pause intents/commands when those keys request a specific state rather than toggling. Unsupported media commands are safe no-ops until their owning player package implements them.
+- **Acceptance:** widget tests cover activation, modal versus route Back, root exit, and media-command scope; active player commands are tested with WP-4.5. Do not guess webOS key values; record hardware mapping as pending if no device is available.
 
 #### WP-4.4 — Focus groups, initial focus, restoration
 - **Fixes:** F-04.
 - **Touches:** `AppShellScaffold`, home, catalog, search, settings, details screens.
 - **Steps:**
-  1. `FocusTraversalGroup` around: top nav row, back/title row, group sidebar, content grid/list. Use `OrderedTraversalPolicy` only where the default reading order is wrong.
-  2. Initial focus: first tile of the main content on Home/Catalog; primary action ("Play") on Details; search field on Search. Use `autofocus` on the first item only once data is loaded.
+  1. `FocusTraversalGroup` around the adaptive navigation rail/bottom destinations, back/title row, group sidebar/chips, and content grid/list. Use `OrderedTraversalPolicy` only where the default reading order is wrong.
+  2. Initial focus: first available tile on Home/Catalog; primary action ("Play") on Details; search field on Search. Set it once after data arrives, never steal focus on rebuild. Latest-watched initial focus is deferred until real history-backed Home work exists; fall back to the primary action/empty-state control when there is no content.
   3. Restoration: with `Navigator.pages` (WP-3.1) each page keeps its own `FocusScope`; verify that returning from Details re-focuses the previously focused tile. If not, store the last focused item id per route and request focus after the grid builds it.
   4. Settings button: replace the bare `IconButton` with a labelled focusable nav item.
   5. Dialogs (playlist editor, delete confirm): first field/primary button autofocus; Back closes.
-- **Acceptance:** WP-4.6 tests pass.
+- **Acceptance:** scoped key-event tests verify initial focus, modal dismissal, prior-item restoration, fallback after item removal, and focus preservation across layout resizing. Do not wait for WP-4.6 to add these tests.
 
-#### WP-4.5 — TV-grade player screen
+#### WP-4.5 — Adaptive fullscreen player screen
 - **Fixes:** F-12.
-- **Touches:** `lib/screens/player_screen.dart` (→ `lib/features/player/`), `PlayerController` (WP-7.1).
+- **Depends on:** WP-3.2, WP-4.3, WP-7.1. The session state/commands must exist before UI work; do not duplicate them in the screen.
+- **Touches:** `lib/screens/player_screen.dart`, `PlayerController` from WP-7.1, player widget tests. Folder relocation remains WP-5.1 unless already complete.
 - **Steps:** fullscreen black `Stack` with the video view filling the screen (`FittedBox`/`AspectRatio`); overlay with title, status, play/pause and ±10 s focusable controls that auto-hide after ~4 s and re-appear on any key; Back hides the overlay first, then leaves; buffering spinner; error panel with "Back" and "Retry". Diagnostics (latency, timestamps, redacted URL) only when verbose info is enabled. Switch on `PlaybackStatus` enum, not `.name` strings.
 - **Acceptance:** widget tests with `FakePlaybackAdapter`: overlay shows on key, hides after timeout (pump fake time), play/pause key toggles state.
+  Compact layouts also provide touch controls, safe-area/keyboard handling, readable status, capability-gated seeking, and no clipped controls at large text sizes. Auto-hide must not hide controls while focused interaction or an accessibility user requires them. Modal Back precedes overlay Back; leaving the player stops playback as today. Mini player/system PiP is not implemented here: D-7 and separate session/lifecycle packages are required.
 
-#### WP-4.6 — Focus/remote widget tests
-- **Touches:** new `test/features/navigation_focus_test.dart`.
-- **Steps:** with fixture data: arrow-right moves focus between home tiles; arrow-down moves from top nav into content; Enter on a tile opens Details; Back returns and focus is on the same tile; on a 1440-px-wide catalog the sidebar is reachable with arrow-left. Use `tester.sendKeyEvent` and `FocusManager.instance.primaryFocus`.
+#### WP-4.6 — Cross-device accessibility and focus tests
+- **Touches:** new `test/features/navigation_focus_test.dart`, responsive shell/player tests, representative goldens/screenshots if supported by the existing toolchain.
+- **Steps:** cover the design contract's viewport/input matrix with fixtures: directional traversal from rail/bottom destinations into content; Enter/Select activation; Back returns to the same tile; sidebar/chip reachability; touch navigation; desktop resize preserving context; compact landscape and text scaling at 2.0 without overflow; semantics, minimum targets, focus versus selection, missing artwork, reduced motion, and loading/empty/error states. Use `tester.sendKeyEvent` and `FocusManager.instance.primaryFocus` for keyboard checks.
+- **Acceptance:** full suite passes, representative visual review recorded, and Android phone/TV, Windows, and webOS hardware checks recorded independently as passed or pending. Tests of the HTML prototype do not certify Flutter rendering or native TV scaling.
 - **Skills:** `dart-add-unit-test`.
+
+#### WP-4.7 — Adaptive shell and browsing layouts
+- **Goal:** device-appropriate navigation and content density without changing route or catalog behavior.
+- **Depends on:** WP-4.1, WP-3.1, WP-2.1, D-10 approval of navigation composition.
+- **Touches:** `lib/widgets/app_shell_scaffold.dart`, home/catalog/search/settings/details layouts, shared layout-token policy and scoped widget tests.
+- **Steps:** implement compact/medium/expanded compositions from the design contract using `LayoutBuilder` constraints and injected input capabilities, not OS checks. Compact navigation exposes Home/Live/Movies/Series with reachable Search/Settings; expanded navigation uses a labeled rail. Allow shorter-height fallback. Keep groups available through sidebar or scrolling controls; preserve the current 1050 sidebar threshold unless scoped tests justify a documented replacement. Adapt page insets, rows, grids, dialogs and action wraps rather than scaling the TV canvas.
+- **Acceptance:** all commands remain reachable by touch and keyboard/remote; resizing preserves typed route, selection, scroll/page context and surviving focus; compact portrait/landscape, medium and expanded tests pass at normal and large text sizes. No new full-catalog loading, automatic first-group selection, or playback changes.
+- **Skills:** `flutter-build-responsive-layout`, `dart-add-unit-test`.
 
 ### Batch 5 — UI component structure
 
@@ -863,6 +884,10 @@ Agents must not resolve these on their own. Record the answer in `docs/decisions
 | D-4 | Android playback backend | `video_player` (shared with webOS, ExoPlayer) / `media_kit` (shared with desktop, bigger APK) | **Resolved 2026-10-03: `video_player`**, selected during WP-1.6 implementation |
 | D-5 | Do we need explicit Android TV detection? | `highlightMode` only / detect leanback feature via `device_info_plus` or a method channel | `highlightMode` only until a feature needs more |
 | D-6 | webOS entry: keep `--dart-define=IPTV_WEBOS=true` or a separate `lib/main_webos.dart` target | define / separate target (requires verifying `flutter-webos build -t`) | Keep the define; read it only in `lib/platform/` |
+| D-7 | Player Back and background viewing | Stop on exit / in-app mini player / mini player plus supported system PiP | OPEN: retain stop-on-exit during Batch 4; decide separately before session/lifecycle changes. |
+| D-8 | Catalog initial group and activation destinations | Keep All and current destinations / first group and content-specific direct-play or resume flows | OPEN: preserve current behavior; define a separate behavioral package if changed. |
+| D-9 | Visual palette and light-theme scope | Extract current dark theme / adopt Kanal palette / adopt palette plus light variant | OPEN: current-theme extraction is unblocked; visual redesign/light-theme delivery needs approval. |
+| D-10 | Adaptive navigation composition | Compact four bottom destinations plus Search/Settings, medium adaptive rail, expanded labeled rail / alternative composition | OPEN: recommended composition is documented in design-guidelines.md; blocks WP-4.7, not WP-4.1. |
 
 ---
 

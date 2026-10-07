@@ -13,6 +13,7 @@ import 'screens/player_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'state/app_controller.dart';
+import 'ui/theme/app_theme.dart';
 import 'widgets/app_scope.dart';
 
 class IptvApp extends StatefulWidget {
@@ -30,6 +31,7 @@ class _IptvAppState extends State<IptvApp> {
   @override
   void initState() {
     super.initState();
+    FocusManager.instance.addHighlightModeListener(_highlightModeChanged);
     unawaited(widget.dependencies.initialize());
     if (widget.dependencies.autoRunPlaybackSpike) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -40,16 +42,31 @@ class _IptvAppState extends State<IptvApp> {
 
   @override
   void dispose() {
+    FocusManager.instance.removeHighlightModeListener(_highlightModeChanged);
     unawaited(widget.dependencies.dispose());
     super.dispose();
+  }
+
+  void _highlightModeChanged(FocusHighlightMode mode) {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'IPTV',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xff071412),
+      theme: AppTheme.dark(
+        remoteFirst: widget.dependencies.capabilities.isRemoteFirst,
+      ),
+      builder: (context, child) => Theme(
+        data: AppTheme.dark(
+          remoteFirst: widget.dependencies.capabilities.isRemoteFirst,
+          traditionalFocus:
+              FocusManager.instance.highlightMode ==
+              FocusHighlightMode.traditional,
+          disableAnimations: MediaQuery.disableAnimationsOf(context),
+        ),
+        child: child!,
       ),
       home: AppEnvironment(
         capabilities: widget.dependencies.capabilities,

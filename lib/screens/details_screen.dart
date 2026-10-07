@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/content_item.dart';
+import '../ui/theme/app_tokens.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -16,7 +17,7 @@ class DetailsScreen extends StatelessWidget {
       showBack: true,
       title: item.title,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(40, 8, 40, 28),
+        padding: AppTokens.pagePadding,
         child: Align(
           alignment: Alignment.topLeft,
           child: ConstrainedBox(

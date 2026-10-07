@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/content_item.dart';
 import '../services/playback/playback_adapter.dart';
+import '../ui/theme/app_tokens.dart';
 import '../widgets/app_scope.dart';
 
 class PlayerScreen extends StatelessWidget {
@@ -46,7 +47,7 @@ class PlayerScreen extends StatelessWidget {
           final activeItem = state.item ?? item;
           return Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.all(AppTokens.playerInset),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: Column(

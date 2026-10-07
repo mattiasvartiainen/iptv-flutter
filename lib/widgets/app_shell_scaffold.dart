@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app/navigation/navigation_controller.dart';
 import '../state/app_controller.dart';
+import '../ui/theme/app_tokens.dart';
 import 'app_scope.dart';
 
 class AppShellScaffold extends StatelessWidget {
@@ -33,7 +34,7 @@ class AppShellScaffold extends StatelessWidget {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(40, 24, 40, 18),
+              padding: AppTokens.shellPadding,
               child: Row(
                 children: [
                   Expanded(
@@ -97,7 +98,7 @@ class AppShellScaffold extends StatelessWidget {
             ),
             if (showBack || title != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(40, 0, 40, 12),
+                padding: AppTokens.shellTitlePadding,
                 child: Row(
                   children: [
                     if (showBack)
@@ -150,7 +151,7 @@ class _NavButton extends StatelessWidget {
         onPressed: onPressed,
         style: TextButton.styleFrom(
           foregroundColor: active
-              ? Colors.white
+              ? theme.colorScheme.onSurface
               : theme.colorScheme.onSurface.withValues(alpha: 0.72),
         ),
         child: Column(
@@ -158,20 +159,23 @@ class _NavButton extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 16,
+              style: theme.textTheme.labelLarge?.copyWith(
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.4,
               ),
             ),
             const SizedBox(height: 4),
             AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : AppTokens.focusDuration,
               height: 2,
               width: 52,
               decoration: BoxDecoration(
                 color: active ? theme.colorScheme.primary : Colors.transparent,
-                borderRadius: BorderRadius.circular(99),
+                borderRadius: BorderRadius.circular(
+                  AppTokens.navigationIndicatorRadius,
+                ),
               ),
             ),
           ],

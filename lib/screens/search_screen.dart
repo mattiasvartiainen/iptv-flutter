@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/catalog/catalog_query.dart';
 import '../state/app_controller.dart';
+import '../ui/theme/app_tokens.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -65,7 +66,7 @@ class _SearchScreenState extends State<SearchScreen> {
       showBack: true,
       title: 'Search',
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(32, 8, 32, 24),
+        padding: AppTokens.searchPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -163,7 +164,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           results.loadMore();
                         });
                         return const Padding(
-                          padding: EdgeInsets.all(16),
+                          padding: EdgeInsets.all(AppTokens.cardPadding),
                           child: Center(child: CircularProgressIndicator()),
                         );
                       }

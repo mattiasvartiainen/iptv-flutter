@@ -6,6 +6,7 @@ import 'package:iptv_flutter/app/app_dependencies.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
+import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/screens/catalog_screen.dart';
 import 'package:iptv_flutter/screens/search_screen.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
@@ -20,6 +21,7 @@ import 'package:iptv_flutter/state/app_preferences_controller.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/player_controller.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
+import 'package:iptv_flutter/ui/theme/app_tokens.dart';
 import 'package:iptv_flutter/widgets/app_scope.dart';
 
 typedef _TestControllers = ({
@@ -111,6 +113,81 @@ void main() {
     await tester.pumpAndSettle();
     return (controllers, playlist.playlistId);
   }
+
+  for (final input in PrimaryInput.values) {
+    testWidgets(
+      'app theme uses injected $input density independently of width',
+      (tester) async {
+        tester.view.physicalSize = input == PrimaryInput.touch
+            ? const Size(390, 844)
+            : const Size(1440, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final controllers = _createTestControllers(
+          catalogRepository: const FixtureCatalogRepository(),
+          settingsRepository: _TestSettingsRepository(),
+          playbackAdapter: FakePlaybackAdapter(),
+        );
+        addTearDown(() => _disposeTestControllers(controllers));
+        await tester.pumpWidget(
+          IptvApp(
+            dependencies: AppDependencies.forTesting(
+              appController: controllers.app,
+              playerController: controllers.player,
+              playlistsController: controllers.playlists,
+              preferencesController: controllers.preferences,
+              capabilities: PlatformCapabilities(
+                primaryInput: input,
+                hasHardwareBack: true,
+                supportsHover: input == PrimaryInput.pointer,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final theme = Theme.of(tester.element(find.byType(AppShell)));
+        expect(
+          theme.textTheme.bodyMedium?.fontSize,
+          input == PrimaryInput.remote ? 18 : 16,
+        );
+        expect(theme.scaffoldBackgroundColor, AppTokens.background);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'app theme follows focus highlight mode without changing routes',
+    (tester) async {
+      final (controllers, _) = await pumpLoadedApp(tester);
+      final manager = FocusManager.instance;
+      final previousStrategy = manager.highlightStrategy;
+      addTearDown(() => manager.highlightStrategy = previousStrategy);
+      controllers.app.openMovies();
+      await tester.pumpAndSettle();
+      final route = controllers.app.navigationController.currentRoute;
+
+      manager.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+      await tester.pumpAndSettle();
+      var theme = Theme.of(tester.element(find.byType(AppShell)));
+      expect(
+        theme.textButtonTheme.style?.side?.resolve({WidgetState.focused}),
+        const BorderSide(color: Colors.white, width: 3),
+      );
+
+      manager.highlightStrategy = FocusHighlightStrategy.alwaysTouch;
+      await tester.pumpAndSettle();
+      theme = Theme.of(tester.element(find.byType(AppShell)));
+      expect(
+        theme.textButtonTheme.style?.side?.resolve({WidgetState.focused}),
+        isNull,
+      );
+      expect(controllers.app.navigationController.currentRoute, same(route));
+      expect(theme.textTheme.bodyMedium?.fontSize, 16);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test('worker timeout is not reported as a playlist parse error', () async {
     final settings = _TestSettingsRepository();

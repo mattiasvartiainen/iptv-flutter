@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/catalog/catalog_query.dart';
+import '../ui/theme/app_tokens.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -15,7 +16,7 @@ class HomeScreen extends StatelessWidget {
       child: ListenableBuilder(
         listenable: Listenable.merge([c.catalogView, preferences]),
         builder: (context, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(40, 0, 40, 28),
+          padding: AppTokens.homePadding,
           children: [
             if (preferences.showHomeLiveTv) ...[
               _SectionHeader(
@@ -28,7 +29,7 @@ class HomeScreen extends StatelessWidget {
                 emptyText: 'No live channels found yet.',
                 onTap: (item) => c.openDetailsById(item.id),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: AppTokens.sectionGap),
             ],
             if (preferences.showHomeMovies) ...[
               _SectionHeader(
@@ -41,7 +42,7 @@ class HomeScreen extends StatelessWidget {
                 emptyText: 'No movies found yet.',
                 onTap: (item) => c.openDetailsById(item.id),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: AppTokens.sectionGap),
             ],
             if (preferences.showHomeSeries) ...[
               _SectionHeader(
@@ -81,13 +82,14 @@ class _SectionHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Text(
-          title,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
-        const Spacer(),
         TextButton(onPressed: onAction, child: Text(actionLabel)),
       ],
     );
@@ -112,11 +114,12 @@ class _ContentStrip extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 182,
+      height: AppTokens.homeStripHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 18),
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: AppTokens.homeStripGap),
         itemBuilder: (context, index) {
           final item = items[index];
           return _ContentCard(item: item, onTap: () => onTap(item));
@@ -139,20 +142,21 @@ class _SeriesStrip extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 182,
+      height: AppTokens.homeStripHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: series.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 18),
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: AppTokens.homeStripGap),
         itemBuilder: (context, index) {
           final value = series[index];
           return SizedBox(
-            width: 320,
+            width: AppTokens.episodeTileWidth,
             child: Card(
               child: InkWell(
                 onTap: () => c.openSeriesSeasons(value),
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(AppTokens.compactCardPadding),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -189,12 +193,12 @@ class _ContentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 300,
+      width: AppTokens.tileWidth,
       child: Card(
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(AppTokens.compactCardPadding),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

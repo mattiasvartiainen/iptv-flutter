@@ -7,6 +7,7 @@ import '../services/catalog/catalog_import_progress.dart';
 import '../services/settings/settings_repository.dart';
 import '../state/app_preferences_controller.dart';
 import '../state/playlists_controller.dart';
+import '../ui/theme/app_tokens.dart';
 import '../widgets/app_scope.dart';
 import '../widgets/app_shell_scaffold.dart';
 
@@ -24,11 +25,11 @@ class SettingsScreen extends StatelessWidget {
         showBack: true,
         title: 'Settings',
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(40, 8, 40, 28),
+          padding: AppTokens.pagePadding,
           children: [
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(AppTokens.panelPadding),
                 child: Row(
                   children: [
                     Expanded(
@@ -119,7 +120,7 @@ class _PlaylistSection extends StatelessWidget {
     final playlists = controller.playlists;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppTokens.panelPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -195,7 +196,7 @@ class _EmptyPlaylistState extends StatelessWidget {
         color: Theme.of(
           context,
         ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTokens.panelRadius),
       ),
       child: const Text(
         'No playlists saved yet. Add a URL playlist or enter Xtream Codes details to store it here.',
@@ -235,9 +236,9 @@ class _PlaylistCard extends StatelessWidget {
       color: isActive ? colorScheme.secondaryContainer : null,
       child: InkWell(
         onTap: onSelect,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTokens.cardRadius),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppTokens.cardPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -406,7 +407,7 @@ class _ImportProgressIndicatorState extends State<_ImportProgressIndicator> {
         ),
         const SizedBox(height: 4),
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppTokens.progressRadius),
           child: LinearProgressIndicator(value: fraction, minHeight: 4),
         ),
       ],

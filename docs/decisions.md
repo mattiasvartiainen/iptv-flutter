@@ -86,3 +86,31 @@ Use a hand-rolled sealed `AppRoute` hierarchy and `NavigationController` rendere
 selected section, while nested details/player/settings routes preserve their exact parent context.
 - Affects: WP-3.1 in [architecture-code-improvements.md](architecture-code-improvements.md).
 
+### D-7 - Player Back and background viewing (OPEN)
+The Kanal concept minimizes fullscreen playback into an in-app mini player and proposes Android
+system picture-in-picture. Current behavior stops playback when its route is removed. Decide which
+behavior to deliver and on which backend capabilities. Until approved and implemented in separately
+scoped session/lifecycle work, retain stop-on-exit; WP-4.5 only handles local overlay Back before exit.
+System PiP needs platform integration, capability checks, explicit close behavior, and lifecycle tests;
+it must not be inferred from Android identity alone. Only one stream may play at a time.
+
+### D-8 - Catalog entry and activation behavior (OPEN)
+The concept selects the first group and includes direct-play/resume examples. Current catalog browsing
+starts with All and current activation destinations are covered by tests. Decide these behaviors
+explicitly before a separate behavioral package changes them. Batch 4 presentation/focus work preserves
+All, current destinations, and existing load policies. History-based initial focus requires real data.
+
+### D-9 - Palette and theme scope (OPEN)
+Decide whether to retain the current dark palette, adopt the Kanal semantic palette, or also deliver
+its light variant. WP-4.1 may extract current-theme semantic tokens without waiting; it must not silently
+adopt a new palette. Theme selection/persistence, branding, and new fonts need explicitly scoped work.
+
+### D-10 - Adaptive navigation composition (OPEN)
+Proposed composition: compact four bottom destinations (Home, Live, Movies, Series) with separately
+reachable Search/Settings; medium adaptive rail or compact fallback; expanded labeled rail. Layout
+uses constraints, interaction uses capabilities/current input, and distant-viewing density is not
+inferred from window width or keyboard input alone. Requires approval before WP-4.7 implementation.
+See [Cross-Device Design Contract](design-guidelines.md) for accessibility rules and test matrix.
+
+The 2026-10-07 documentation update records these recommendations, not resolved product decisions.
+
