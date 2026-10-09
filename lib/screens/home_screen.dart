@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../app/navigation/app_route.dart';
 import '../services/catalog/catalog_query.dart';
 import '../ui/theme/app_tokens.dart';
 import '../ui/widgets/media_tile.dart';
@@ -12,56 +14,84 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppScope.appControllerOf(context);
     final preferences = AppScope.preferencesControllerOf(context);
+    final isHomeRoute =
+        AppScope.navigationControllerOf(context).currentRoute is HomeRoute;
 
     return AppShellScaffold(
       child: ListenableBuilder(
         listenable: Listenable.merge([c.catalogView, preferences]),
-        builder: (context, _) => ListView(
-          padding: AppTokens.homePadding,
-          children: [
-            if (preferences.showHomeLiveTv) ...[
-              _SectionHeader(
-                title: 'Live TV',
-                actionLabel: 'See all',
-                onAction: c.openLiveTv,
+        builder: (context, _) {
+          final focusLive =
+              isHomeRoute &&
+              preferences.showHomeLiveTv &&
+              c.catalogView.homeLive.isNotEmpty;
+          final focusMovies =
+              isHomeRoute &&
+              !focusLive &&
+              preferences.showHomeMovies &&
+              c.catalogView.homeMovies.isNotEmpty;
+          final focusSeries =
+              isHomeRoute &&
+              !focusLive &&
+              !focusMovies &&
+              preferences.showHomeSeries &&
+              c.catalogView.homeSeries.isNotEmpty;
+          return FocusTraversalGroup(
+            child: ListView(
+              padding: AppTokens.homePaddingFor(
+                MediaQuery.sizeOf(context).width,
               ),
-              _ContentStrip(
-                items: c.catalogView.homeLive,
-                emptyText: 'No live channels found yet.',
-                onTap: (item) => c.openDetailsById(item.id),
-              ),
-              const SizedBox(height: AppTokens.sectionGap),
-            ],
-            if (preferences.showHomeMovies) ...[
-              _SectionHeader(
-                title: 'Movies',
-                actionLabel: 'See all',
-                onAction: c.openMovies,
-              ),
-              _ContentStrip(
-                items: c.catalogView.homeMovies,
-                emptyText: 'No movies found yet.',
-                onTap: (item) => c.openDetailsById(item.id),
-              ),
-              const SizedBox(height: AppTokens.sectionGap),
-            ],
-            if (preferences.showHomeSeries) ...[
-              _SectionHeader(
-                title: 'Series',
-                actionLabel: 'See all',
-                onAction: c.openSeries,
-              ),
-              _SeriesStrip(series: c.catalogView.homeSeries),
-            ],
-            if (!preferences.showHomeLiveTv &&
-                !preferences.showHomeMovies &&
-                !preferences.showHomeSeries)
-              const _EmptyTile(
-                text:
-                    'All Home sections are hidden by settings. Re-enable them in storage settings.',
-              ),
-          ],
-        ),
+              children: [
+                if (preferences.showHomeLiveTv) ...[
+                  _SectionHeader(
+                    title: 'Live TV',
+                    actionLabel: 'See all',
+                    onAction: c.openLiveTv,
+                  ),
+                  _ContentStrip(
+                    items: c.catalogView.homeLive,
+                    emptyText: 'No live channels found yet.',
+                    onTap: (item) => c.openDetailsById(item.id),
+                    autofocusFirst: focusLive,
+                  ),
+                  const SizedBox(height: AppTokens.sectionGap),
+                ],
+                if (preferences.showHomeMovies) ...[
+                  _SectionHeader(
+                    title: 'Movies',
+                    actionLabel: 'See all',
+                    onAction: c.openMovies,
+                  ),
+                  _ContentStrip(
+                    items: c.catalogView.homeMovies,
+                    emptyText: 'No movies found yet.',
+                    onTap: (item) => c.openDetailsById(item.id),
+                    autofocusFirst: focusMovies,
+                  ),
+                  const SizedBox(height: AppTokens.sectionGap),
+                ],
+                if (preferences.showHomeSeries) ...[
+                  _SectionHeader(
+                    title: 'Series',
+                    actionLabel: 'See all',
+                    onAction: c.openSeries,
+                  ),
+                  _SeriesStrip(
+                    series: c.catalogView.homeSeries,
+                    autofocusFirst: focusSeries,
+                  ),
+                ],
+                if (!preferences.showHomeLiveTv &&
+                    !preferences.showHomeMovies &&
+                    !preferences.showHomeSeries)
+                  const _EmptyTile(
+                    text:
+                        'All Home sections are hidden by settings. Re-enable them in storage settings.',
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -102,11 +132,13 @@ class _ContentStrip extends StatelessWidget {
     required this.items,
     required this.emptyText,
     required this.onTap,
+    required this.autofocusFirst,
   });
 
   final List<CatalogItemSummary> items;
   final String emptyText;
   final ValueChanged<CatalogItemSummary> onTap;
+  final bool autofocusFirst;
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +158,8 @@ class _ContentStrip extends StatelessWidget {
           return SizedBox(
             width: AppTokens.tileWidth,
             child: MediaTile(
+              key: ValueKey<String>(item.id),
+              autofocus: autofocusFirst && index == 0,
               title: item.title,
               subtitle: item.group,
               icon: item.kind == CatalogItemKind.live
@@ -142,9 +176,10 @@ class _ContentStrip extends StatelessWidget {
 }
 
 class _SeriesStrip extends StatelessWidget {
-  const _SeriesStrip({required this.series});
+  const _SeriesStrip({required this.series, required this.autofocusFirst});
 
   final List<SeriesSummary> series;
+  final bool autofocusFirst;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +200,8 @@ class _SeriesStrip extends StatelessWidget {
           return SizedBox(
             width: AppTokens.episodeTileWidth,
             child: MediaTile(
+              key: ValueKey<String>(value.id),
+              autofocus: autofocusFirst && index == 0,
               title: value.title,
               subtitle:
                   '${value.seasonCount} seasons · ${value.episodeCount} episodes',

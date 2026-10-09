@@ -22,7 +22,7 @@ Initial width classes are compact below 600, medium from 600 to 839, and expande
 | Medium | Rail when height/width permit, otherwise compact navigation; adaptive content columns | Touch, pointer, and keyboard supported together |
 | Expanded | Labeled navigation rail; group sidebar when content constraints permit; organized multi-column content | Remote-first readable density or efficient pointer density, independently of width |
 
-Navigation composition is proposed under D-10 and delivered by WP-4.7, not by the token extraction. Keep all routes and commands reachable in every composition. Resizing must preserve route, selection, loaded page window, scroll context, and focus where the focused item still exists. Never shrink an entire TV canvas to fit a phone.
+Navigation composition was approved under D-10 and implemented by WP-4.7. Keep all routes and commands reachable in every composition. Resizing must preserve route, selection, loaded page window, scroll context, and focus where the focused item still exists. Never shrink an entire TV canvas to fit a phone.
 
 ## Tokens And Theme
 

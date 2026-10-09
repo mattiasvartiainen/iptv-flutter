@@ -67,7 +67,8 @@ class _PagedGrid<T> extends StatelessWidget {
   final PagedCollection<T> collection;
   final String emptyText;
   final SliverGridDelegate gridDelegate;
-  final Widget Function(BuildContext context, T item) itemBuilder;
+  final Widget Function(BuildContext context, T item, bool autofocus)
+  itemBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +101,7 @@ class _PagedGrid<T> extends StatelessWidget {
                 (_) => collection.loadMore(),
               );
             }
-            return itemBuilder(context, items[index]);
+            return itemBuilder(context, items[index], index == 0);
           },
         );
       },
@@ -136,7 +137,9 @@ class _ContentGrid extends StatelessWidget {
             collection: collection,
             emptyText: emptyText,
             gridDelegate: _cardGrid,
-            itemBuilder: (context, item) => MediaTile(
+            itemBuilder: (context, item, autofocus) => MediaTile(
+              key: ValueKey<String>(item.id),
+              autofocus: autofocus,
               title: item.title,
               subtitle: item.group,
               icon: item.kind == CatalogItemKind.live
@@ -173,7 +176,9 @@ class _SeriesGrid extends StatelessWidget {
             collection: collection,
             emptyText: 'No series episodes recognized yet.',
             gridDelegate: _cardGrid,
-            itemBuilder: (context, item) => MediaTile(
+            itemBuilder: (context, item, autofocus) => MediaTile(
+              key: ValueKey<String>(item.id),
+              autofocus: autofocus,
               title: item.title,
               subtitle:
                   '${item.seasonCount} seasons · ${item.episodeCount} episodes',
@@ -210,32 +215,35 @@ class _GroupSidebarLayout extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < _sidebarBreakpoint) {
-          return child;
+          return FocusTraversalGroup(child: child);
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              width: _sidebarWidth,
-              child: ListenableBuilder(
-                listenable: Listenable.merge([
-                  view,
-                  ?collection,
-                  ?seriesCollection,
-                ]),
-                builder: (context, _) => _GroupFilterMenu(
-                  kind: kind,
-                  groups: view.browseGroups,
-                  selectedGroupId: view.selectedGroupId,
-                  loading: view.isLoadingGroups,
-                  error: view.groupsErrorMessage,
-                  totalItems: collection?.total ?? seriesCollection?.total ?? 0,
-                  onSelected: view.selectBrowseGroup,
+            FocusTraversalGroup(
+              child: SizedBox(
+                width: _sidebarWidth,
+                child: ListenableBuilder(
+                  listenable: Listenable.merge([
+                    view,
+                    ?collection,
+                    ?seriesCollection,
+                  ]),
+                  builder: (context, _) => _GroupFilterMenu(
+                    kind: kind,
+                    groups: view.browseGroups,
+                    selectedGroupId: view.selectedGroupId,
+                    loading: view.isLoadingGroups,
+                    error: view.groupsErrorMessage,
+                    totalItems:
+                        collection?.total ?? seriesCollection?.total ?? 0,
+                    onSelected: view.selectBrowseGroup,
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: 24),
-            Expanded(child: child),
+            Expanded(child: FocusTraversalGroup(child: child)),
           ],
         );
       },
@@ -285,22 +293,24 @@ class _GroupFilterMenu extends StatelessWidget {
             child: Text(error!, style: theme.textTheme.bodySmall),
           ),
         Expanded(
-          child: ListView(
-            children: [
-              _GroupChoice(
-                label: 'All groups',
-                count: totalItems,
-                selected: selectedGroupId == null,
-                onTap: () => onSelected(null),
-              ),
-              for (final group in groups)
+          child: FocusTraversalGroup(
+            child: ListView(
+              children: [
                 _GroupChoice(
-                  label: group.title,
-                  count: group.itemCount,
-                  selected: selectedGroupId == group.id,
-                  onTap: () => onSelected(group.id),
+                  label: 'All groups',
+                  count: totalItems,
+                  selected: selectedGroupId == null,
+                  onTap: () => onSelected(null),
                 ),
-            ],
+                for (final group in groups)
+                  _GroupChoice(
+                    label: group.title,
+                    count: group.itemCount,
+                    selected: selectedGroupId == group.id,
+                    onTap: () => onSelected(group.id),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -367,6 +377,8 @@ class _SeasonGrid extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final season = seasons[index];
                       return MediaTile(
+                        key: ValueKey<String>(season.id),
+                        autofocus: index == 0,
                         title: 'Season ${season.seasonNumber}',
                         subtitle: '${season.episodeCount} episodes',
                         icon: Icons.video_library,
@@ -417,7 +429,9 @@ class _EpisodeGrid extends StatelessWidget {
                   crossAxisSpacing: AppTokens.gridGap,
                   mainAxisSpacing: AppTokens.gridGap,
                 ),
-                itemBuilder: (context, episode) => MediaTile(
+                itemBuilder: (context, episode, autofocus) => MediaTile(
+                  key: ValueKey<String>(episode.id),
+                  autofocus: autofocus,
                   title: episode.title,
                   subtitle:
                       'Episode ${episode.episodeNumber ?? '-'}${episode.group == null || episode.group!.isEmpty ? '' : ' · ${episode.group}'}',
@@ -438,7 +452,10 @@ class _GridFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(padding: AppTokens.pagePadding, child: child);
+    return Padding(
+      padding: AppTokens.pagePaddingFor(MediaQuery.sizeOf(context).width),
+      child: child,
+    );
   }
 }
 

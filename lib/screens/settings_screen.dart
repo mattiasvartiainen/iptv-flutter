@@ -24,82 +24,85 @@ class SettingsScreen extends StatelessWidget {
       builder: (context, _) => AppShellScaffold(
         showBack: true,
         title: 'Settings',
-        child: ListView(
-          padding: AppTokens.pagePadding,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppTokens.panelPadding),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Manage saved playlists, refresh them manually, and keep home section visibility in one place.',
+        child: FocusTraversalGroup(
+          child: ListView(
+            padding: AppTokens.pagePaddingFor(MediaQuery.sizeOf(context).width),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTokens.panelPadding),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Manage saved playlists, refresh them manually, and keep home section visibility in one place.',
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    FilledButton.icon(
-                      onPressed: () =>
-                          _showPlaylistEditor(context, controller: playlists),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add playlist'),
-                    ),
-                  ],
+                      const SizedBox(width: 16),
+                      FilledButton.icon(
+                        onPressed: () =>
+                            _showPlaylistEditor(context, controller: playlists),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add playlist'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _PlaylistSection(
-              controller: playlists,
-              preferencesController: preferences,
-            ),
-            const SizedBox(height: 20),
-            Card(
-              child: SwitchListTile(
-                title: const Text('Show Live TV on Home'),
-                subtitle: const Text(
-                  'Displays the Live TV row on the Home screen.',
-                ),
-                value: preferences.showHomeLiveTv,
-                onChanged: preferences.setShowHomeLiveTv,
+              const SizedBox(height: 16),
+              _PlaylistSection(
+                controller: playlists,
+                preferencesController: preferences,
               ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              child: SwitchListTile(
-                title: const Text('Show Movies on Home'),
-                subtitle: const Text(
-                  'Displays the Movies row on the Home screen.',
+              const SizedBox(height: 20),
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Show Live TV on Home'),
+                  subtitle: const Text(
+                    'Displays the Live TV row on the Home screen.',
+                  ),
+                  value: preferences.showHomeLiveTv,
+                  onChanged: preferences.setShowHomeLiveTv,
                 ),
-                value: preferences.showHomeMovies,
-                onChanged: preferences.setShowHomeMovies,
               ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              child: SwitchListTile(
-                title: const Text('Show Series on Home'),
-                subtitle: const Text(
-                  'Displays the Series row on the Home screen.',
+              const SizedBox(height: 12),
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Show Movies on Home'),
+                  subtitle: const Text(
+                    'Displays the Movies row on the Home screen.',
+                  ),
+                  value: preferences.showHomeMovies,
+                  onChanged: preferences.setShowHomeMovies,
                 ),
-                value: preferences.showHomeSeries,
-                onChanged: preferences.setShowHomeSeries,
               ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              child: SwitchListTile(
-                title: const Text('Display verbose information'),
-                subtitle: const Text(
-                  'Shows download and import progress while a playlist refreshes.',
+              const SizedBox(height: 12),
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Show Series on Home'),
+                  subtitle: const Text(
+                    'Displays the Series row on the Home screen.',
+                  ),
+                  value: preferences.showHomeSeries,
+                  onChanged: preferences.setShowHomeSeries,
                 ),
-                value: preferences.verboseRefreshInfo,
-                onChanged: (value) => preferences.setVerboseRefreshInfo(value),
               ),
-            ),
-            const SizedBox(height: 20),
-            OutlinedButton(onPressed: app.goBack, child: const Text('Back')),
-          ],
+              const SizedBox(height: 12),
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Display verbose information'),
+                  subtitle: const Text(
+                    'Shows download and import progress while a playlist refreshes.',
+                  ),
+                  value: preferences.verboseRefreshInfo,
+                  onChanged: (value) =>
+                      preferences.setVerboseRefreshInfo(value),
+                ),
+              ),
+              const SizedBox(height: 20),
+              OutlinedButton(onPressed: app.goBack, child: const Text('Back')),
+            ],
+          ),
         ),
       ),
     );
@@ -442,6 +445,7 @@ class _PlaylistEditorDialog extends StatefulWidget {
 
 class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
   final _formKey = GlobalKey<FormState>();
+  final _nameFocusNode = FocusNode();
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _serverController;
@@ -464,11 +468,15 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
     _serverController = TextEditingController(text: source?.server ?? '');
     _usernameController = TextEditingController(text: source?.username ?? '');
     _passwordController = TextEditingController(text: source?.password ?? '');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _nameFocusNode.dispose();
     _urlController.dispose();
     _serverController.dispose();
     _usernameController.dispose();
@@ -491,6 +499,8 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
               children: [
                 TextFormField(
                   controller: _nameController,
+                  focusNode: _nameFocusNode,
+                  autofocus: true,
                   decoration: const InputDecoration(labelText: 'Name'),
                   validator: (value) => value == null || value.trim().isEmpty
                       ? 'Enter a playlist name.'
@@ -568,6 +578,7 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
+          autofocus: true,
           onPressed: _saving
               ? null
               : () async {
@@ -641,6 +652,7 @@ Future<void> _confirmDelete(
           child: const Text('Cancel'),
         ),
         FilledButton(
+          autofocus: true,
           onPressed: () => Navigator.of(dialogContext).pop(true),
           child: const Text('Delete'),
         ),

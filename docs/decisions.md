@@ -107,14 +107,12 @@ Decide whether to retain the current dark palette, adopt the Kanal semantic pale
 its light variant. WP-4.1 may extract current-theme semantic tokens without waiting; it must not silently
 adopt a new palette. Theme selection/persistence, branding, and new fonts need explicitly scoped work.
 
-### D-10 - Adaptive navigation composition (OPEN)
-Proposed composition: compact four bottom destinations (Home, Live, Movies, Series) with separately
-reachable Search/Settings; medium adaptive rail or compact fallback; expanded labeled rail. Layout
-uses constraints, interaction uses capabilities/current input, and distant-viewing density is not
-inferred from window width or keyboard input alone. Requires approval before WP-4.7 implementation.
+### D-10 - Adaptive navigation composition (RESOLVED 2026-10-09)
+Approved composition: compact four bottom destinations (Home, Live, Movies, Series) with Search and
+Settings reachable from the app bar; medium adaptive rail with compact fallback; expanded labeled
+rail. Layout uses constraints, interaction uses capabilities/current input, and distant-viewing
+density is not inferred from window width or keyboard input alone. Implemented in WP-4.7.
 See [Cross-Device Design Contract](design-guidelines.md) for accessibility rules and test matrix.
-
-The 2026-10-07 documentation update records these recommendations, not resolved product decisions.
 
 ### WP-4.3 — Root key map
 - Common Select/Enter/game-button activation, Back, media, seek, and channel-step mappings are

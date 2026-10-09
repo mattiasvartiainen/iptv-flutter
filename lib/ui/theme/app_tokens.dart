@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppTokens {
+  static const compactBreakpoint = 600.0;
+  static const expandedBreakpoint = 840.0;
+  static const compactNavigationFallbackHeight = 520.0;
+
   static const background = Color(0xff071412);
   static const focusRing = Colors.white;
   static const focusRingWidth = 3.0;
@@ -29,6 +33,12 @@ abstract final class AppTokens {
     pageInset,
     12,
   );
+
+  static EdgeInsets shellTitlePaddingFor(double availableWidth) {
+    final inset = pageInsetFor(availableWidth);
+    return EdgeInsets.fromLTRB(inset, 0, inset, 12);
+  }
+
   static const searchPadding = EdgeInsets.fromLTRB(
     searchInset,
     8,
@@ -51,6 +61,35 @@ abstract final class AppTokens {
     pageInset,
     sectionGap,
   );
+
+  static double pageInsetFor(double availableWidth) =>
+      availableWidth < compactBreakpoint
+      ? 16
+      : availableWidth < expandedBreakpoint
+      ? 24
+      : pageInset;
+
+  static EdgeInsets pagePaddingFor(double availableWidth) =>
+      EdgeInsets.fromLTRB(
+        pageInsetFor(availableWidth),
+        8,
+        pageInsetFor(availableWidth),
+        sectionGap,
+      );
+
+  static EdgeInsets homePaddingFor(double availableWidth) =>
+      EdgeInsets.fromLTRB(
+        pageInsetFor(availableWidth),
+        0,
+        pageInsetFor(availableWidth),
+        sectionGap,
+      );
+
+  static EdgeInsets searchPaddingFor(double availableWidth) {
+    final inset = availableWidth < compactBreakpoint ? 16.0 : searchInset;
+    return EdgeInsets.fromLTRB(inset, 8, inset, 24);
+  }
+
   static const homePadding = EdgeInsets.fromLTRB(
     pageInset,
     0,

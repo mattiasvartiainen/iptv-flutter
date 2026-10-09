@@ -65,126 +65,129 @@ class _SearchScreenState extends State<SearchScreen> {
     return AppShellScaffold(
       showBack: true,
       title: 'Search',
-      child: Padding(
-        padding: AppTokens.searchPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _textController,
-              autofocus: true,
-              textInputAction: TextInputAction.search,
-              onChanged: _scheduleSearch,
-              onSubmitted: (_) {
-                _debounce?.cancel();
-                _runSearch();
-              },
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
-                hintText: 'Search channels, movies, and series',
-                suffixIcon: IconButton(
-                  tooltip: 'Clear search',
-                  onPressed: () {
-                    _textController.clear();
-                    _scheduleSearch('');
-                  },
-                  icon: const Icon(Icons.clear),
-                ),
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                _kindFilter('All', null),
-                _kindFilter('Live', CatalogItemKind.live),
-                _kindFilter('Movies', CatalogItemKind.movie),
-                _kindFilter('Series', CatalogItemKind.episode),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ListenableBuilder(
-              listenable: view,
-              builder: (context, _) {
-                final status = view.searchIndexStatus;
-                if (status == null || !status.isIndexing) {
-                  return const SizedBox.shrink();
-                }
-                final progress = status.totalItems == 0
-                    ? null
-                    : status.indexedItems / status.totalItems;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Building search index · ${status.indexedItems} of ${status.totalItems} items',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 6),
-                      LinearProgressIndicator(value: progress),
-                    ],
-                  ),
-                );
-              },
-            ),
-            Expanded(
-              child: ListenableBuilder(
-                listenable: view.searchResults,
-                builder: (context, _) {
-                  final results = view.searchResults;
-                  if (_textController.text.trim().isEmpty) {
-                    return const _SearchMessage(
-                      icon: Icons.manage_search,
-                      text: 'Enter a title to search this playlist.',
-                    );
-                  }
-                  if (results.isLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (results.errorMessage != null && results.items.isEmpty) {
-                    return _SearchMessage(
-                      icon: Icons.error_outline,
-                      text: results.errorMessage!,
-                    );
-                  }
-                  if (results.items.isEmpty) {
-                    return const _SearchMessage(
-                      icon: Icons.search_off,
-                      text: 'No matching titles.',
-                    );
-                  }
-                  return ListView.builder(
-                    itemCount: results.items.length + (results.hasMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= results.items.length) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          results.loadMore();
-                        });
-                        return const Padding(
-                          padding: EdgeInsets.all(AppTokens.cardPadding),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final item = results.items[index];
-                      return ListTile(
-                        leading: Icon(_iconFor(item.kind)),
-                        title: Text(item.title, maxLines: 1),
-                        subtitle: Text(
-                          '${_kindName(item.kind)} · ${item.group ?? 'Ungrouped'}',
-                          maxLines: 1,
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => controller.openDetailsById(item.id),
-                      );
+      child: FocusTraversalGroup(
+        child: Padding(
+          padding: AppTokens.searchPaddingFor(MediaQuery.sizeOf(context).width),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _textController,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: _scheduleSearch,
+                onSubmitted: (_) {
+                  _debounce?.cancel();
+                  _runSearch();
+                },
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Search channels, movies, and series',
+                  suffixIcon: IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _textController.clear();
+                      _scheduleSearch('');
                     },
+                    icon: const Icon(Icons.clear),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  _kindFilter('All', null),
+                  _kindFilter('Live', CatalogItemKind.live),
+                  _kindFilter('Movies', CatalogItemKind.movie),
+                  _kindFilter('Series', CatalogItemKind.episode),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ListenableBuilder(
+                listenable: view,
+                builder: (context, _) {
+                  final status = view.searchIndexStatus;
+                  if (status == null || !status.isIndexing) {
+                    return const SizedBox.shrink();
+                  }
+                  final progress = status.totalItems == 0
+                      ? null
+                      : status.indexedItems / status.totalItems;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Building search index · ${status.indexedItems} of ${status.totalItems} items',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(value: progress),
+                      ],
+                    ),
                   );
                 },
               ),
-            ),
-          ],
+              Expanded(
+                child: ListenableBuilder(
+                  listenable: view.searchResults,
+                  builder: (context, _) {
+                    final results = view.searchResults;
+                    if (_textController.text.trim().isEmpty) {
+                      return const _SearchMessage(
+                        icon: Icons.manage_search,
+                        text: 'Enter a title to search this playlist.',
+                      );
+                    }
+                    if (results.isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (results.errorMessage != null && results.items.isEmpty) {
+                      return _SearchMessage(
+                        icon: Icons.error_outline,
+                        text: results.errorMessage!,
+                      );
+                    }
+                    if (results.items.isEmpty) {
+                      return const _SearchMessage(
+                        icon: Icons.search_off,
+                        text: 'No matching titles.',
+                      );
+                    }
+                    return ListView.builder(
+                      itemCount:
+                          results.items.length + (results.hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= results.items.length) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            results.loadMore();
+                          });
+                          return const Padding(
+                            padding: EdgeInsets.all(AppTokens.cardPadding),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        final item = results.items[index];
+                        return ListTile(
+                          leading: Icon(_iconFor(item.kind)),
+                          title: Text(item.title, maxLines: 1),
+                          subtitle: Text(
+                            '${_kindName(item.kind)} · ${item.group ?? 'Ungrouped'}',
+                            maxLines: 1,
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => controller.openDetailsById(item.id),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

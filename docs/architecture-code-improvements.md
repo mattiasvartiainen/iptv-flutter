@@ -57,10 +57,10 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-4.1 | Design tokens + 10-foot theme | 4 TV UX | – | S | DONE (2026-10-07): Extracted shared geometry and current dark theme; capability-based 16/18px body text, 48/56px command targets, input-aware focus and reduced motion. All 203 tests pass; analyzer retains one unrelated webOS info. Native TV readability checks pending. |
 | WP-4.2 | Shared focusable `MediaTile` | 4 TV UX | WP-4.1 | M | DONE (2026-10-07): Replaced six Home/catalog tile variants with shared activation, input-aware focus, selected semantics, bounded artwork/fallback and reduced motion. All 211 tests pass; analyzer retains one unrelated webOS info. Native remote checks pending. |
 | WP-4.3 | Root key map (Shortcuts/Actions, remote keys) | 4 TV UX | WP-2.1, WP-3.1 | M | DONE (2026-10-09): Added root common shortcuts, profile overrides, modal-first Back and player-scoped media actions; all 216 tests pass. LG hardware key capture remains pending. |
-| WP-4.4 | Focus groups, initial focus, focus restoration | 4 TV UX | WP-4.2, WP-4.3, WP-4.7 | M | TODO |
+| WP-4.4 | Focus groups, initial focus, focus restoration | 4 TV UX | WP-4.2, WP-4.3, WP-4.7 | M | DONE (2026-10-09): Added traversal groups, initial focus, modal focus, route restoration, section-removal fallback, and resize restoration; full suite passes 223 tests. |
 | WP-4.5 | Adaptive fullscreen player screen | 4 TV UX | WP-3.2, WP-4.3, WP-7.1 | M | TODO |
 | WP-4.6 | Cross-device accessibility and focus tests | 4 TV UX | WP-4.4, WP-4.5 | M | TODO |
-| WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | TODO (2026-10-07): Added for compact/medium/expanded layouts; navigation composition requires D-10 approval. |
+| WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | DONE (2026-10-09): Implemented approved compact bottom navigation, medium/expanded rails, short-height fallback, and responsive insets; resize tests preserve typed route and catalog page. |
 | WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | TODO |
 | WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | TODO |
 | WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | TODO |
@@ -670,7 +670,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 
 **Order:** WP-4.1 first; WP-4.2, WP-4.3, and WP-4.7 can then proceed as their dependencies permit; WP-4.4 follows the adaptive shell. Complete WP-7.1 before WP-4.5. WP-4.6 consolidates cross-device coverage, but every implementation WP must add its own scoped tests immediately. Existing stop-on-player-exit, All-group defaults, and activation destinations remain unchanged unless a separately approved behavioral package changes them.
 
-**Scope boundary:** Mini player/system PiP, EPG/live preview, quality folding, metadata/rating sorting, history-backed Home/resume, autoplay, sports/recommendations, voice search, theme selection, and branding are follow-up product work. Track candidate follow-ups in the design contract; define independent packages and prerequisites before implementing them. D-7/D-8/D-9/D-10 are pending choices, not implicit approvals.
+**Scope boundary:** Mini player/system PiP, EPG/live preview, quality folding, metadata/rating sorting, history-backed Home/resume, autoplay, sports/recommendations, voice search, theme selection, and branding are follow-up product work. Track candidate follow-ups in the design contract; define independent packages and prerequisites before implementing them. D-7/D-8/D-9 remain pending choices, not implicit approvals.
 
 #### WP-4.1 — Design tokens + 10-foot theme
 - **Fixes:** F-10 (foundation), consistency.
@@ -716,6 +716,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   4. Settings button: replace the bare `IconButton` with a labelled focusable nav item.
   5. Dialogs (playlist editor, delete confirm): first field/primary button autofocus; Back closes.
 - **Acceptance:** scoped key-event tests verify initial focus, modal dismissal, prior-item restoration, fallback after item removal, and focus preservation across layout resizing. Do not wait for WP-4.6 to add these tests.
+- **Implementation notes (2026-10-09):** Added traversal groups around adaptive navigation, page heading, route content, catalog sidebar/grid, Home, Search, and Settings. Home chooses the first loaded tile in the first visible populated section; catalog grids focus their first item; Details focuses Play; Search retains its field autofocus. Covered Navigator pages restore their prior tile after Details → Back. When the focused Home section is hidden, focus advances to the first tile in the next populated section. The playlist editor requests focus to Name once after mount; delete confirmation focuses Delete, and Escape dismisses the modal before route Back. Stable media-item keys plus an owned node allow a focused catalog tile to reacquire focus through responsive resize. Added scoped coverage for initial focus, restoration, fallback, resize, and dialog focus. `flutter test`: 223 passing. `flutter analyze`: only the pre-existing `unawaited_futures` info in `webos/flutter/main.dart`. Native remote validation remains pending.
 
 #### WP-4.5 — Adaptive fullscreen player screen
 - **Fixes:** F-12.
@@ -733,10 +734,11 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 
 #### WP-4.7 — Adaptive shell and browsing layouts
 - **Goal:** device-appropriate navigation and content density without changing route or catalog behavior.
-- **Depends on:** WP-4.1, WP-3.1, WP-2.1, D-10 approval of navigation composition.
+- **Depends on:** WP-4.1, WP-3.1, WP-2.1, D-10 (resolved 2026-10-09).
 - **Touches:** `lib/widgets/app_shell_scaffold.dart`, home/catalog/search/settings/details layouts, shared layout-token policy and scoped widget tests.
 - **Steps:** implement compact/medium/expanded compositions from the design contract using `LayoutBuilder` constraints and injected input capabilities, not OS checks. Compact navigation exposes Home/Live/Movies/Series with reachable Search/Settings; expanded navigation uses a labeled rail. Allow shorter-height fallback. Keep groups available through sidebar or scrolling controls; preserve the current 1050 sidebar threshold unless scoped tests justify a documented replacement. Adapt page insets, rows, grids, dialogs and action wraps rather than scaling the TV canvas.
 - **Acceptance:** all commands remain reachable by touch and keyboard/remote; resizing preserves typed route, selection, scroll/page context and surviving focus; compact portrait/landscape, medium and expanded tests pass at normal and large text sizes. No new full-catalog loading, automatic first-group selection, or playback changes.
+- **Implementation notes (2026-10-09):** D-10 approved the documented composition. `AppShellScaffold` now uses four compact bottom destinations with Search/Settings in the app bar, a medium rail with selected labels, an expanded labeled rail, and compact fallback below 520 logical pixels high. Shared width tokens provide 16/24/40 logical-pixel page insets; Home, catalog, Search, Details, and Settings consume them. Catalog sidebar remains at 1050. Tests cover compact/medium/expanded/short-height layouts, Search/Settings reachability, and preservation of the typed route and loaded catalog items through resizing. Scoped layout tests pass. Initial focus and focus restoration remain WP-4.4.
 - **Skills:** `flutter-build-responsive-layout`, `dart-add-unit-test`.
 
 ### Batch 5 — UI component structure
@@ -890,7 +892,7 @@ Agents must not resolve these on their own. Record the answer in `docs/decisions
 | D-7 | Player Back and background viewing | Stop on exit / in-app mini player / mini player plus supported system PiP | OPEN: retain stop-on-exit during Batch 4; decide separately before session/lifecycle changes. |
 | D-8 | Catalog initial group and activation destinations | Keep All and current destinations / first group and content-specific direct-play or resume flows | OPEN: preserve current behavior; define a separate behavioral package if changed. |
 | D-9 | Visual palette and light-theme scope | Extract current dark theme / adopt Kanal palette / adopt palette plus light variant | OPEN: current-theme extraction is unblocked; visual redesign/light-theme delivery needs approval. |
-| D-10 | Adaptive navigation composition | Compact four bottom destinations plus Search/Settings, medium adaptive rail, expanded labeled rail / alternative composition | OPEN: recommended composition is documented in design-guidelines.md; blocks WP-4.7, not WP-4.1. |
+| D-10 | Adaptive navigation composition | Compact four bottom destinations plus Search/Settings, medium adaptive rail, expanded labeled rail / alternative composition | RESOLVED (2026-10-09): approved documented recommendation; implemented in WP-4.7. |
 
 ---
 

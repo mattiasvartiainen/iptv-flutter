@@ -32,6 +32,42 @@ class MediaTile extends StatefulWidget {
 class _MediaTileState extends State<MediaTile> {
   bool _showFocus = false;
   bool _focused = false;
+  late FocusNode _focusNode;
+  late bool _ownsFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _setFocusNode(widget.focusNode);
+  }
+
+  void _setFocusNode(FocusNode? focusNode) {
+    _ownsFocusNode = focusNode == null;
+    _focusNode = focusNode ?? FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant MediaTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      if (_ownsFocusNode) _focusNode.dispose();
+      _setFocusNode(widget.focusNode);
+    }
+    if (!oldWidget.autofocus && widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final focusedTile = FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<MediaTile>();
+        if (focusedTile == null) _focusNode.requestFocus();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_ownsFocusNode) _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +80,7 @@ class _MediaTileState extends State<MediaTile> {
       includeFocusSemantics: false,
       mouseCursor: SystemMouseCursors.click,
       autofocus: widget.autofocus,
-      focusNode: widget.focusNode,
+      focusNode: _focusNode,
       onFocusChange: (focused) => setState(() => _focused = focused),
       onShowFocusHighlight: (show) => setState(() => _showFocus = show),
       shortcuts: const {

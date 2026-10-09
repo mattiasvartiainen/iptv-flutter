@@ -17,7 +17,7 @@ class DetailsScreen extends StatelessWidget {
       showBack: true,
       title: item.title,
       child: Padding(
-        padding: AppTokens.pagePadding,
+        padding: AppTokens.pagePaddingFor(MediaQuery.sizeOf(context).width),
         child: Align(
           alignment: Alignment.topLeft,
           child: ConstrainedBox(
@@ -33,10 +33,13 @@ class DetailsScreen extends StatelessWidget {
                       : item.description,
                 ),
                 const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: () => player.openPlayer(item),
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Play selected stream'),
+                FocusTraversalGroup(
+                  child: ElevatedButton.icon(
+                    autofocus: true,
+                    onPressed: () => player.openPlayer(item),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Play selected stream'),
+                  ),
                 ),
               ],
             ),
