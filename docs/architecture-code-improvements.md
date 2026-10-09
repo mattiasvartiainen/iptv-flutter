@@ -61,7 +61,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-4.5 | Adaptive fullscreen player screen | 4 TV UX | WP-3.2, WP-4.3, WP-7.1 | M | DONE (2026-10-09): Added fullscreen video and focusable auto-hiding controls, buffering/error/retry states, capability-gated commands, and local/system Back precedence; full suite passes 232 tests. TV hardware validation pending. |
 | WP-4.6 | Cross-device accessibility and focus tests | 4 TV UX | WP-4.4, WP-4.5 | M | DONE (2026-10-09): Added feature-level viewport matrix and directional rail/bottom-nav traversal, activation, Back restoration, touch reachability, and existing semantics/target/artwork/motion/player coverage; 235 tests pass. Native checks pending. |
 | WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | DONE (2026-10-09): Implemented approved compact bottom navigation, medium/expanded rails, short-height fallback, and responsive insets; resize tests preserve typed route and catalog page. |
-| WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | TODO |
+| WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | DONE (2026-10-09): Relocated screens/widgets, split Settings and catalog group sidebar, extracted pure playlist validation, and updated architecture paths; full suite passes 238 tests. |
 | WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | TODO |
 | WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | TODO |
 | WP-6.1 | Port legacy-path tests to the v9 catalog | 6 Data layer | D-2 | L | TODO |
@@ -755,6 +755,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   4. Update the architecture test paths.
 - **Acceptance:** no file in `lib/features/` mixes a dialog, a list and a form; tests green.
 - **Out of scope:** splitting files only because of line count.
+- **Implementation notes (2026-10-09):** Moved screens to `lib/features/{home,catalog,search,details,player,settings}` and shared `AppScope`/`AppShellScaffold` to `lib/ui/widgets`. Extracted the catalog group sidebar to `features/catalog/widgets/group_sidebar.dart`. Split Settings into a screen composition plus `PlaylistSection`, `PlaylistCard`, `ImportProgressIndicator`, and `PlaylistEditorDialog` widgets. Moved playlist validation into pure functions in `features/playlists/playlist_form_validation.dart` with unit tests. Updated the architecture test UI roots to `lib/features` and `lib/ui`. `flutter test`: 238 passing; analyzer retains only the existing webOS entrypoint info.
 
 #### WP-5.2 — Shared paged view + state views
 - **Fixes:** F-15 (UI half), F-17, F-18.

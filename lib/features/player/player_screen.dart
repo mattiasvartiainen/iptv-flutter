@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/app_shortcuts.dart';
-import '../features/player/player_controller.dart';
-import '../models/content_item.dart';
-import '../services/playback/playback_contract.dart';
-import '../widgets/app_scope.dart';
+import '../../app/app_shortcuts.dart';
+import '../../models/content_item.dart';
+import '../../services/playback/playback_contract.dart';
+import '../../ui/widgets/app_scope.dart';
+import 'player_controller.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key, required this.item});

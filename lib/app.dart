@@ -8,18 +8,18 @@ import 'app/app_dependencies.dart';
 import 'app/app_shortcuts.dart';
 import 'app/navigation/app_route.dart';
 import 'app/navigation/navigation_controller.dart';
+import 'features/catalog/catalog_screen.dart';
+import 'features/details/details_screen.dart';
+import 'features/home/home_screen.dart';
 import 'features/player/player_controller.dart';
+import 'features/player/player_screen.dart';
+import 'features/search/search_screen.dart';
+import 'features/settings/settings_screen.dart';
 import 'platform/app_environment.dart';
-import 'screens/catalog_screen.dart';
-import 'screens/details_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/player_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/settings_screen.dart';
 import 'services/playback/playback_adapter.dart';
 import 'state/app_controller.dart';
 import 'ui/theme/app_theme.dart';
-import 'widgets/app_scope.dart';
+import 'ui/widgets/app_scope.dart';
 
 class IptvApp extends StatefulWidget {
   const IptvApp({super.key, required this.dependencies});

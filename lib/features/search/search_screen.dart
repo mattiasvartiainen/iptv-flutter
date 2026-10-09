@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../services/catalog/catalog_query.dart';
-import '../state/app_controller.dart';
-import '../ui/theme/app_tokens.dart';
-import '../widgets/app_scope.dart';
-import '../widgets/app_shell_scaffold.dart';
+import '../../services/catalog/catalog_query.dart';
+import '../../state/app_controller.dart';
+import '../../ui/theme/app_tokens.dart';
+import '../../ui/widgets/app_scope.dart';
+import '../../ui/widgets/app_shell_scaffold.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});

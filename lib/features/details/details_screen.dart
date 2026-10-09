@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../models/content_item.dart';
-import '../ui/theme/app_tokens.dart';
-import '../widgets/app_scope.dart';
-import '../widgets/app_shell_scaffold.dart';
+import '../../models/content_item.dart';
+import '../../ui/theme/app_tokens.dart';
+import '../../ui/widgets/app_scope.dart';
+import '../../ui/widgets/app_shell_scaffold.dart';
 
 class DetailsScreen extends StatelessWidget {
   const DetailsScreen({super.key, required this.item});

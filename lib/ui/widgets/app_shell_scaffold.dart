@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../app/navigation/app_route.dart';
-import '../app/navigation/navigation_controller.dart';
-import '../state/app_controller.dart';
-import '../ui/theme/app_tokens.dart';
+import '../../app/navigation/app_route.dart';
+import '../../app/navigation/navigation_controller.dart';
+import '../../state/app_controller.dart';
+import '../theme/app_tokens.dart';
 import 'app_scope.dart';
 
 class AppShellScaffold extends StatefulWidget {

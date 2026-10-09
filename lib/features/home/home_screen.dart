@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../app/navigation/app_route.dart';
-import '../services/catalog/catalog_query.dart';
-import '../ui/theme/app_tokens.dart';
-import '../ui/widgets/media_tile.dart';
-import '../widgets/app_scope.dart';
-import '../widgets/app_shell_scaffold.dart';
+import '../../app/navigation/app_route.dart';
+import '../../services/catalog/catalog_query.dart';
+import '../../ui/theme/app_tokens.dart';
+import '../../ui/widgets/app_scope.dart';
+import '../../ui/widgets/app_shell_scaffold.dart';
+import '../../ui/widgets/media_tile.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});

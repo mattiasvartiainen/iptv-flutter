@@ -55,10 +55,8 @@ void main() {
     final violations = <String>[];
     for (final entry in sources.entries) {
       final isUiFile = const [
-        'lib/screens',
         'lib/features',
         'lib/ui',
-        'lib/widgets',
       ].any((directory) => p.posix.isWithin(directory, entry.key));
       if (isUiFile && _forbiddenUiImport.hasMatch(entry.value)) {
         violations.add(entry.key);
