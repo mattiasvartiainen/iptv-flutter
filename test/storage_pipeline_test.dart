@@ -15,6 +15,7 @@ import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 
+import 'support/catalog_http_test_server.dart';
 import 'support/database_adapter.dart';
 
 void main() {
@@ -912,39 +913,110 @@ https://stream.test/pine-gap-s01e05.m3u8
   });
 
   test('cache-first skips network refresh while cache is still fresh', () async {
-    final source = _SwitchingSource(
-      first: '''#EXTM3U
+    const firstContent = '''#EXTM3U
 #EXTINF:-1 group-title="News",Channel A
 https://stream.test/channel-a.m3u8
-''',
-      second: '',
+''';
+    final server = await CatalogHttpTestServer.start(
+      responses: {'/playlist.m3u': firstContent},
     );
+    addTearDown(server.close);
 
     final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_cache_first_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
     addTearDown(adapter.close);
+    final store = InMemoryPlaylistSecretStore();
+    final settings = SqliteSettingsRepository(
+      databaseAdapter: adapter,
+      secretStore: store,
+    );
+    final playlist = await settings.upsertPlaylist(
+      PlaylistSourceConfig.url(
+        name: 'Fixture',
+        url: server.url('/playlist.m3u'),
+      ),
+    );
 
     final repo = SqliteCatalogRepository(
-      source: source,
       databaseAdapter: adapter,
-      secretStore: InMemoryPlaylistSecretStore(),
+      secretStore: store,
+      autoStartSearchIndexWorker: false,
+      useCatalogImporterV9: true,
     );
 
     final firstLoad = await repo.load(
-      playlistUrl: 'https://provider.test/playlist.m3u',
+      playlistId: playlist.playlistId,
+      playlistUrl: playlist.resolvedUrl,
+      policy: CatalogLoadPolicy.networkOnly,
     );
     expect(firstLoad.itemCount, 1);
-    expect(source.callCount, 1);
+    expect(server.requestCount, 1);
+    final firstSchedule = (await settings.getPlaylistRefreshSettings(
+      playlist.playlistId,
+    ))!;
+    expect(firstSchedule.lastRefreshStatus, 'success');
+    expect(firstSchedule.nextRefreshAt, isNotNull);
+    expect(firstSchedule.nextRefreshAt!.isAfter(DateTime.now()), isTrue);
 
-    // next_refresh_at is set after a successful import, so this should use
-    // cached rows and avoid a second network call.
     final secondLoad = await repo.load(
-      playlistUrl: 'https://provider.test/playlist.m3u',
+      playlistId: playlist.playlistId,
+      playlistUrl: playlist.resolvedUrl,
     );
     expect(secondLoad.itemCount, 1);
-    expect(source.callCount, 1);
+    expect(server.requestCount, 1);
+    expect(
+      (await repo.queryItems(
+        CatalogQuery(
+          playlistId: playlist.playlistId,
+          kinds: const [CatalogItemKind.live],
+        ),
+      )).items.single.title,
+      'Channel A',
+    );
+
+    server.responses['/playlist.m3u'] = firstContent.replaceFirst(
+      'Channel A',
+      'Channel B',
+    );
+    await repo.load(
+      playlistId: playlist.playlistId,
+      playlistUrl: playlist.resolvedUrl,
+      policy: CatalogLoadPolicy.networkOnly,
+    );
+    expect(server.requestCount, 2);
+    final successfulSchedule = (await settings.getPlaylistRefreshSettings(
+      playlist.playlistId,
+    ))!;
+
+    server.responses['/playlist.m3u'] = '#EXTM3U\n';
+    await expectLater(
+      repo.load(
+        playlistId: playlist.playlistId,
+        playlistUrl: playlist.resolvedUrl,
+        policy: CatalogLoadPolicy.networkOnly,
+      ),
+      throwsA(isA<Exception>()),
+    );
+    expect(server.requestCount, 3);
+    expect(
+      (await repo.queryItems(
+        CatalogQuery(
+          playlistId: playlist.playlistId,
+          kinds: const [CatalogItemKind.live],
+        ),
+      )).items.single.title,
+      'Channel B',
+    );
+    final scheduleAfterFailure = (await settings.getPlaylistRefreshSettings(
+      playlist.playlistId,
+    ))!;
+    expect(scheduleAfterFailure.lastRefreshStatus, 'success');
+    expect(
+      scheduleAfterFailure.nextRefreshAt,
+      successfulSchedule.nextRefreshAt,
+    );
   });
 
   test(

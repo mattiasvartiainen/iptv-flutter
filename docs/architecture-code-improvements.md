@@ -64,7 +64,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | DONE (2026-10-09): Relocated screens/widgets, split Settings and catalog group sidebar, extracted pure playlist validation, and updated architecture paths; full suite passes 238 tests. |
 | WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | DONE (2026-10-09): Shared paging triggers, underfilled-viewport loading, retryable errors, and Search polling shutdown are covered; full suite passes 244 tests. Analyzer retains only the existing webOS info. |
 | WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | DONE (2026-10-09): Consolidated date/elapsed/byte/duration formatting and kind icon/label presentation; full suite passes 251 tests. Analyzer retains only the existing webOS info. |
-| WP-6.1 | Port legacy-path tests to the v9 catalog | 6 Data layer | D-2 | L | TODO |
+| WP-6.1 | Port legacy-path tests to the v9 catalog | 6 Data layer | D-2 | L | TODO: v9 refresh scheduling is now persisted and cache-first behavior passes regression coverage. Remaining category (a) tests in `storage_pipeline_test.dart` and `import_session_test.dart` still need porting. |
 | WP-6.2 | Delete the legacy (v1–v7) catalog code path | 6 Data layer | WP-6.1 | L | TODO |
 | WP-6.3 | Split `SqliteCatalogRepository` by responsibility | 6 Data layer | WP-6.2 | L | TODO |
 | WP-6.4 | Startup maintenance without downcasts | 6 Data layer | WP-6.3, WP-2.2 | S | TODO |
@@ -783,6 +783,18 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
   3. Port category (a) tests to run against the v9 path. If a behaviour is missing in v9, stop and report — do not re-implement it silently.
 - **Acceptance:** all category (a) behaviours have v9 tests that pass.
 - **Skills:** `dart-add-unit-test`.
+- **Inventory / implementation note (2026-10-09):** D-2 is resolved (remove the legacy path and drop legacy tables in v11). Classification of the repository-backed tests in the six touched files:
+
+  | Test file | User-visible behavior (a) | Legacy internals (b) | Port status |
+  |-----------|---------------------------|----------------------|-------------|
+  | `storage_pipeline_test.dart` | Saved playlist owns its catalog; cache-only selection avoids fetching; refreshing/selecting another playlist; XUI metadata survives selection; series episodes are browsable; playlist/catalog identity isolation; failed refresh preserves the last good catalog; cache-first skips a fresh refresh; favorite/progress survive refresh for retained items; zero-numbered episode labels remain importable. | Set-based SQL reconcile path; preserving legacy media IDs during strong-ID refresh; per-item database-rejection fallback. | Cache-first case ported to v9; remaining listed cases are outstanding. Existing v9 tests in `catalog_importer_test.dart` cover warm failure preservation, browsing, and retained favorite/progress. |
+  | `search_index_queue_test.dart` | Indexing eventually completes and search results remain available (covered on v9 in `catalog_importer_test.dart`). | All seven cases exercise `search_index_queue`, `media_items_fts`, the legacy dirty flag, batch draining, and the legacy background worker. | Classify as (b); v9 index lifecycle already has separate coverage. |
+  | `catalog_import_concurrency_test.dart` | Concurrent same-playlist loads share one import; a later load starts a fresh import. | None. | Ported to v9 through `SqliteCatalogRepository` and a gated loopback HTTP fixture; both tests pass. |
+  | `catalog_identity_test.dart` | Stable identity and kind classification. | None. | No repository construction; these pure tests already exercise v9 identity/classification utilities. |
+  | `catalog_query_service_test.dart` | Pagination, kind/group filtering, ordering, bounded Home previews, series/season/episode queries, text search, hostile-query handling, and item lookup. | None. | SQLite repository cases ported to v9; the in-memory query tests remain unchanged. The fixture uses movie extensions and Xtream series paths to match v9's documented classifier precedence. |
+  | `import_session_test.dart` | Successful/failed import lifecycle, startup recovery, and cancellation. | The streamed legacy parser path. | Repository-backed cases remain legacy-default; v9 import-session and worker-cancellation behavior has separate coverage, but these cases are not yet ported. |
+
+  **Implementation update (2026-10-09):** The v9 repository path now restores default weekly settings for an existing saved playlist if its settings row is missing, then updates `last_refresh_at`, `next_refresh_at`, and `last_refresh_status` after a successful import via the shared scheduler. Failed/cancelled imports do not update success metadata. The cache-first regression verifies one request for a fresh cache, a forced `networkOnly` request, and preservation of both catalog and schedule after a failed refresh. Focused storage tests pass (18); migrated concurrency/query suites pass (22); full suite passes 251 tests. Analyzer retains the existing informational `unawaited_futures` notice in `webos/flutter/main.dart`. WP-6.1 remains TODO until the other category (a) tests in `storage_pipeline_test.dart` and `import_session_test.dart` are ported.
 
 #### WP-6.2 — Delete the legacy catalog code path
 - **Fixes:** F-07.

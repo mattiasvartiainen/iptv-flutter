@@ -6,8 +6,8 @@ import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/m3u_parser.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
-import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/catalog_http_test_server.dart';
 import 'support/database_adapter.dart';
 
 const String _playlistText = '''#EXTM3U
@@ -18,17 +18,17 @@ https://stream.test/beta.m3u8
 #EXTINF:-1 group-title="News",Gamma News
 https://stream.test/gamma.m3u8
 #EXTINF:-1 group-title="Movies",The Last Signal
-https://stream.test/last-signal.m3u8
+https://stream.test/last-signal.mp4
 #EXTINF:-1 group-title="Movies",Zebra Crossing
-https://stream.test/zebra.m3u8
+https://stream.test/zebra.mp4
 #EXTINF:-1 group-title="Movies",Alpha Movie
-https://stream.test/alpha-movie.m3u8
+https://stream.test/alpha-movie.mp4
 #EXTINF:-1 group-title="Series",Pine Gap S01 E01
-https://stream.test/pine-s01e01.m3u8
+https://provider.test/series/user/pass/pine-s01e01.mkv
 #EXTINF:-1 group-title="Series",Pine Gap S01 E02
-https://stream.test/pine-s01e02.m3u8
+https://provider.test/series/user/pass/pine-s01e02.mkv
 #EXTINF:-1 group-title="Series",Pine Gap S02 E01
-https://stream.test/pine-s02e01.m3u8
+https://provider.test/series/user/pass/pine-s02e01.mkv
 ''';
 
 void main() {
@@ -135,6 +135,7 @@ void main() {
   group('SqliteCatalogRepository as CatalogQueryService', () {
     late SqfliteDatabaseAdapter adapter;
     late SqliteCatalogRepository repo;
+    late CatalogHttpTestServer server;
     late String playlistId;
 
     setUp(() async {
@@ -143,18 +144,23 @@ void main() {
             'iptv_test_query_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
       addTearDown(adapter.close);
+      server = await CatalogHttpTestServer.start(
+        responses: {'/playlist.m3u': _playlistText},
+      );
+      addTearDown(server.close);
 
       repo = SqliteCatalogRepository(
-        source: const FakePlaylistSource(_playlistText),
         databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
+        autoStartSearchIndexWorker: false,
+        useCatalogImporterV9: true,
       );
-      await repo.load(playlistUrl: 'https://provider.test/playlist.m3u');
-
-      final db = await adapter.database;
-      playlistId =
-          (await db.query('playlists', columns: ['id'])).single['id']!
-              as String;
+      playlistId = 'query-v9-playlist';
+      await repo.load(
+        playlistId: playlistId,
+        playlistUrl: server.url('/playlist.m3u'),
+        policy: CatalogLoadPolicy.networkOnly,
+      );
+      await repo.processCatalogSearchIndexQueue(playlistId: playlistId);
     });
 
     test(

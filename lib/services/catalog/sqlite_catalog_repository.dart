@@ -361,6 +361,7 @@ class SqliteCatalogRepository
           );
         }
       }
+      await _ensurePlaylistRefreshSettings(db, resolvedPlaylistId);
       _pausedIndexingPlaylists.add(resolvedPlaylistId);
       late final CatalogImportResult imported;
       try {
@@ -368,6 +369,11 @@ class SqliteCatalogRepository
           playlistId: resolvedPlaylistId,
           playlistUrl: playlistUrl,
           onProgress: onProgress,
+        );
+        await _markRefreshSuccess(
+          db,
+          playlistId: resolvedPlaylistId,
+          completedAt: DateTime.now().toUtc(),
         );
       } finally {
         _pausedIndexingPlaylists.remove(resolvedPlaylistId);
@@ -1747,6 +1753,40 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
 
     final now = DateTime.now().toUtc();
     return now.isAfter(nextRefreshAt) || now.isAtSameMomentAs(nextRefreshAt);
+  }
+
+  Future<void> _ensurePlaylistRefreshSettings(
+    DatabaseExecutor db,
+    String playlistId,
+  ) async {
+    final settingsRows = await db.query(
+      'playlist_settings',
+      columns: const ['playlist_id'],
+      where: 'playlist_id = ?',
+      whereArgs: [playlistId],
+      limit: 1,
+    );
+    if (settingsRows.isNotEmpty) return;
+
+    final playlistRows = await db.query(
+      'playlists',
+      columns: const ['id'],
+      where: 'id = ?',
+      whereArgs: [playlistId],
+      limit: 1,
+    );
+    if (playlistRows.isEmpty) return;
+
+    await db.insert('playlist_settings', {
+      'playlist_id': playlistId,
+      'refresh_enabled': 1,
+      'refresh_mode': 'weekly',
+      'refresh_interval_hours': 168,
+      'last_refresh_at': null,
+      'next_refresh_at': null,
+      'last_refresh_status': null,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   Future<void> _markRefreshSuccess(
