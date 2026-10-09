@@ -16,12 +16,7 @@ void main() {
     'BENCHMARK_SCENARIO',
     defaultValue: '',
   );
-  const engine = String.fromEnvironment(
-    'BENCHMARK_ENGINE',
-    defaultValue: 'legacy',
-  );
   const keepDb = bool.fromEnvironment('BENCHMARK_KEEP_DB');
-  const noNetwork = bool.fromEnvironment('BENCHMARK_NO_NETWORK');
   const output = String.fromEnvironment('BENCHMARK_OUT', defaultValue: '');
 
   test(
@@ -29,13 +24,11 @@ void main() {
     () async {
       await bench.runBenchmark([
         '--count=$count',
-        '--engine=$engine',
         if (scenario.isNotEmpty)
           '--scenario=$scenario'
         else if (refresh)
           '--refresh',
         if (keepDb) '--keep-db',
-        if (noNetwork) '--no-network',
         if (output.isNotEmpty) '--out=$output',
       ]);
     },

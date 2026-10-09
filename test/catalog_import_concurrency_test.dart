@@ -36,7 +36,6 @@ void main() {
     final repo = SqliteCatalogRepository(
       databaseAdapter: adapter,
       autoStartSearchIndexWorker: false,
-      useCatalogImporterV9: true,
     );
 
     final first = repo.load(
@@ -68,7 +67,6 @@ void main() {
     final repo = SqliteCatalogRepository(
       databaseAdapter: adapter,
       autoStartSearchIndexWorker: false,
-      useCatalogImporterV9: true,
     );
 
     await repo.load(

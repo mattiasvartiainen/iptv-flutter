@@ -47,8 +47,6 @@ class AppDependencies {
     final secretStore = profile.createSecretStore();
     final catalogRepository = SqliteCatalogRepository(
       databaseAdapter: databaseAdapter,
-      secretStore: secretStore,
-      useCatalogImporterV9: true,
     );
     final settingsRepository = SqliteSettingsRepository(
       databaseAdapter: databaseAdapter,

@@ -152,7 +152,6 @@ void main() {
       repo = SqliteCatalogRepository(
         databaseAdapter: adapter,
         autoStartSearchIndexWorker: false,
-        useCatalogImporterV9: true,
       );
       playlistId = 'query-v9-playlist';
       await repo.load(

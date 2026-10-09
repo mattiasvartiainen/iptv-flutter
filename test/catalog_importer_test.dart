@@ -95,52 +95,44 @@ void main() {
           .every((event) => event.importSessionId == sessions.single['id']),
       isTrue,
     );
-    expect(await db.query('media_items'), isEmpty);
   });
 
-  test(
-    'repository can opt into v9 cold import without changing legacy default',
-    () async {
-      final server = await _serve(_playlist);
-      addTearDown(() => server.close(force: true));
-      final repository = SqliteCatalogRepository(
-        source: const FakePlaylistSource('legacy path must not be used'),
-        databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
-        autoStartSearchIndexWorker: false,
-        useCatalogImporterV9: true,
-      );
+  test('repository cold imports and refreshes through v9', () async {
+    final server = await _serve(_playlist);
+    addTearDown(() => server.close(force: true));
+    final repository = SqliteCatalogRepository(
+      databaseAdapter: adapter,
+      autoStartSearchIndexWorker: false,
+    );
 
-      final result = await repository.load(
-        playlistId: 'opt-in-playlist',
-        playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
-        policy: CatalogLoadPolicy.networkOnly,
-      );
-      final db = await adapter.database;
-      final originalIds = (await db.query(
-        'items',
-        orderBy: 'ord',
-      )).map((row) => row['id']).toList();
-      final refreshed = await repository.load(
-        playlistId: 'opt-in-playlist',
-        playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
-        policy: CatalogLoadPolicy.networkOnly,
-      );
+    final result = await repository.load(
+      playlistId: 'opt-in-playlist',
+      playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
+      policy: CatalogLoadPolicy.networkOnly,
+    );
+    final db = await adapter.database;
+    final originalIds = (await db.query(
+      'items',
+      orderBy: 'ord',
+    )).map((row) => row['id']).toList();
+    final refreshed = await repository.load(
+      playlistId: 'opt-in-playlist',
+      playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
+      policy: CatalogLoadPolicy.networkOnly,
+    );
 
-      expect(result.itemCount, 4);
-      expect(refreshed.itemCount, 4);
-      expect(await db.query('items'), hasLength(4));
-      expect(await db.query('media_items'), isEmpty);
-      expect(
-        (await db.query('items', orderBy: 'ord')).map((row) => row['id']),
-        originalIds,
-      );
-      final sessions = await db.query('import_sessions', orderBy: 'id');
-      expect(sessions.map((row) => row['tier']), ['cold_import', 'row_diff']);
-      expect(sessions.last['items_new'], 0);
-      expect(sessions.last['items_changed'], 0);
-    },
-  );
+    expect(result.itemCount, 4);
+    expect(refreshed.itemCount, 4);
+    expect(await db.query('items'), hasLength(4));
+    expect(
+      (await db.query('items', orderBy: 'ord')).map((row) => row['id']),
+      originalIds,
+    );
+    final sessions = await db.query('import_sessions', orderBy: 'id');
+    expect(sessions.map((row) => row['tier']), ['cold_import', 'row_diff']);
+    expect(sessions.last['items_new'], 0);
+    expect(sessions.last['items_changed'], 0);
+  });
 
   test(
     'v9 search indexing resumes queued work and reports its progress',
@@ -183,12 +175,7 @@ void main() {
   test('flat catalog queries and playback lookup read the v9 schema', () async {
     final server = await _serve(_playlist);
     addTearDown(() => server.close(force: true));
-    final repository = SqliteCatalogRepository(
-      source: const FakePlaylistSource('not used by the v9 worker'),
-      databaseAdapter: adapter,
-      secretStore: InMemoryPlaylistSecretStore(),
-      useCatalogImporterV9: true,
-    );
+    final repository = SqliteCatalogRepository(databaseAdapter: adapter);
     final loaded = await repository.load(
       playlistId: 'query-v9',
       playlistName: 'v9 fixture',

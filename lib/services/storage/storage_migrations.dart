@@ -664,6 +664,37 @@ CREATE TABLE IF NOT EXISTS items_fts_queue (
   }
 }
 
+/// Drops the v1-v7 catalog after v9 import, query, and user data are active.
+class DropLegacyCatalogV11Migration implements StorageMigration {
+  const DropLegacyCatalogV11Migration();
+
+  @override
+  int get version => 11;
+
+  @override
+  String get name => 'drop_legacy_catalog_v11';
+
+  @override
+  Future<void> up(DatabaseExecutor db) async {
+    for (final statement in const [
+      'DROP TABLE IF EXISTS media_items_fts',
+      'DROP TABLE IF EXISTS import_staging_items',
+      'DROP TABLE IF EXISTS search_index_queue',
+      'DROP TABLE IF EXISTS episodes',
+      'DROP TABLE IF EXISTS favorites',
+      'DROP TABLE IF EXISTS playback_progress',
+      'DROP TABLE IF EXISTS watch_history',
+      'DROP TABLE IF EXISTS hidden_categories',
+      'DROP TABLE IF EXISTS media_items',
+      'DROP TABLE IF EXISTS seasons',
+      'DROP TABLE IF EXISTS series',
+      'DROP TABLE IF EXISTS categories',
+    ]) {
+      await db.execute(statement);
+    }
+  }
+}
+
 const List<String> _v9CatalogStatements = [
   '''
 CREATE TABLE IF NOT EXISTS groups (

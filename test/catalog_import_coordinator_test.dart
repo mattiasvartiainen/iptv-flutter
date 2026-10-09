@@ -7,35 +7,36 @@ import 'package:iptv_flutter/services/catalog/catalog_import_progress.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_protocol.dart';
 
 void main() {
-  test('parses in a worker and reports lifecycle progress', () async {
+  test('reports enriched lifecycle progress for a job', () async {
     final coordinator = CatalogImportCoordinator();
     final progress = <CatalogImportProgress>[];
 
     final result = await coordinator.run(
       playlistId: 'playlist-1',
       onProgress: progress.add,
-      operation: (reporter) => coordinator.parse(
-        '''#EXTM3U
-#EXTINF:-1 group-title="News",Channel A
-https://stream.test/channel-a.m3u8
-''',
-        sourceUrl: 'https://provider.test/playlist.m3u',
-        reporter: reporter,
-      ),
+      operation: (reporter) async {
+        reporter.emit(
+          CatalogImportProgress(
+            phase: CatalogImportPhase.parsing,
+            startedAt: reporter.startedAt,
+            current: 1,
+            parsedItems: 1,
+          ),
+        );
+        return 1;
+      },
     );
 
-    expect(result, hasLength(1));
-    expect(result.single.title, 'Channel A');
+    expect(result, 1);
     expect(progress.map((value) => value.phase), [
       CatalogImportPhase.starting,
-      CatalogImportPhase.parsing,
       CatalogImportPhase.parsing,
       CatalogImportPhase.completed,
     ]);
     expect(progress.last.isTerminal, isTrue);
     expect(progress.last.jobId, isNotNull);
     expect(progress.last.playlistId, 'playlist-1');
-    expect(progress[2].parsedItems, 1);
+    expect(progress[1].parsedItems, 1);
   });
 
   test('shares one in-flight job with concurrent callers', () async {

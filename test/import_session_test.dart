@@ -4,43 +4,10 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
-import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
-import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/catalog_http_test_server.dart';
 import 'support/database_adapter.dart';
-
-class _PausedPlaylistSource implements PlaylistSource, StreamingPlaylistSource {
-  final firstChunkAccepted = Completer<void>();
-  final releaseNextChunk = Completer<void>();
-
-  @override
-  Future<String> fetch(
-    String url, {
-    void Function(int received, int? total)? onProgress,
-  }) => throw UnimplementedError();
-
-  @override
-  Stream<PlaylistSourceChunk> stream(
-    String url, {
-    void Function(int received, int? total)? onProgress,
-  }) async* {
-    yield const PlaylistSourceChunk(
-      text:
-          '#EXTM3U\n#EXTINF:-1 group-title="News",First\nhttps://stream.test/first.m3u8\n',
-      received: 80,
-      total: 160,
-    );
-    firstChunkAccepted.complete();
-    await releaseNextChunk.future;
-    yield const PlaylistSourceChunk(
-      text:
-          '#EXTINF:-1 group-title="News",Second\nhttps://stream.test/second.m3u8\n',
-      received: 160,
-      total: 160,
-    );
-  }
-}
 
 void main() {
   late SqfliteDatabaseAdapter adapter;
@@ -61,16 +28,19 @@ void main() {
 #EXTINF:-1 group-title="News",Alpha
 https://stream.test/alpha.m3u8
 ''';
+      final server = await CatalogHttpTestServer.start(
+        responses: {'/playlist.m3u': content},
+      );
+      addTearDown(server.close);
       final repository = SqliteCatalogRepository(
-        source: const FakePlaylistSource(content),
         databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
         autoStartSearchIndexWorker: false,
       );
       final progress = <CatalogImportProgress>[];
 
       final result = await repository.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
+        playlistId: 'v9-successful-import',
+        playlistUrl: server.url('/playlist.m3u'),
         policy: CatalogLoadPolicy.networkOnly,
         onProgress: progress.add,
       );
@@ -98,24 +68,26 @@ https://stream.test/alpha.m3u8
             .every((event) => event.importSessionId == session['id']),
         isTrue,
       );
-      expect(timings, contains('parsing'));
-      expect(timings, contains('importing'));
+      expect(timings, contains('total'));
     },
   );
 
   test(
     'failed import is recorded and does not report a successful refresh',
     () async {
+      final server = await CatalogHttpTestServer.start(
+        responses: {'/empty.m3u': '#EXTM3U\n'},
+      );
+      addTearDown(server.close);
       final repository = SqliteCatalogRepository(
-        source: const FakePlaylistSource('#EXTM3U\n'),
         databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
         autoStartSearchIndexWorker: false,
       );
 
       await expectLater(
         repository.load(
-          playlistUrl: 'https://provider.test/empty.m3u',
+          playlistId: 'v9-empty-import',
+          playlistUrl: server.url('/empty.m3u'),
           policy: CatalogLoadPolicy.networkOnly,
         ),
         throwsA(isA<Exception>()),
@@ -126,8 +98,14 @@ https://stream.test/alpha.m3u8
       expect(sessions.single['state'], 'failed');
       expect(sessions.single['finished_at'], isA<int>());
       expect(sessions.single['error'], isNotNull);
-      final playlists = await db.query('playlists');
-      expect(playlists.single['last_import_status'], 'failed');
+      expect(
+        await db.query(
+          'items',
+          where: 'playlist_id = ?',
+          whereArgs: ['v9-empty-import'],
+        ),
+        isEmpty,
+      );
     },
   );
 
@@ -140,11 +118,13 @@ https://stream.test/alpha.m3u8
         'playlist_id': 'abandoned-a',
         'started_at': startedAt,
         'state': 'running',
+        'tier': 'cold_import',
       });
       await db.insert('import_sessions', {
         'playlist_id': 'abandoned-b',
         'started_at': startedAt,
         'state': 'reconciling',
+        'tier': 'row_diff',
       });
       await db.insert('import_sessions', {
         'playlist_id': 'finished',
@@ -168,25 +148,33 @@ https://stream.test/alpha.m3u8
   );
 
   test('cancelled stream import is finalized as cancelled', () async {
-    final source = _PausedPlaylistSource();
+    final responseGate = Completer<void>();
+    final server = await CatalogHttpTestServer.start(
+      responses: {
+        '/cancelled.m3u': '''#EXTM3U
+#EXTINF:-1 group-title="News",First
+https://stream.test/first.m3u8
+''',
+      },
+      beforeResponse: responseGate.future,
+    );
+    addTearDown(server.close);
     final repository = SqliteCatalogRepository(
-      source: source,
       databaseAdapter: adapter,
-      secretStore: InMemoryPlaylistSecretStore(),
       autoStartSearchIndexWorker: false,
     );
     final progress = <CatalogImportProgress>[];
     final loading = repository.load(
-      playlistUrl: 'https://provider.test/cancelled.m3u',
+      playlistUrl: server.url('/cancelled.m3u'),
       playlistId: 'cancelled-playlist',
       policy: CatalogLoadPolicy.networkOnly,
       onProgress: progress.add,
     );
 
-    await source.firstChunkAccepted.future;
+    await server.firstRequest.future;
     await repository.cancelImport('cancelled-playlist');
-    source.releaseNextChunk.complete();
-    await expectLater(loading, throwsA(isA<AppIssueException>()));
+    responseGate.complete();
+    await expectLater(loading, throwsA(isA<Exception>()));
 
     final db = await adapter.database;
     final sessions = await db.query('import_sessions');

@@ -24,6 +24,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
              ImportSessionsV8Migration(),
              CatalogImportV9Migration(),
              CatalogSearchV10Migration(),
+             DropLegacyCatalogV11Migration(),
            ];
 
   final String fileName;

@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import '../../models/content_item.dart';
 import '../security/url_redaction.dart';
 import 'catalog_import_progress.dart';
-import 'm3u_parser.dart';
 
 export 'catalog_import_progress.dart';
 
@@ -161,43 +160,6 @@ class FakePlaylistSource implements PlaylistSource, StreamingPlaylistSource {
   }) async {
     onProgress?.call(content.length, content.length);
     return content;
-  }
-}
-
-class M3uCatalogRepository implements CatalogRepository {
-  const M3uCatalogRepository({PlaylistSource? source})
-    : source = source ?? const HttpPlaylistSource();
-
-  final PlaylistSource source;
-
-  @override
-  Future<CatalogLoadResult> load({
-    required String playlistUrl,
-    String? playlistId,
-    String? playlistName,
-    CatalogLoadPolicy policy = CatalogLoadPolicy.cacheFirst,
-    CatalogImportProgressCallback? onProgress,
-  }) async {
-    final startedAt = DateTime.now();
-    onProgress?.call(
-      CatalogImportProgress(
-        phase: CatalogImportPhase.downloading,
-        startedAt: startedAt,
-      ),
-    );
-    final text = await source.fetch(
-      playlistUrl,
-      onProgress: (received, total) => onProgress?.call(
-        CatalogImportProgress(
-          phase: CatalogImportPhase.downloading,
-          startedAt: startedAt,
-          current: received,
-          total: total,
-        ),
-      ),
-    );
-    final items = M3uParser().parse(text, sourceUrl: playlistUrl);
-    return CatalogLoadResult(playlistId: playlistId, itemCount: items.length);
   }
 }
 

@@ -1,10 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
+import 'package:iptv_flutter/services/catalog/catalog_hash.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
-import 'package:iptv_flutter/services/catalog/id_identity.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
-import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 import 'package:iptv_flutter/services/storage/storage_contracts.dart';
@@ -19,45 +18,6 @@ import 'support/catalog_http_test_server.dart';
 import 'support/database_adapter.dart';
 
 void main() {
-  test(
-    'a cold import and a refresh both reconcile via the set-based SQL path',
-    () async {
-      final adapter = createTestDatabaseAdapter(
-        fileName:
-            'iptv_test_set_based_${DateTime.now().microsecondsSinceEpoch}.sqlite',
-      );
-      addTearDown(adapter.close);
-      addTearDown(
-        () => SqliteCatalogRepository.onStagingReconcileFallback = null,
-      );
-
-      final fallbacks = <Object>[];
-      SqliteCatalogRepository.onStagingReconcileFallback = fallbacks.add;
-
-      final catalog = SqliteCatalogRepository(
-        source: const FakePlaylistSource('''#EXTM3U
-#EXTINF:-1 tvg-id="alpha" group-title="News",Alpha News
-https://stream.test/alpha.m3u8
-#EXTINF:-1 group-title="Series",Beta Show S01E02
-https://stream.test/beta-s01e02.m3u8
-'''),
-        databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
-        autoStartSearchIndexWorker: false,
-      );
-
-      await catalog.load(playlistUrl: 'https://provider.test/playlist.m3u');
-      await catalog.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
-        policy: CatalogLoadPolicy.networkOnly,
-      );
-
-      // The Dart-loop fallback is correct but orders of magnitude slower, so
-      // silently degrading to it is a performance regression, not a detail.
-      expect(fallbacks, isEmpty);
-    },
-  );
-
   test('contracts and migrations initialize schema v1 tables', () async {
     final adapter = createTestDatabaseAdapter(
       fileName:
@@ -74,7 +34,7 @@ https://stream.test/beta-s01e02.m3u8
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '10');
+    expect(rows.first['value'], '11');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(
@@ -96,8 +56,18 @@ https://stream.test/beta-s01e02.m3u8
       "SELECT name FROM sqlite_master WHERE type = 'table'",
     );
     final tableNames = tables.map((row) => row['name']).toSet();
-    expect(tableNames, contains('import_staging_items'));
-    expect(tableNames, contains('search_index_queue'));
+    expect(tableNames, isNot(contains('import_staging_items')));
+    expect(tableNames, isNot(contains('search_index_queue')));
+    expect(tableNames, isNot(contains('categories')));
+    expect(tableNames, isNot(contains('series')));
+    expect(tableNames, isNot(contains('seasons')));
+    expect(tableNames, isNot(contains('episodes')));
+    expect(tableNames, isNot(contains('media_items')));
+    expect(tableNames, isNot(contains('favorites')));
+    expect(tableNames, isNot(contains('playback_progress')));
+    expect(tableNames, isNot(contains('watch_history')));
+    expect(tableNames, isNot(contains('hidden_categories')));
+    expect(tableNames, isNot(contains('media_items_fts')));
     expect(tableNames, contains('import_sessions'));
     expect(tableNames, contains('groups'));
     expect(tableNames, contains('items'));
@@ -130,8 +100,6 @@ https://stream.test/beta-s01e02.m3u8
       "SELECT name FROM sqlite_master WHERE type = 'index'",
     );
     final indexNames = indexes.map((row) => row['name']).toSet();
-    expect(indexNames, contains('idx_media_playlist_group_sort'));
-    expect(indexNames, contains('idx_media_playlist_type_sort'));
     expect(indexNames, contains('idx_import_sessions_playlist_started'));
     expect(indexNames, contains('idx_items_group_ord'));
     expect(indexNames, contains('idx_items_group_sort'));
@@ -272,6 +240,79 @@ https://stream.test/beta-s01e02.m3u8
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'series_v8'",
     );
     expect(seriesTable, hasLength(1));
+
+    await db.insert('groups', {
+      'playlist_id': 'migration-v11',
+      'kind': 1,
+      'title': 'News',
+      'sort_title': 'news',
+      'ord': 0,
+    });
+    final groupId = (await db.query('groups')).single['id'];
+    await db.insert('items', {
+      'playlist_id': 'migration-v11',
+      'item_key': 501,
+      'content_hash': 502,
+      'ord': 0,
+      'kind': 1,
+      'group_id': groupId,
+      'title': 'Preserved channel',
+      'sort_title': 'preserved channel',
+      'stream_url': 'https://stream.test/preserved.m3u8',
+    });
+    await db.insert('favorites_v8', {
+      'profile_id': 'default',
+      'playlist_id': 'migration-v11',
+      'item_key': 501,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    migrations.add(const DropLegacyCatalogV11Migration());
+    await adapter.initialize();
+
+    expect(await _readUserVersion(db), 11);
+    final remaining = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    );
+    final remainingNames = remaining.map((row) => row['name']).toSet();
+    expect(
+      remainingNames,
+      containsAll([
+        'groups',
+        'items',
+        'series_v8',
+        'import_sessions',
+        'import_rows',
+        'import_seen',
+        'items_fts',
+        'items_fts_queue',
+        'favorites_v8',
+        'playback_progress_v8',
+        'watch_history_v8',
+        'hidden_groups_v8',
+      ]),
+    );
+    expect(
+      remainingNames,
+      isNot(
+        containsAll([
+          'categories',
+          'series',
+          'seasons',
+          'episodes',
+          'media_items',
+          'media_items_fts',
+          'favorites',
+          'playback_progress',
+          'watch_history',
+          'hidden_categories',
+          'import_staging_items',
+          'search_index_queue',
+        ]),
+      ),
+    );
+    expect((await db.query('items')).single['title'], 'Preserved channel');
+    expect(await db.query('favorites_v8'), hasLength(1));
   });
 
   test('settings repository persists app and playlist settings', () async {
@@ -419,6 +460,15 @@ https://stream.test/beta-s01e02.m3u8
   });
 
   test('saved playlist ID owns its imported catalog', () async {
+    final server = await CatalogHttpTestServer.start(
+      responses: {
+        '/second.m3u': '''#EXTM3U
+#EXTINF:-1 group-title="News",Second Channel
+https://stream.test/second.m3u8
+''',
+      },
+    );
+    addTearDown(server.close);
     final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_selected_playlist_${DateTime.now().microsecondsSinceEpoch}.sqlite',
@@ -429,25 +479,21 @@ https://stream.test/beta-s01e02.m3u8
       databaseAdapter: adapter,
       secretStore: store,
     );
-    final playlist = await settings.upsertPlaylist(
-      const PlaylistSourceConfig.url(
+    final savedPlaylist = await settings.upsertPlaylist(
+      PlaylistSourceConfig.url(
         name: 'Second playlist',
-        url: 'https://provider.test/second.m3u',
+        url: server.url('/second.m3u'),
       ),
     );
     final catalog = SqliteCatalogRepository(
-      source: const FakePlaylistSource('''#EXTM3U
-#EXTINF:-1 group-title="News",Second Channel
-https://stream.test/second.m3u8
-'''),
       databaseAdapter: adapter,
-      secretStore: store,
+      autoStartSearchIndexWorker: false,
     );
 
     final loaded = await catalog.load(
-      playlistUrl: playlist.resolvedUrl,
-      playlistId: playlist.playlistId,
-      playlistName: playlist.name,
+      playlistUrl: savedPlaylist.resolvedUrl,
+      playlistId: savedPlaylist.playlistId,
+      playlistName: savedPlaylist.name,
       policy: CatalogLoadPolicy.networkOnly,
     );
 
@@ -455,39 +501,54 @@ https://stream.test/second.m3u8
     final db = await adapter.database;
     final playlists = await db.query('playlists');
     expect(playlists, hasLength(1));
-    expect(playlists.single['id'], playlist.playlistId);
+    expect(playlists.single['id'], savedPlaylist.playlistId);
     expect(playlists.single['name'], 'Second playlist');
-    final media = await db.query('media_items');
-    expect(media.single['playlist_id'], playlist.playlistId);
+    final items = await db.query('items');
+    expect(items.single['playlist_id'], savedPlaylist.playlistId);
   });
 
   test('cache-only selection does not fetch an unimported playlist', () async {
+    final server = await CatalogHttpTestServer.start(
+      responses: {'/unimported.m3u': '#EXTM3U\n'},
+    );
+    addTearDown(server.close);
     final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_cache_only_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
     addTearDown(adapter.close);
-    final source = _SwitchingSource(first: '', second: '');
     final catalog = SqliteCatalogRepository(
-      source: source,
       databaseAdapter: adapter,
-      secretStore: InMemoryPlaylistSecretStore(),
+      autoStartSearchIndexWorker: false,
     );
 
     final result = await catalog.load(
-      playlistUrl: 'https://provider.test/unimported.m3u',
+      playlistUrl: server.url('/unimported.m3u'),
       playlistId: 'saved-playlist-id',
       playlistName: 'Unimported playlist',
       policy: CatalogLoadPolicy.cacheOnly,
     );
 
     expect(result.itemCount, 0);
-    expect(source.callCount, 0);
+    expect(server.requestCount, 0);
   });
 
   test(
     'refreshing and selecting a second playlist shows its cached catalog',
     () async {
+      final server = await CatalogHttpTestServer.start(
+        responses: {
+          '/first.m3u': '''#EXTM3U
+#EXTINF:-1 group-title="News",First Channel
+https://stream.test/first.m3u8
+''',
+          '/second.m3u': '''#EXTM3U
+#EXTINF:-1 group-title="Movies",Second Movie
+https://stream.test/second.mp4
+''',
+        },
+      );
+      addTearDown(server.close);
       final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_second_playlist_${DateTime.now().microsecondsSinceEpoch}.sqlite',
@@ -499,30 +560,20 @@ https://stream.test/second.m3u8
         secretStore: store,
       );
       final first = await settings.upsertPlaylist(
-        const PlaylistSourceConfig.url(
+        PlaylistSourceConfig.url(
           name: 'First playlist',
-          url: 'https://provider.test/first.m3u',
+          url: server.url('/first.m3u'),
         ),
       );
       final second = await settings.upsertPlaylist(
-        const PlaylistSourceConfig.url(
+        PlaylistSourceConfig.url(
           name: 'Second playlist',
-          url: 'https://provider.test/second.m3u',
+          url: server.url('/second.m3u'),
         ),
       );
       final catalog = SqliteCatalogRepository(
-        source: _UrlSource({
-          first.resolvedUrl: '''#EXTM3U
-#EXTINF:-1 group-title="News",First Channel
-https://stream.test/first.m3u8
-''',
-          second.resolvedUrl: '''#EXTM3U
-#EXTINF:-1 group-title="Movies",Second Movie
-https://stream.test/second.m3u8
-''',
-        }),
         databaseAdapter: adapter,
-        secretStore: store,
+        autoStartSearchIndexWorker: false,
       );
       final catalogView = CatalogViewState();
       final navigation = NavigationController();
@@ -580,6 +631,10 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/324255
 #EXTINF:-1 xui-id="{XUI_ID}" tvg-id="" tvg-name="90-talet FHD SE [NXT Play SE]" tvg-logo="https://github.com/9967pilo724share324/pilo896to9967share324/blob/main/Sport/Back/piciconportalfull.png?raw=true" group-title="NXT Play - Sweden",90-talet FHD SE [NXT Play SE]
 http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
 ''';
+      final server = await CatalogHttpTestServer.start(
+        responses: {'/sweden.m3u': playlistText},
+      );
+      addTearDown(server.close);
       final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_xui_refresh_${DateTime.now().microsecondsSinceEpoch}.sqlite',
@@ -591,9 +646,9 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
         secretStore: store,
       );
       final playlist = await settings.upsertPlaylist(
-        const PlaylistSourceConfig.url(
+        PlaylistSourceConfig.url(
           name: 'Sweden',
-          url: 'https://provider.test/sweden.m3u',
+          url: server.url('/sweden.m3u'),
         ),
       );
       final catalogView = CatalogViewState();
@@ -603,9 +658,8 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
       );
       final playlistsController = PlaylistsController(
         catalogRepository: SqliteCatalogRepository(
-          source: const FakePlaylistSource(playlistText),
           databaseAdapter: adapter,
-          secretStore: store,
+          autoStartSearchIndexWorker: false,
         ),
         settingsRepository: settings,
         catalogView: catalogView,
@@ -646,14 +700,18 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
   );
 
   test('import-to-db pipeline normalizes series episodes', () async {
-    const source = FakePlaylistSource('''#EXTM3U
+    const content = '''#EXTM3U
 #EXTINF:-1 group-title="TV (Nordicsubs) (Serie)",Pine Gap S01 E05
-https://stream.test/pine-gap-s01e05.m3u8
+https://provider.test/series/user/pass/pine-gap-s01e05.mkv
 #EXTINF:-1 group-title="TV (Nordicsubs) (Serie)",Pine Gap S01 E06
-https://stream.test/pine-gap-s01e06.m3u8
+https://provider.test/series/user/pass/pine-gap-s01e06.mkv
 #EXTINF:-1 group-title="Movies",The Last Signal
-https://stream.test/the-last-signal.m3u8
-''');
+https://stream.test/the-last-signal.mp4
+''';
+    final server = await CatalogHttpTestServer.start(
+      responses: {'/playlist.m3u': content},
+    );
+    addTearDown(server.close);
 
     final adapter = createTestDatabaseAdapter(
       fileName:
@@ -661,189 +719,127 @@ https://stream.test/the-last-signal.m3u8
     );
     addTearDown(adapter.close);
     final store = InMemoryPlaylistSecretStore();
-
-    final repo = SqliteCatalogRepository(
-      source: source,
+    final settings = SqliteSettingsRepository(
       databaseAdapter: adapter,
       secretStore: store,
     );
+    final playlist = await settings.upsertPlaylist(
+      PlaylistSourceConfig.url(
+        name: 'Fixture',
+        url: server.url('/playlist.m3u'),
+      ),
+    );
+    final repo = SqliteCatalogRepository(
+      databaseAdapter: adapter,
+      autoStartSearchIndexWorker: false,
+    );
 
     final loaded = await repo.load(
-      playlistUrl: 'https://provider.test/playlist.m3u',
+      playlistId: playlist.playlistId,
+      playlistUrl: playlist.resolvedUrl,
+      policy: CatalogLoadPolicy.networkOnly,
     );
 
     expect(loaded.itemCount, 3);
-
-    final db = await adapter.database;
-    final series = await db.query('series');
-    final seasons = await db.query('seasons');
-    final episodes = await db.query('episodes');
-    final playlists = await db.query('playlists');
-
-    expect(series, hasLength(1));
+    final series = await repo.querySeries(playlist.playlistId);
+    expect(series.total, 1);
+    expect(series.items.single.title, 'Pine Gap');
+    expect(series.items.single.seasonCount, 1);
+    expect(series.items.single.episodeCount, 2);
+    final seasons = await repo.seasons(series.items.single.id);
     expect(seasons, hasLength(1));
-    expect(episodes, hasLength(2));
-
-    final episodeMediaRows = await db.query(
-      'media_items',
-      where: 'content_type = ?',
-      whereArgs: ['episode'],
+    expect(seasons.single.seasonNumber, 1);
+    final episodes = await repo.episodes(seasons.single.id);
+    expect(episodes.items.map((item) => item.title), [
+      'Pine Gap S01 E05',
+      'Pine Gap S01 E06',
+    ]);
+    final movie = await repo.queryItems(
+      CatalogQuery(
+        playlistId: playlist.playlistId,
+        kinds: const [CatalogItemKind.movie],
+      ),
     );
-    expect(episodeMediaRows, hasLength(2));
-
-    final secureKey = playlists.first['secure_storage_key'] as String;
-    expect(secureKey, startsWith('playlist:'));
+    expect(movie.items.single.title, 'The Last Signal');
     expect(
-      await store.read(key: secureKey),
-      'https://provider.test/playlist.m3u',
+      (await settings.getPlaylist(playlist.playlistId))?.sourceConfig?.url,
+      server.url('/playlist.m3u'),
     );
-    expect(playlists.first['last_import_status'], 'success');
-    expect(playlists.first['last_import_staged_rows'], 3);
-    expect(playlists.first['last_import_staged_duration_ms'], isA<int>());
   });
 
-  test('isolates secure storage and media IDs between playlists', () async {
+  test('isolates catalog identity and favorites between playlists', () async {
     const content = '''#EXTM3U
 #EXTINF:-1 group-title="News",Shared Channel
 https://stream.test/shared.m3u8
 ''';
+    final server = await CatalogHttpTestServer.start(
+      responses: {'/first.m3u': content, '/second.m3u': content},
+    );
+    addTearDown(server.close);
     final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_multiple_playlists_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
     addTearDown(adapter.close);
     final store = InMemoryPlaylistSecretStore();
-    final repo = SqliteCatalogRepository(
-      source: const FakePlaylistSource(content),
+    final settings = SqliteSettingsRepository(
       databaseAdapter: adapter,
       secretStore: store,
     );
+    final firstPlaylist = await settings.upsertPlaylist(
+      PlaylistSourceConfig.url(name: 'First', url: server.url('/first.m3u')),
+    );
+    final secondPlaylist = await settings.upsertPlaylist(
+      PlaylistSourceConfig.url(name: 'Second', url: server.url('/second.m3u')),
+    );
+    final repo = SqliteCatalogRepository(
+      databaseAdapter: adapter,
+      autoStartSearchIndexWorker: false,
+    );
 
     final first = await repo.load(
-      playlistUrl: 'https://provider-a.test/playlist.m3u',
+      playlistId: firstPlaylist.playlistId,
+      playlistUrl: firstPlaylist.resolvedUrl,
+      policy: CatalogLoadPolicy.networkOnly,
     );
     final second = await repo.load(
-      playlistUrl: 'https://provider-b.test/playlist.m3u',
+      playlistId: secondPlaylist.playlistId,
+      playlistUrl: secondPlaylist.resolvedUrl,
+      policy: CatalogLoadPolicy.networkOnly,
     );
 
     expect(first.itemCount, 1);
     expect(second.itemCount, 1);
     final db = await adapter.database;
-    final playlists = await db.query('playlists', orderBy: 'id ASC');
-    final media = await db.query('media_items', orderBy: 'id ASC');
-    expect(playlists, hasLength(2));
-    final firstKey = playlists[0]['secure_storage_key'] as String;
-    final secondKey = playlists[1]['secure_storage_key'] as String;
-    expect(firstKey, startsWith('playlist:'));
-    expect(secondKey, startsWith('playlist:'));
+    final items = await db.query('items', orderBy: 'id ASC');
+    expect(items, hasLength(2));
+    expect(items.map((item) => item['playlist_id']).toSet(), {
+      firstPlaylist.playlistId,
+      secondPlaylist.playlistId,
+    });
+    expect(items[0]['id'], isNot(items[1]['id']));
+
+    final itemKey = hash64('https://stream.test/shared.m3u8');
+    await repo.setV9Favorite(
+      playlistId: firstPlaylist.playlistId,
+      itemKey: itemKey,
+      favorite: true,
+    );
+    expect(
+      (await repo.v9FavoriteItems(playlistId: firstPlaylist.playlistId)),
+      hasLength(1),
+    );
+    expect(
+      await repo.v9FavoriteItems(playlistId: secondPlaylist.playlistId),
+      isEmpty,
+    );
+
+    final firstKey = 'playlist:${firstPlaylist.playlistId}';
+    final secondKey = 'playlist:${secondPlaylist.playlistId}';
     expect(firstKey, isNot(secondKey));
     expect(await store.read(key: firstKey), isNotNull);
     expect(await store.read(key: secondKey), isNotNull);
-    expect(media, hasLength(2));
-    expect(media[0]['playlist_id'], isNot(media[1]['playlist_id']));
   });
-
-  test(
-    'preserves legacy cached media IDs when refreshed with strong IDs',
-    () async {
-      final adapter = createTestDatabaseAdapter(
-        fileName:
-            'iptv_test_legacy_identity_${DateTime.now().microsecondsSinceEpoch}.sqlite',
-      );
-      addTearDown(adapter.close);
-
-      final playlistUrl = 'https://provider.test/playlist.m3u';
-      final playlistId = legacyStableId('id', 'playlist|$playlistUrl');
-      final nowIso = DateTime.now().toUtc().toIso8601String();
-      final db = await adapter.database;
-
-      await db.insert('playlists', {
-        'id': playlistId,
-        'name': 'Primary Playlist',
-        'secure_storage_key': 'playlist:$playlistId',
-        'source_url_redacted': 'https://provider.test/playlist.m3u',
-        'enabled': 1,
-        'created_at': nowIso,
-        'updated_at': nowIso,
-        'last_import_status': 'success',
-      });
-
-      final legacyItemId = legacyStableId(
-        'item',
-        '$playlistUrl|https://stream.test/channel-a.m3u8|Channel A|0',
-      );
-      final categoryId = legacyStableId('id', 'category|$playlistId|News');
-
-      await db.insert('categories', {
-        'id': categoryId,
-        'playlist_id': playlistId,
-        'provider_group_title': 'News',
-        'normalized_name': 'news',
-        'content_kind': 'unknown',
-        'country_code': null,
-        'language_code': null,
-        'created_at': nowIso,
-        'updated_at': nowIso,
-      });
-
-      await db.insert('media_items', {
-        'id': legacyItemId,
-        'playlist_id': playlistId,
-        'content_type': 'live',
-        'title': 'Channel A',
-        'sort_title': 'channel a',
-        'description': '',
-        'artwork_url': null,
-        'logo_url': null,
-        'stream_url': 'https://stream.test/channel-a.m3u8',
-        'category_id': categoryId,
-        'group_title': 'News',
-        'tvg_id': null,
-        'tvg_name': null,
-        'tvg_chno': null,
-        'source_index': 0,
-        'provider_item_hash': null,
-        'created_at': nowIso,
-        'updated_at': nowIso,
-      });
-
-      await db.insert('profiles', {
-        'id': 'profile-1',
-        'name': 'Default',
-        'is_default': 1,
-        'created_at': nowIso,
-        'updated_at': nowIso,
-      });
-      await db.insert('favorites', {
-        'profile_id': 'profile-1',
-        'media_item_id': legacyItemId,
-        'created_at': nowIso,
-      });
-
-      final repo = SqliteCatalogRepository(
-        source: const FakePlaylistSource('''#EXTM3U
-#EXTINF:-1 group-title="News",Channel A
-https://stream.test/channel-a.m3u8
-'''),
-        databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
-      );
-
-      final loaded = await repo.load(
-        playlistUrl: playlistUrl,
-        policy: CatalogLoadPolicy.networkOnly,
-      );
-      expect(loaded.itemCount, 1);
-
-      final refreshedRows = await db.query('media_items');
-      expect(refreshedRows, hasLength(1));
-      expect(refreshedRows.single['id'], legacyItemId);
-
-      final favorites = await db.query('favorites');
-      expect(favorites, hasLength(1));
-      expect(favorites.single['media_item_id'], legacyItemId);
-    },
-  );
 
   test('settings values drive home section visibility in controller', () async {
     final controller = AppPreferencesController(
@@ -863,53 +859,81 @@ https://stream.test/channel-a.m3u8
     expect(controller.showHomeSeries, isFalse);
   });
 
-  test('staging import keeps existing content when refresh fails', () async {
-    final source = _SwitchingSource(
-      first: '''#EXTM3U
-#EXTINF:-1 group-title="TV (Nordicsubs) (Serie)",Pine Gap S01 E05
-https://stream.test/pine-gap-s01e05.m3u8
+  test('v9 import keeps existing content when refresh fails', () async {
+    final server = await CatalogHttpTestServer.start(
+      responses: {
+        '/playlist.m3u': '''#EXTM3U
+#EXTINF:-1 group-title="News",Channel A
+https://stream.test/channel-a.m3u8
 ''',
-      second: '',
+      },
     );
+    addTearDown(server.close);
 
     final adapter = createTestDatabaseAdapter(
       fileName:
           'iptv_test_staging_${DateTime.now().microsecondsSinceEpoch}.sqlite',
     );
     addTearDown(adapter.close);
+    final store = InMemoryPlaylistSecretStore();
+    final settings = SqliteSettingsRepository(
+      databaseAdapter: adapter,
+      secretStore: store,
+    );
+    final playlist = await settings.upsertPlaylist(
+      PlaylistSourceConfig.url(
+        name: 'Fixture',
+        url: server.url('/playlist.m3u'),
+      ),
+    );
 
     final repo = SqliteCatalogRepository(
-      source: source,
       databaseAdapter: adapter,
-      secretStore: InMemoryPlaylistSecretStore(),
-      useStagingImport: true,
+      autoStartSearchIndexWorker: false,
     );
 
-    await repo.load(playlistUrl: 'https://provider.test/playlist.m3u');
+    await repo.load(
+      playlistId: playlist.playlistId,
+      playlistUrl: playlist.resolvedUrl,
+      policy: CatalogLoadPolicy.networkOnly,
+    );
+    expect(
+      (await repo.queryItems(
+        CatalogQuery(
+          playlistId: playlist.playlistId,
+          kinds: const [CatalogItemKind.live],
+        ),
+      )).items.single.title,
+      'Channel A',
+    );
 
-    final db = await adapter.database;
-    final beforeRows = await db.query('media_items');
-    expect(beforeRows, hasLength(1));
-
+    server.responses['/playlist.m3u'] = '#EXTM3U\n';
     await expectLater(
-      () => repo.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
+      repo.load(
+        playlistId: playlist.playlistId,
+        playlistUrl: playlist.resolvedUrl,
         policy: CatalogLoadPolicy.networkOnly,
       ),
-      throwsA(isA<AppIssueException>()),
+      throwsA(isA<Exception>()),
     );
+    expect(server.requestCount, 2);
 
-    final afterRows = await db.query('media_items');
-    expect(afterRows, hasLength(1));
     expect(
-      afterRows.first['stream_url'],
-      'https://stream.test/pine-gap-s01e05.m3u8',
+      (await repo.queryItems(
+        CatalogQuery(
+          playlistId: playlist.playlistId,
+          kinds: const [CatalogItemKind.live],
+        ),
+      )).items.single.title,
+      'Channel A',
     );
 
     final loaded = await repo.load(
-      playlistUrl: 'https://provider.test/playlist.m3u',
+      playlistId: playlist.playlistId,
+      playlistUrl: playlist.resolvedUrl,
     );
     expect(loaded.itemCount, 1);
+    expect(server.requestCount, 2);
   });
 
   test('cache-first skips network refresh while cache is still fresh', () async {
@@ -941,9 +965,7 @@ https://stream.test/channel-a.m3u8
 
     final repo = SqliteCatalogRepository(
       databaseAdapter: adapter,
-      secretStore: store,
       autoStartSearchIndexWorker: false,
-      useCatalogImporterV9: true,
     );
 
     final firstLoad = await repo.load(
@@ -1022,131 +1044,131 @@ https://stream.test/channel-a.m3u8
   test(
     'refreshing a playlist preserves favorites/history/progress for items that remain',
     () async {
-      final source = _SwitchingSource(
-        first: '''#EXTM3U
+      final server = await CatalogHttpTestServer.start(
+        responses: {
+          '/playlist.m3u': '''#EXTM3U
 #EXTINF:-1 group-title="News",Channel A
 https://stream.test/channel-a.m3u8
 #EXTINF:-1 group-title="Sports",Channel B
 https://stream.test/channel-b.m3u8
 ''',
-        second: '''#EXTM3U
-#EXTINF:-1 group-title="News",Channel A
-https://stream.test/channel-a.m3u8
-#EXTINF:-1 group-title="News",Channel C
-https://stream.test/channel-c.m3u8
-''',
+        },
       );
-
+      addTearDown(server.close);
       final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_refresh_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
       addTearDown(adapter.close);
-
-      final repo = SqliteCatalogRepository(
-        source: source,
+      final store = InMemoryPlaylistSecretStore();
+      final settings = SqliteSettingsRepository(
         databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
+        secretStore: store,
+      );
+      final playlist = await settings.upsertPlaylist(
+        PlaylistSourceConfig.url(
+          name: 'Refresh fixture',
+          url: server.url('/playlist.m3u'),
+        ),
+      );
+      final repo = SqliteCatalogRepository(
+        databaseAdapter: adapter,
+        autoStartSearchIndexWorker: false,
       );
 
       final firstLoad = await repo.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
+        playlistId: playlist.playlistId,
+        playlistUrl: playlist.resolvedUrl,
+        policy: CatalogLoadPolicy.networkOnly,
       );
       expect(firstLoad.itemCount, 2);
+      final initialItems = await repo.queryItems(
+        CatalogQuery(playlistId: playlist.playlistId),
+      );
+      final channelA = initialItems.items.firstWhere(
+        (item) => item.title == 'Channel A',
+      );
+      final channelAKey = hash64('https://stream.test/channel-a.m3u8');
+      await repo.setV9Favorite(
+        playlistId: playlist.playlistId,
+        itemKey: channelAKey,
+        favorite: true,
+      );
+      await repo.saveV9PlaybackProgress(
+        playlistId: playlist.playlistId,
+        itemKey: channelAKey,
+        positionMs: 1234,
+        durationMs: 5000,
+      );
+      await repo.recordV9WatchHistory(
+        playlistId: playlist.playlistId,
+        itemKey: channelAKey,
+        completed: false,
+        positionMs: 1234,
+        durationMs: 5000,
+      );
+      await settings.setGroupHidden(
+        playlistId: playlist.playlistId,
+        kind: CatalogGroupKind.live,
+        groupTitle: 'News',
+        hidden: true,
+      );
 
-      final db = await adapter.database;
-      final categories = await db.query('categories');
-      final newsCategoryId =
-          categories.firstWhere(
-                (row) => row['provider_group_title'] == 'News',
-              )['id']
-              as String;
-      final sportsCategoryId =
-          categories.firstWhere(
-                (row) => row['provider_group_title'] == 'Sports',
-              )['id']
-              as String;
-      final firstMediaRows = await db.query('media_items');
-      final channelAId =
-          firstMediaRows.firstWhere((row) => row['title'] == 'Channel A')['id']
-              as String;
-      final channelBId =
-          firstMediaRows.firstWhere((row) => row['title'] == 'Channel B')['id']
-              as String;
-      final playlistId = (await db.query('playlists')).first['id'] as String;
-      final nowIso = DateTime.now().toUtc().toIso8601String();
-
-      await db.insert('profiles', {
-        'id': 'profile-1',
-        'name': 'Default',
-        'is_default': 1,
-        'created_at': nowIso,
-        'updated_at': nowIso,
-      });
-      await db.insert('favorites', {
-        'profile_id': 'profile-1',
-        'media_item_id': channelAId,
-        'created_at': nowIso,
-      });
-      await db.insert('playback_progress', {
-        'profile_id': 'profile-1',
-        'media_item_id': channelAId,
-        'position_ms': 1234,
-        'duration_ms': 5000,
-        'updated_at': nowIso,
-      });
-      await db.insert('watch_history', {
-        'id': 'history-1',
-        'profile_id': 'profile-1',
-        'media_item_id': channelBId,
-        'watched_at': nowIso,
-        'completed': 0,
-        'created_at': nowIso,
-      });
-      await db.insert('hidden_categories', {
-        'playlist_id': playlistId,
-        'category_id': newsCategoryId,
-        'profile_id': null,
-        'created_at': nowIso,
-      });
+      server.responses['/playlist.m3u'] = '''#EXTM3U
+#EXTINF:-1 group-title="News",Channel A
+https://stream.test/channel-a.m3u8
+#EXTINF:-1 group-title="News",Channel C
+https://stream.test/channel-c.m3u8
+''';
 
       final secondLoad = await repo.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
+        playlistId: playlist.playlistId,
+        playlistUrl: playlist.resolvedUrl,
         policy: CatalogLoadPolicy.networkOnly,
       );
       expect(secondLoad.itemCount, 2);
-      final refreshedTitles = (await db.query(
-        'media_items',
-      )).map((row) => row['title']).toList();
-      expect(refreshedTitles, containsAll(['Channel A', 'Channel C']));
-
-      // Channel A still exists, so its media_item id must be unchanged and
-      // its favorite/progress must survive the refresh.
-      final favorites = await db.query('favorites');
-      expect(favorites, hasLength(1));
-      expect(favorites.first['media_item_id'], channelAId);
-
-      final progress = await db.query('playback_progress');
-      expect(progress, hasLength(1));
-      expect(progress.first['media_item_id'], channelAId);
-      expect(progress.first['position_ms'], 1234);
-
-      // Channel B was removed from the playlist, so its history row is
-      // correctly gone (the item itself no longer exists).
-      final history = await db.query('watch_history');
-      expect(history, isEmpty);
-
-      // The "News" category still exists (Channel A + C), so the hidden
-      // category preference should survive. "Sports" is gone since no item
-      // references it anymore.
-      final hidden = await db.query('hidden_categories');
-      expect(hidden, hasLength(1));
-      expect(hidden.first['category_id'], newsCategoryId);
-
-      final remainingCategories = await db.query('categories');
       expect(
-        remainingCategories.map((row) => row['id']),
-        isNot(contains(sportsCategoryId)),
+        await repo.queryGroups(
+          playlist.playlistId,
+          kind: CatalogGroupKind.live,
+        ),
+        isEmpty,
+      );
+      await settings.setGroupHidden(
+        playlistId: playlist.playlistId,
+        kind: CatalogGroupKind.live,
+        groupTitle: 'News',
+        hidden: false,
+      );
+      final refreshedItems = await repo.queryItems(
+        CatalogQuery(playlistId: playlist.playlistId),
+      );
+      final refreshedTitles = refreshedItems.items
+          .map((item) => item.title)
+          .toList();
+      expect(refreshedTitles, containsAll(['Channel A', 'Channel C']));
+      expect(
+        refreshedItems.items.firstWhere((item) => item.title == 'Channel A').id,
+        channelA.id,
+      );
+
+      final favorites = await repo.v9FavoriteItems(
+        playlistId: playlist.playlistId,
+      );
+      expect(favorites, hasLength(1));
+      expect(favorites.single.title, 'Channel A');
+      expect(
+        (await repo.v9PlaybackProgress(
+          playlistId: playlist.playlistId,
+          itemKey: channelAKey,
+        ))?.positionMs,
+        1234,
+      );
+      expect(
+        (await repo.v9RecentlyWatchedItems(
+          playlistId: playlist.playlistId,
+        )).single.title,
+        'Channel A',
       );
     },
   );
@@ -1154,154 +1176,100 @@ https://stream.test/channel-c.m3u8
   test(
     'a zero-numbered episode label imports without creating an episode row',
     () async {
-      // Providers sometimes label a title SxxE00. The item must remain in
-      // the catalog without being treated as an invalid database episode.
-      final source = _SwitchingSource(
-        first: '''#EXTM3U
+      const firstContent = '''#EXTM3U
 #EXTINF:-1 group-title="News",Channel A
 https://stream.test/channel-a.m3u8
-''',
-        second: '''#EXTM3U
+  ''';
+      const refreshedContent = '''#EXTM3U
 #EXTINF:-1 group-title="News",Channel A
 https://stream.test/channel-a.m3u8
 #EXTINF:-1 group-title="TV",Broken Show S01E00
 https://stream.test/broken-show.m3u8
-''',
+  ''';
+      final server = await CatalogHttpTestServer.start(
+        responses: {'/playlist.m3u': firstContent},
       );
+      addTearDown(server.close);
 
       final adapter = createTestDatabaseAdapter(
         fileName:
             'iptv_test_failed_refresh_${DateTime.now().microsecondsSinceEpoch}.sqlite',
       );
       addTearDown(adapter.close);
-
-      final repo = SqliteCatalogRepository(
-        source: source,
+      final store = InMemoryPlaylistSecretStore();
+      final settings = SqliteSettingsRepository(
         databaseAdapter: adapter,
-        secretStore: InMemoryPlaylistSecretStore(),
+        secretStore: store,
+      );
+      final playlist = await settings.upsertPlaylist(
+        PlaylistSourceConfig.url(
+          name: 'Episode fixture',
+          url: server.url('/playlist.m3u'),
+        ),
+      );
+      final repo = SqliteCatalogRepository(
+        databaseAdapter: adapter,
+        autoStartSearchIndexWorker: false,
       );
 
       final firstLoad = await repo.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
+        playlistId: playlist.playlistId,
+        playlistUrl: playlist.resolvedUrl,
+        policy: CatalogLoadPolicy.networkOnly,
       );
       expect(firstLoad.itemCount, 1);
+      final channelAKey = hash64('https://stream.test/channel-a.m3u8');
+      final channelA = (await repo.queryItems(
+        CatalogQuery(playlistId: playlist.playlistId),
+      )).items.single;
+      await repo.setV9Favorite(
+        playlistId: playlist.playlistId,
+        itemKey: channelAKey,
+        favorite: true,
+      );
+      await repo.saveV9PlaybackProgress(
+        playlistId: playlist.playlistId,
+        itemKey: channelAKey,
+        positionMs: 4321,
+        durationMs: 9000,
+      );
 
-      final db = await adapter.database;
-      final channelAId = (await db.query('media_items')).single['id'] as String;
-      final nowIso = DateTime.now().toUtc().toIso8601String();
-
-      await db.insert('profiles', {
-        'id': 'profile-1',
-        'name': 'Default',
-        'is_default': 1,
-        'created_at': nowIso,
-        'updated_at': nowIso,
-      });
-      await db.insert('favorites', {
-        'profile_id': 'profile-1',
-        'media_item_id': channelAId,
-        'created_at': nowIso,
-      });
-      await db.insert('playback_progress', {
-        'profile_id': 'profile-1',
-        'media_item_id': channelAId,
-        'position_ms': 4321,
-        'duration_ms': 9000,
-        'updated_at': nowIso,
-      });
-
+      server.responses['/playlist.m3u'] = refreshedContent;
       final refreshed = await repo.load(
-        playlistUrl: 'https://provider.test/playlist.m3u',
+        playlistId: playlist.playlistId,
+        playlistUrl: playlist.resolvedUrl,
         policy: CatalogLoadPolicy.networkOnly,
       );
       expect(refreshed.itemCount, 2);
 
-      // The original item keeps its stable identity and user data after the
-      // successful refresh.
-      final mediaRows = await db.query('media_items');
-      expect(mediaRows, hasLength(2));
+      final mediaRows = await repo.queryItems(
+        CatalogQuery(playlistId: playlist.playlistId),
+      );
+      expect(mediaRows.items, hasLength(2));
       expect(
-        mediaRows.firstWhere((row) => row['title'] == 'Channel A')['id'],
-        channelAId,
+        mediaRows.items.firstWhere((item) => item.title == 'Channel A').id,
+        channelA.id,
       );
+      expect(
+        mediaRows.items.any((item) => item.title == 'Broken Show S01E00'),
+        isTrue,
+      );
+      expect((await repo.querySeries(playlist.playlistId)).total, 0);
 
-      final favorites = await db.query('favorites');
+      final favorites = await repo.v9FavoriteItems(
+        playlistId: playlist.playlistId,
+      );
       expect(favorites, hasLength(1));
-      expect(favorites.first['media_item_id'], channelAId);
-
-      final progress = await db.query('playback_progress');
-      expect(progress, hasLength(1));
-      expect(progress.first['position_ms'], 4321);
-
-      final playlists = await db.query('playlists');
-      expect(playlists, hasLength(1));
-      expect(playlists.first['last_import_status'], 'success');
-      expect(playlists.first['last_import_error'], isNull);
-
-      final brokenRows = await db.query(
-        'media_items',
-        where: 'title = ?',
-        whereArgs: ['Broken Show S01E00'],
+      expect(favorites.single.title, 'Channel A');
+      expect(
+        (await repo.v9PlaybackProgress(
+          playlistId: playlist.playlistId,
+          itemKey: channelAKey,
+        ))?.positionMs,
+        4321,
       );
-      expect(brokenRows, hasLength(1));
-      expect((await db.query('episodes')), isEmpty);
     },
   );
-
-  test('a database-rejected item does not abort the remaining import', () async {
-    final source = _SwitchingSource(
-      first: '''#EXTM3U
-#EXTINF:-1 group-title="News",Cached Channel
-https://stream.test/cached.m3u8
-''',
-      second: '''#EXTM3U
-#EXTINF:-1 group-title="News",Good Channel
-https://stream.test/good.m3u8
-#EXTINF:-1 group-title="News",Rejected Channel
-https://stream.test/rejected.m3u8
-''',
-    );
-    final adapter = createTestDatabaseAdapter(
-      fileName:
-          'iptv_test_partial_import_${DateTime.now().microsecondsSinceEpoch}.sqlite',
-    );
-    addTearDown(adapter.close);
-    final repo = SqliteCatalogRepository(
-      source: source,
-      databaseAdapter: adapter,
-      secretStore: InMemoryPlaylistSecretStore(),
-    );
-    const playlistUrl = 'https://provider.test/playlist.m3u';
-
-    await repo.load(playlistUrl: playlistUrl);
-    final db = await adapter.database;
-    await db.execute('''
-CREATE TRIGGER reject_playlist_item
-BEFORE INSERT ON media_items
-WHEN NEW.title = 'Rejected Channel'
-BEGIN
-  SELECT RAISE(ABORT, 'Rejected test item');
-END
-''');
-
-    final refreshed = await repo.load(
-      playlistUrl: playlistUrl,
-      policy: CatalogLoadPolicy.networkOnly,
-    );
-
-    expect(refreshed.itemCount, 1);
-    final mediaRows = await db.query('media_items', orderBy: 'title ASC');
-    expect(mediaRows.map((row) => row['title']), [
-      'Cached Channel',
-      'Good Channel',
-    ]);
-    final playlist = (await db.query('playlists')).single;
-    expect(playlist['last_import_status'], 'success');
-    expect(
-      playlist['last_import_error'],
-      contains('1 invalid entries skipped'),
-    );
-  });
 }
 
 class _FakeSettingsRepository implements SettingsRepository {
@@ -1373,45 +1341,6 @@ class _FakeSettingsRepository implements SettingsRepository {
   Future<void> upsertPlaylistRefreshSettings(
     PlaylistRefreshSettings settings,
   ) async {}
-}
-
-class _SwitchingSource implements PlaylistSource {
-  _SwitchingSource({required this.first, required this.second});
-
-  final String first;
-  final String second;
-  int _count = 0;
-
-  int get callCount => _count;
-
-  @override
-  Future<String> fetch(
-    String url, {
-    void Function(int received, int? total)? onProgress,
-  }) async {
-    _count += 1;
-    if (_count == 1) return first;
-    if (second.isEmpty) {
-      throw StateError('Simulated refresh failure');
-    }
-    return second;
-  }
-}
-
-class _UrlSource implements PlaylistSource {
-  const _UrlSource(this._contentByUrl);
-
-  final Map<String, String> _contentByUrl;
-
-  @override
-  Future<String> fetch(
-    String url, {
-    void Function(int received, int? total)? onProgress,
-  }) async {
-    final content = _contentByUrl[url];
-    if (content == null) throw StateError('No fixture for $url');
-    return content;
-  }
 }
 
 Future<int> _readUserVersion(DatabaseExecutor db) async {

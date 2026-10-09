@@ -78,9 +78,8 @@ String? buildFtsPrefixQuery(String term) {
   return tokens.map((token) => '"$token"*').join(' ');
 }
 
-/// List-backed implementation for fixtures, tests and the non-caching
-/// [M3uCatalogRepository]. Series structure is derived once up front rather
-/// than on every query.
+/// List-backed implementation for fixtures and tests. Series structure is
+/// derived once up front rather than on every query.
 class InMemoryCatalogQueryService implements CatalogQueryService {
   InMemoryCatalogQueryService(this.playlistId, List<ContentItem> items) {
     _index(items);
