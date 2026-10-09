@@ -4,6 +4,7 @@ import '../../app/navigation/app_route.dart';
 import '../../features/catalog/widgets/group_sidebar.dart';
 import '../../services/catalog/catalog_query.dart';
 import '../../state/catalog_view_state.dart';
+import '../../ui/catalog_item_kind_presentation.dart';
 import '../../ui/theme/app_tokens.dart';
 import '../../ui/widgets/app_scope.dart';
 import '../../ui/widgets/app_shell_scaffold.dart';
@@ -88,9 +89,7 @@ class _ContentGrid extends StatelessWidget {
               autofocus: autofocus,
               title: item.title,
               subtitle: item.group,
-              icon: item.kind == CatalogItemKind.live
-                  ? Icons.live_tv
-                  : Icons.movie,
+              icon: item.kind.icon,
               imageUrl: item.artworkUrl ?? item.logoUrl,
               onActivate: () => controller.openDetailsById(item.id),
             ),

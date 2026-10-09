@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../services/catalog/catalog_import_progress.dart';
+import '../../../ui/formatting.dart';
 import '../../../ui/theme/app_tokens.dart';
 
 class ImportProgressIndicator extends StatefulWidget {
@@ -47,8 +48,8 @@ class _ImportProgressIndicatorState extends State<ImportProgressIndicator> {
     };
     final detail = switch (progress.phase) {
       CatalogImportPhase.downloading when progress.total != null =>
-        '${_formatBytes(progress.current ?? 0)} / ${_formatBytes(progress.total!)}',
-      CatalogImportPhase.downloading => _formatBytes(progress.current ?? 0),
+        '${formatBytes(progress.current ?? 0)} / ${formatBytes(progress.total!)}',
+      CatalogImportPhase.downloading => formatBytes(progress.current ?? 0),
       CatalogImportPhase.parsing =>
         '${progress.current ?? 0} / ${progress.total ?? '?'} items',
       CatalogImportPhase.importing =>
@@ -56,7 +57,7 @@ class _ImportProgressIndicatorState extends State<ImportProgressIndicator> {
       CatalogImportPhase.indexing => '${progress.indexedItems} indexed',
       _ => progress.message ?? '',
     };
-    final elapsed = _formatElapsed(progress.elapsed);
+    final elapsed = formatElapsed(progress.elapsed);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -74,19 +75,5 @@ class _ImportProgressIndicatorState extends State<ImportProgressIndicator> {
         ),
       ],
     );
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-
-  String _formatElapsed(Duration elapsed) {
-    final totalSeconds = elapsed.inSeconds;
-    final minutes = totalSeconds ~/ 60;
-    final seconds = totalSeconds % 60;
-    if (minutes == 0) return '${seconds}s';
-    return '${minutes}m ${seconds}s';
   }
 }

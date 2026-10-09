@@ -63,7 +63,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | DONE (2026-10-09): Implemented approved compact bottom navigation, medium/expanded rails, short-height fallback, and responsive insets; resize tests preserve typed route and catalog page. |
 | WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | DONE (2026-10-09): Relocated screens/widgets, split Settings and catalog group sidebar, extracted pure playlist validation, and updated architecture paths; full suite passes 238 tests. |
 | WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | DONE (2026-10-09): Shared paging triggers, underfilled-viewport loading, retryable errors, and Search polling shutdown are covered; full suite passes 244 tests. Analyzer retains only the existing webOS info. |
-| WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | TODO |
+| WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | DONE (2026-10-09): Consolidated date/elapsed/byte/duration formatting and kind icon/label presentation; full suite passes 251 tests. Analyzer retains only the existing webOS info. |
 | WP-6.1 | Port legacy-path tests to the v9 catalog | 6 Data layer | D-2 | L | TODO |
 | WP-6.2 | Delete the legacy (v1–v7) catalog code path | 6 Data layer | WP-6.1 | L | TODO |
 | WP-6.3 | Split `SqliteCatalogRepository` by responsibility | 6 Data layer | WP-6.2 | L | TODO |
@@ -768,6 +768,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Touches:** new `lib/ui/formatting.dart`, `lib/ui/catalog_item_kind_presentation.dart`; settings, player, search, home, catalog screens.
 - **Steps:** move `_formatDuration`, `_formatBytes`, `_formatElapsed`, `_formatDate` into `formatting.dart` with unit tests; add `extension CatalogItemKindPresentation on CatalogItemKind { IconData get icon; String get label; }` and replace the three duplicated switches/ternaries.
 - **Acceptance:** no private formatter duplicates remain.
+- **Implementation notes (2026-10-09):** Added shared `formatDuration`, `formatBytes`, `formatElapsed`, and `formatDate` functions, preserving existing output. Added `CatalogItemKindPresentation.icon` and `.label`, replacing Search's switches and Home/Catalog's kind icon ternaries. Added focused boundary/mapping unit tests. Full suite: 251 passing; analyzer retains only the existing informational `unawaited_futures` notice in `webos/flutter/main.dart`.
 
 ### Batch 6 — Data layer: retire the legacy path, then split
 

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../app/app_shortcuts.dart';
 import '../../models/content_item.dart';
 import '../../services/playback/playback_contract.dart';
+import '../../ui/formatting.dart';
 import '../../ui/widgets/app_scope.dart';
 import 'player_controller.dart';
 
@@ -360,10 +361,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _buildDiagnostics(BuildContext context, PlaybackState playback) {
-    final position = _formatDuration(playback.position);
+    final position = formatDuration(playback.position);
     final duration = playback.duration == null
         ? 'Unknown'
-        : _formatDuration(playback.duration!);
+        : formatDuration(playback.duration!);
     final latency = playback.startupLatency;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -431,12 +432,4 @@ class _PlayerScreenState extends State<PlayerScreen> {
     PlaybackStatus.stopped => 'Stopped',
     PlaybackStatus.error => 'Playback error',
   };
-
-  String _formatDuration(Duration value) {
-    final hours = value.inHours;
-    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
-    if (hours > 0) return '$hours:$minutes:$seconds';
-    return '$minutes:$seconds';
-  }
 }

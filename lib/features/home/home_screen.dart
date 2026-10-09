@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/navigation/app_route.dart';
 import '../../services/catalog/catalog_query.dart';
+import '../../ui/catalog_item_kind_presentation.dart';
 import '../../ui/theme/app_tokens.dart';
 import '../../ui/widgets/app_scope.dart';
 import '../../ui/widgets/app_shell_scaffold.dart';
@@ -162,9 +163,7 @@ class _ContentStrip extends StatelessWidget {
               autofocus: autofocusFirst && index == 0,
               title: item.title,
               subtitle: item.group,
-              icon: item.kind == CatalogItemKind.live
-                  ? Icons.live_tv
-                  : Icons.movie,
+              icon: item.kind.icon,
               imageUrl: item.artworkUrl ?? item.logoUrl,
               onActivate: () => onTap(item),
             ),

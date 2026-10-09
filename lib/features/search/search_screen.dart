@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/catalog/catalog_query.dart';
 import '../../state/app_controller.dart';
 import '../../state/catalog_view_state.dart';
+import '../../ui/catalog_item_kind_presentation.dart';
 import '../../ui/theme/app_tokens.dart';
 import '../../ui/widgets/app_scope.dart';
 import '../../ui/widgets/app_shell_scaffold.dart';
@@ -180,10 +181,10 @@ class _SearchScreenState extends State<SearchScreen> {
                       onRetry: _runSearch,
                       itemBuilder: (context, item, index) => ListTile(
                         key: ValueKey<String>(item.id),
-                        leading: Icon(_iconFor(item.kind)),
+                        leading: Icon(item.kind.icon),
                         title: Text(item.title, maxLines: 1),
                         subtitle: Text(
-                          '${_kindName(item.kind)} · ${item.group ?? 'Ungrouped'}',
+                          '${item.kind.label} · ${item.group ?? 'Ungrouped'}',
                           maxLines: 1,
                         ),
                         trailing: const Icon(Icons.chevron_right),
@@ -228,17 +229,3 @@ class _SearchMessage extends StatelessWidget {
     ),
   );
 }
-
-IconData _iconFor(CatalogItemKind kind) => switch (kind) {
-  CatalogItemKind.live => Icons.live_tv,
-  CatalogItemKind.movie => Icons.movie,
-  CatalogItemKind.episode => Icons.tv,
-  CatalogItemKind.unknown => Icons.play_circle_outline,
-};
-
-String _kindName(CatalogItemKind kind) => switch (kind) {
-  CatalogItemKind.live => 'Live TV',
-  CatalogItemKind.movie => 'Movie',
-  CatalogItemKind.episode => 'Series',
-  CatalogItemKind.unknown => 'Media',
-};

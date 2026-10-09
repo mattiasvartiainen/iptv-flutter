@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../services/catalog/catalog_import_progress.dart';
 import '../../../services/settings/settings_repository.dart';
+import '../../../ui/formatting.dart';
 import '../../../ui/theme/app_tokens.dart';
 import 'import_progress_indicator.dart';
 
@@ -81,7 +82,7 @@ class PlaylistCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Import: ${playlist.lastImportStatus ?? 'never'}${lastImport == null ? '' : ' · ${formatPlaylistDate(lastImport)}'}',
+                          'Import: ${playlist.lastImportStatus ?? 'never'}${lastImport == null ? '' : ' · ${formatDate(lastImport)}'}',
                         ),
                         if (playlist.lastImportWarning case final warning?) ...[
                           const SizedBox(height: 4),
@@ -94,7 +95,7 @@ class PlaylistCard extends StatelessWidget {
                         ],
                         const SizedBox(height: 4),
                         Text(
-                          'Refresh: ${refresh?.refreshMode.name ?? 'weekly'}${refresh?.nextRefreshAt == null ? '' : ' · next ${formatPlaylistDate(refresh!.nextRefreshAt!)}'}',
+                          'Refresh: ${refresh?.refreshMode.name ?? 'weekly'}${refresh?.nextRefreshAt == null ? '' : ' · next ${formatDate(refresh!.nextRefreshAt!)}'}',
                         ),
                         if (progress != null) ...[
                           const SizedBox(height: 8),
@@ -141,13 +142,4 @@ class PlaylistCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String formatPlaylistDate(DateTime value) {
-  final local = value.toLocal();
-  final month = local.month.toString().padLeft(2, '0');
-  final day = local.day.toString().padLeft(2, '0');
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '${local.year}-$month-$day $hour:$minute';
 }
