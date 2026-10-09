@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
+
 import '../platform/platform_capabilities.dart';
 import '../platform/platform_profile.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
@@ -22,6 +24,7 @@ class AppDependencies {
     required this.preferencesController,
     required AppStartup? startup,
     required this.capabilities,
+    required this.extraShortcuts,
     required this.autoRunPlaybackSpike,
     required SqfliteDatabaseAdapter? databaseAdapter,
     required bool ownsResources,
@@ -91,6 +94,7 @@ class AppDependencies {
       preferencesController: preferencesController,
       startup: startup,
       capabilities: profile.capabilities,
+      extraShortcuts: profile.extraShortcuts,
       autoRunPlaybackSpike: profile.autoRunPlaybackSpike,
       databaseAdapter: databaseAdapter,
       ownsResources: true,
@@ -108,6 +112,7 @@ class AppDependencies {
       hasHardwareBack: true,
       supportsHover: false,
     ),
+    Map<ShortcutActivator, Intent> extraShortcuts = const {},
   }) => AppDependencies._(
     appController: appController,
     playerController: playerController,
@@ -115,6 +120,7 @@ class AppDependencies {
     preferencesController: preferencesController,
     startup: null,
     capabilities: capabilities,
+    extraShortcuts: extraShortcuts,
     autoRunPlaybackSpike: false,
     databaseAdapter: null,
     ownsResources: false,
@@ -127,6 +133,7 @@ class AppDependencies {
   final AppPreferencesController preferencesController;
   final AppStartup? _startup;
   final PlatformCapabilities capabilities;
+  final Map<ShortcutActivator, Intent> extraShortcuts;
   final bool autoRunPlaybackSpike;
   final SqfliteDatabaseAdapter? _databaseAdapter;
   final bool _ownsResources;

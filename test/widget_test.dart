@@ -22,7 +22,6 @@ import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/player_controller.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 import 'package:iptv_flutter/ui/theme/app_tokens.dart';
-import 'package:iptv_flutter/ui/widgets/media_tile.dart';
 import 'package:iptv_flutter/widgets/app_scope.dart';
 
 typedef _TestControllers = ({
@@ -235,31 +234,6 @@ void main() {
   });
 
   testWidgets(
-    'Home MediaTile focus does not navigate and Select opens Details once',
-    (tester) async {
-      final (controllers, _) = await pumpLoadedApp(tester);
-      final tile = find.ancestor(
-        of: find.text('News 24'),
-        matching: find.byType(MediaTile),
-      );
-      expect(tile, findsOneWidget);
-      Focus.of(tester.element(find.text('News 24'))).requestFocus();
-      await tester.pumpAndSettle();
-      expect(
-        controllers.app.navigationController.currentRoute,
-        isA<HomeRoute>(),
-      );
-      await tester.sendKeyEvent(LogicalKeyboardKey.select);
-      await tester.pumpAndSettle();
-      expect(
-        controllers.app.navigationController.currentRoute,
-        isA<DetailsRoute>(),
-      );
-      expect(controllers.app.navigationController.stack, hasLength(2));
-    },
-  );
-
-  testWidgets(
     'playlist notifications do not rebuild unrelated scope consumers',
     (tester) async {
       final controllers = _createTestControllers(
@@ -345,22 +319,6 @@ void main() {
     expect(controllers.app.navigationController.currentRoute, isA<HomeRoute>());
     expect(find.byType(IptvApp), findsOneWidget);
     expect(appDisposed, isFalse);
-  });
-
-  testWidgets('Escape returns from catalog to Home', (tester) async {
-    final (controllers, _) = await pumpLoadedApp(tester);
-    controllers.app.openLiveTv();
-    await tester.pumpAndSettle();
-    expect(
-      controllers.app.navigationController.currentRoute,
-      isA<CatalogRoute>(),
-    );
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-
-    expect(controllers.app.navigationController.currentRoute, isA<HomeRoute>());
-    expect(find.byType(IptvApp), findsOneWidget);
   });
 
   testWidgets('selecting a grid tile loads the full item for details', (

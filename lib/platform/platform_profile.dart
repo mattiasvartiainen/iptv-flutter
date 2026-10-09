@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -18,6 +18,7 @@ abstract interface class PlatformProfile {
   AppPlatform get platform;
   PlatformCapabilities get capabilities;
   bool get autoRunPlaybackSpike;
+  Map<ShortcutActivator, Intent> get extraShortcuts;
 
   Future<void> initialize();
   PlaybackAdapter createPlaybackAdapter();
@@ -60,6 +61,9 @@ abstract base class _PlatformProfile implements PlatformProfile {
 
   @override
   bool get autoRunPlaybackSpike => build_flags.autoRunPlaybackSpike;
+
+  @override
+  Map<ShortcutActivator, Intent> get extraShortcuts => const {};
 
   @override
   Future<void> initialize() async {}

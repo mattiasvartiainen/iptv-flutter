@@ -57,6 +57,8 @@ playlist service API must be async and cancellable.
 Confirm webOS remote keys (arrows, OK, Back, color keys, media keys) map into Flutter
 `HardwareKeyboard`/focus on hardware. Build focus on `FocusTraversalGroup` + `Shortcuts`/`Actions`.
 - Affects: [architecture.md](architecture.md) §9, [implementation-plan.md](implementation-plan.md) Phase 0/2.
+- WP-4.3 common key mapping and opt-in debug key logging are implemented. LG-specific key values
+  remain pending capture on the target TV; do not add a platform override until observed.
 
 ### D7 — State management approach ✅
 Use a single injectable `ChangeNotifier` application controller for the MVP.
@@ -113,4 +115,10 @@ inferred from window width or keyboard input alone. Requires approval before WP-
 See [Cross-Device Design Contract](design-guidelines.md) for accessibility rules and test matrix.
 
 The 2026-10-07 documentation update records these recommendations, not resolved product decisions.
+
+### WP-4.3 — Root key map
+- Common Select/Enter/game-button activation, Back, media, seek, and channel-step mappings are
+  registered at the app root. Platform overrides are supplied by `PlatformProfile`.
+- webOS hardware values and validation are pending. Use Settings > Display verbose information in a
+  debug build to log numeric logical/physical key IDs without logging typed characters.
 
