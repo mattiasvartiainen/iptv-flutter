@@ -31,6 +31,19 @@ typedef _TestControllers = ({
   AppPreferencesController preferences,
 });
 
+class _SequencedIndexStatusService extends InMemoryCatalogQueryService {
+  _SequencedIndexStatusService(super.playlistId, super.items, this._statuses);
+
+  final List<CatalogSearchIndexStatus> _statuses;
+  int statusCalls = 0;
+
+  @override
+  Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId) async {
+    final index = statusCalls++;
+    return _statuses[index < _statuses.length ? index : _statuses.length - 1];
+  }
+}
+
 _TestControllers _createTestControllers({
   required CatalogRepository catalogRepository,
   CatalogQueryService? catalogQueryService,
@@ -489,6 +502,60 @@ void main() {
     final route = controllers.app.navigationController.currentRoute;
     expect(route, isA<DetailsRoute>());
     expect((route as DetailsRoute).item.id, 'news-24');
+  });
+
+  testWidgets('search index polling stops when pending items reach zero', (
+    tester,
+  ) async {
+    const playlistId = 'search-index-polling';
+    final service = _SequencedIndexStatusService(playlistId, fixtureCatalog, [
+      const CatalogSearchIndexStatus(
+        totalItems: 5,
+        indexedItems: 4,
+        pendingItems: 1,
+      ),
+      const CatalogSearchIndexStatus(
+        totalItems: 5,
+        indexedItems: 5,
+        pendingItems: 0,
+      ),
+    ]);
+    final controllers = _createTestControllers(
+      catalogRepository: const FixtureCatalogRepository(),
+      catalogQueryService: service,
+      settingsRepository: _TestSettingsRepository(),
+      playbackAdapter: FakePlaybackAdapter(),
+    );
+    addTearDown(() => _disposeTestControllers(controllers));
+    controllers.app.navigationController.resetTo(const SearchRoute());
+    await controllers.app.catalogView.bind(
+      service: service,
+      playlistId: playlistId,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppScope(
+          appController: controllers.app,
+          playerController: controllers.player,
+          playlistsController: controllers.playlists,
+          preferencesController: controllers.preferences,
+          navigationController: controllers.app.navigationController,
+          child: const SearchScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(service.statusCalls, 1);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(service.statusCalls, 2);
+
+    await tester.pump(const Duration(seconds: 5));
+    expect(service.statusCalls, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets(

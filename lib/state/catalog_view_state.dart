@@ -49,8 +49,17 @@ class PagedCollection<T> extends ChangeNotifier {
       return Future<void>.value();
     }
     _loadingMore = true;
+    _errorMessage = null;
     _notify();
     return _fetch(_generation, offset: _items.length, append: true);
+  }
+
+  Future<void> retry() {
+    final fetcher = _fetcher;
+    if (fetcher == null || _loading || _loadingMore) {
+      return Future<void>.value();
+    }
+    return _items.isEmpty ? load(fetcher) : loadMore();
   }
 
   void clear() {

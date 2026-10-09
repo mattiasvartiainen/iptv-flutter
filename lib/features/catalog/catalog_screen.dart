@@ -8,9 +8,8 @@ import '../../ui/theme/app_tokens.dart';
 import '../../ui/widgets/app_scope.dart';
 import '../../ui/widgets/app_shell_scaffold.dart';
 import '../../ui/widgets/media_tile.dart';
-
-/// How close to the end of the built tiles before the next page is requested.
-const int _prefetchThreshold = 30;
+import '../../ui/widgets/paged_grid_view.dart';
+import '../../ui/widgets/state_views.dart';
 
 const SliverGridDelegate _cardGrid = SliverGridDelegateWithMaxCrossAxisExtent(
   maxCrossAxisExtent: AppTokens.tileWidth,
@@ -56,60 +55,6 @@ class CatalogScreen extends StatelessWidget {
   }
 }
 
-/// Renders one page window and pulls the next page as the user nears the end.
-class _PagedGrid<T> extends StatelessWidget {
-  const _PagedGrid({
-    required this.collection,
-    required this.emptyText,
-    required this.gridDelegate,
-    required this.itemBuilder,
-  });
-
-  final PagedCollection<T> collection;
-  final String emptyText;
-  final SliverGridDelegate gridDelegate;
-  final Widget Function(BuildContext context, T item, bool autofocus)
-  itemBuilder;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: collection,
-      builder: (context, _) {
-        if (collection.isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final error = collection.errorMessage;
-        if (error != null && collection.items.isEmpty) {
-          return _EmptyMessage(text: error);
-        }
-        if (collection.items.isEmpty) {
-          return _EmptyMessage(text: emptyText);
-        }
-
-        final items = collection.items;
-        return GridView.builder(
-          gridDelegate: gridDelegate,
-          itemCount: items.length + (collection.hasMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (index >= items.length) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (collection.hasMore &&
-                index >= items.length - _prefetchThreshold) {
-              // Deferred because loadMore notifies listeners mid-build otherwise.
-              WidgetsBinding.instance.addPostFrameCallback(
-                (_) => collection.loadMore(),
-              );
-            }
-            return itemBuilder(context, items[index], index == 0);
-          },
-        );
-      },
-    );
-  }
-}
-
 class _ContentGrid extends StatelessWidget {
   const _ContentGrid({
     required this.title,
@@ -134,9 +79,9 @@ class _ContentGrid extends StatelessWidget {
           kind: groupKind,
           collection: collection,
           seriesCollection: null,
-          child: _PagedGrid<CatalogItemSummary>(
+          child: PagedGridView<CatalogItemSummary>(
             collection: collection,
-            emptyText: emptyText,
+            emptyMessage: emptyText,
             gridDelegate: _cardGrid,
             itemBuilder: (context, item, autofocus) => MediaTile(
               key: ValueKey<String>(item.id),
@@ -173,9 +118,9 @@ class _SeriesGrid extends StatelessWidget {
           kind: groupKind,
           collection: null,
           seriesCollection: collection,
-          child: _PagedGrid<SeriesSummary>(
+          child: PagedGridView<SeriesSummary>(
             collection: collection,
-            emptyText: 'No series episodes recognized yet.',
+            emptyMessage: 'No series episodes recognized yet.',
             gridDelegate: _cardGrid,
             itemBuilder: (context, item, autofocus) => MediaTile(
               key: ValueKey<String>(item.id),
@@ -208,15 +153,13 @@ class _SeasonGrid extends StatelessWidget {
       title: selectedSeries == null ? 'Seasons' : selectedSeries.title,
       child: _GridFrame(
         child: selectedSeries == null
-            ? const _EmptyMessage(
-                text: 'Pick a series from the series catalog.',
-              )
+            ? const EmptyView(message: 'Pick a series from the series catalog.')
             : ListenableBuilder(
                 listenable: controller.catalogView,
                 builder: (context, _) {
                   final seasons = controller.catalogView.seasons;
                   if (seasons.isEmpty) {
-                    return const _EmptyMessage(text: 'No seasons found.');
+                    return const EmptyView(message: 'No seasons found.');
                   }
                   return GridView.builder(
                     gridDelegate:
@@ -272,10 +215,10 @@ class _EpisodeGrid extends StatelessWidget {
           : '${selectedSeries.title} · Season ${selectedSeason.seasonNumber}',
       child: _GridFrame(
         child: selectedSeason == null
-            ? const _EmptyMessage(text: 'Pick a season to browse episodes.')
-            : _PagedGrid<CatalogItemSummary>(
+            ? const EmptyView(message: 'Pick a season to browse episodes.')
+            : PagedGridView<CatalogItemSummary>(
                 collection: collection,
-                emptyText: 'No episodes found.',
+                emptyMessage: 'No episodes found.',
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: AppTokens.episodeTileWidth,
                   mainAxisExtent: AppTokens.episodeTileHeight,
@@ -309,16 +252,5 @@ class _GridFrame extends StatelessWidget {
       padding: AppTokens.pagePaddingFor(MediaQuery.sizeOf(context).width),
       child: child,
     );
-  }
-}
-
-class _EmptyMessage extends StatelessWidget {
-  const _EmptyMessage({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Text(text));
   }
 }

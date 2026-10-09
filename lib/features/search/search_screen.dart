@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../../services/catalog/catalog_query.dart';
 import '../../state/app_controller.dart';
+import '../../state/catalog_view_state.dart';
 import '../../ui/theme/app_tokens.dart';
 import '../../ui/widgets/app_scope.dart';
 import '../../ui/widgets/app_shell_scaffold.dart';
+import '../../ui/widgets/paged_list_view.dart';
+import '../../ui/widgets/state_views.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -20,6 +23,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Timer? _debounce;
   Timer? _statusTimer;
   AppController? _controller;
+  CatalogViewState? _catalogView;
   CatalogItemKind? _kind;
 
   @override
@@ -27,18 +31,17 @@ class _SearchScreenState extends State<SearchScreen> {
     super.didChangeDependencies();
     final controller = AppScope.appControllerOf(context);
     if (identical(controller, _controller)) return;
+    _catalogView?.removeListener(_syncStatusPolling);
     _controller = controller;
-    unawaited(controller.catalogView.refreshSearchIndexStatus());
-    _statusTimer?.cancel();
-    _statusTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(controller.catalogView.refreshSearchIndexStatus());
-    });
+    _catalogView = controller.catalogView..addListener(_syncStatusPolling);
+    unawaited(_refreshIndexStatus());
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _statusTimer?.cancel();
+    _catalogView?.removeListener(_syncStatusPolling);
     _textController.dispose();
     super.dispose();
   }
@@ -56,6 +59,25 @@ class _SearchScreenState extends State<SearchScreen> {
     final controller = _controller;
     if (controller == null) return;
     unawaited(controller.catalogView.search(_textController.text, kind: _kind));
+  }
+
+  Future<void> _refreshIndexStatus() async {
+    final view = _catalogView;
+    if (view == null) return;
+    await view.refreshSearchIndexStatus();
+    _syncStatusPolling();
+  }
+
+  void _syncStatusPolling() {
+    if (!mounted) return;
+    if (_catalogView?.searchIndexStatus?.pendingItems == 0) {
+      _statusTimer?.cancel();
+      _statusTimer = null;
+      return;
+    }
+    _statusTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      unawaited(_refreshIndexStatus());
+    });
   }
 
   @override
@@ -143,45 +165,30 @@ class _SearchScreenState extends State<SearchScreen> {
                       );
                     }
                     if (results.isLoading) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const LoadingView();
                     }
                     if (results.errorMessage != null && results.items.isEmpty) {
-                      return _SearchMessage(
-                        icon: Icons.error_outline,
-                        text: results.errorMessage!,
+                      return ErrorView(
+                        message: results.errorMessage!,
+                        onRetry: _runSearch,
                       );
                     }
-                    if (results.items.isEmpty) {
-                      return const _SearchMessage(
-                        icon: Icons.search_off,
-                        text: 'No matching titles.',
-                      );
-                    }
-                    return ListView.builder(
-                      itemCount:
-                          results.items.length + (results.hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= results.items.length) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            results.loadMore();
-                          });
-                          return const Padding(
-                            padding: EdgeInsets.all(AppTokens.cardPadding),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        final item = results.items[index];
-                        return ListTile(
-                          leading: Icon(_iconFor(item.kind)),
-                          title: Text(item.title, maxLines: 1),
-                          subtitle: Text(
-                            '${_kindName(item.kind)} · ${item.group ?? 'Ungrouped'}',
-                            maxLines: 1,
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => controller.openDetailsById(item.id),
-                        );
-                      },
+                    return PagedListView<CatalogItemSummary>(
+                      collection: results,
+                      emptyMessage: 'No matching titles.',
+                      emptyIcon: Icons.search_off,
+                      onRetry: _runSearch,
+                      itemBuilder: (context, item, index) => ListTile(
+                        key: ValueKey<String>(item.id),
+                        leading: Icon(_iconFor(item.kind)),
+                        title: Text(item.title, maxLines: 1),
+                        subtitle: Text(
+                          '${_kindName(item.kind)} · ${item.group ?? 'Ungrouped'}',
+                          maxLines: 1,
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => controller.openDetailsById(item.id),
+                      ),
                     );
                   },
                 ),

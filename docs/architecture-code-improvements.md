@@ -62,7 +62,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-4.6 | Cross-device accessibility and focus tests | 4 TV UX | WP-4.4, WP-4.5 | M | DONE (2026-10-09): Added feature-level viewport matrix and directional rail/bottom-nav traversal, activation, Back restoration, touch reachability, and existing semantics/target/artwork/motion/player coverage; 235 tests pass. Native checks pending. |
 | WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | DONE (2026-10-09): Implemented approved compact bottom navigation, medium/expanded rails, short-height fallback, and responsive insets; resize tests preserve typed route and catalog page. |
 | WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | DONE (2026-10-09): Relocated screens/widgets, split Settings and catalog group sidebar, extracted pure playlist validation, and updated architecture paths; full suite passes 238 tests. |
-| WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | TODO |
+| WP-5.2 | Shared paged grid/list + state views | 5 UI structure | WP-5.1 | S | DONE (2026-10-09): Shared paging triggers, underfilled-viewport loading, retryable errors, and Search polling shutdown are covered; full suite passes 244 tests. Analyzer retains only the existing webOS info. |
 | WP-5.3 | Shared formatters + `CatalogItemKind` presentation | 5 UI structure | – | XS | TODO |
 | WP-6.1 | Port legacy-path tests to the v9 catalog | 6 Data layer | D-2 | L | TODO |
 | WP-6.2 | Delete the legacy (v1–v7) catalog code path | 6 Data layer | WP-6.1 | L | TODO |
@@ -762,6 +762,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Touches:** new `lib/ui/widgets/paged_grid_view.dart`, `lib/ui/widgets/state_views.dart` (`LoadingView`, `EmptyView`, `ErrorView(onRetry)`), catalog + search screens.
 - **Steps:** one `PagedGridView<T>`/`PagedListView<T>` driven by `PagedCollection<T>` that triggers `loadMore()` from a `ScrollController`/`NotificationListener<ScrollUpdateNotification>` threshold (and once after first layout if the viewport is not filled). Search screen: stop the 1 s status timer when `pendingItems == 0`.
 - **Acceptance:** no `addPostFrameCallback` inside `itemBuilder`; widget test that scrolling to the end requests exactly one next page.
+- **Implementation notes (2026-10-09):** Added shared scroll-threshold paging and one-shot underfill checks for grid/list; grid prefetch estimates use the actual content viewport width. `PagedCollection.retry()` retries the initial page or failed append, and shared views render retryable errors without scheduling automatic retries. Search cancels its one-second index timer at zero pending items. Regression tests cover one next-page request per end-scroll, underfilled first pages, initial-page retry, and polling shutdown. Full suite: 244 passing; analyzer retains only the existing informational `unawaited_futures` notice in `webos/flutter/main.dart`.
 
 #### WP-5.3 — Shared formatters + kind presentation
 - **Touches:** new `lib/ui/formatting.dart`, `lib/ui/catalog_item_kind_presentation.dart`; settings, player, search, home, catalog screens.
