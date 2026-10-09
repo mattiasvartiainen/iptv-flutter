@@ -8,6 +8,7 @@ import 'app/app_dependencies.dart';
 import 'app/app_shortcuts.dart';
 import 'app/navigation/app_route.dart';
 import 'app/navigation/navigation_controller.dart';
+import 'features/player/player_controller.dart';
 import 'platform/app_environment.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/details_screen.dart';
@@ -17,7 +18,6 @@ import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/playback/playback_adapter.dart';
 import 'state/app_controller.dart';
-import 'state/player_controller.dart';
 import 'ui/theme/app_theme.dart';
 import 'widgets/app_scope.dart';
 
@@ -95,6 +95,10 @@ class _IptvAppState extends State<IptvApp> {
       await rootNavigator!.maybePop();
       return;
     }
+    if (appController.navigationController.currentRoute is PlayerRoute &&
+        widget.dependencies.playerController.handleBackRequest()) {
+      return;
+    }
     appController.goBack();
   }
 
@@ -163,7 +167,13 @@ class AppShell extends StatelessWidget {
             child: PopScope(
               canPop: routes.length == 1,
               onPopInvokedWithResult: (didPop, _) {
-                if (!didPop) controller.goBack();
+                if (!didPop) {
+                  final player = AppScope.playerControllerOf(context);
+                  final handled =
+                      navigation.currentRoute is PlayerRoute &&
+                      player.handleBackRequest();
+                  if (!handled) controller.goBack();
+                }
               },
               child: Navigator(
                 pages: [
@@ -190,19 +200,14 @@ class AppShell extends StatelessWidget {
     NavigationController navigation,
     PlayerController player,
   ) {
-    final adapter = player.playbackAdapter;
-    final capabilities = adapter.capabilities;
+    final capabilities = player.capabilities;
     bool isPlayerActive() => navigation.currentRoute is PlayerRoute;
 
     return {
       PlayPauseIntent: CallbackAction<PlayPauseIntent>(
         onInvoke: (_) {
           if (!isPlayerActive() || !capabilities.supportsPause) return null;
-          unawaited(
-            adapter.state.status == PlaybackStatus.playing
-                ? adapter.pause()
-                : adapter.play(),
-          );
+          unawaited(player.togglePlayPause());
           return null;
         },
       ),
@@ -210,8 +215,8 @@ class AppShell extends StatelessWidget {
         onInvoke: (_) {
           if (isPlayerActive() &&
               capabilities.supportsPause &&
-              adapter.state.status != PlaybackStatus.playing) {
-            unawaited(adapter.play());
+              player.playbackState.value.status != PlaybackStatus.playing) {
+            unawaited(player.play());
           }
           return null;
         },
@@ -220,8 +225,8 @@ class AppShell extends StatelessWidget {
         onInvoke: (_) {
           if (isPlayerActive() &&
               capabilities.supportsPause &&
-              adapter.state.status == PlaybackStatus.playing) {
-            unawaited(adapter.pause());
+              player.playbackState.value.status == PlaybackStatus.playing) {
+            unawaited(player.pause());
           }
           return null;
         },
@@ -229,13 +234,7 @@ class AppShell extends StatelessWidget {
       SeekIntent: CallbackAction<SeekIntent>(
         onInvoke: (intent) {
           if (!isPlayerActive() || !capabilities.supportsSeek) return null;
-          var target = adapter.state.position + intent.offset;
-          if (target < Duration.zero) target = Duration.zero;
-          if (adapter.state.duration case final duration?
-              when target > duration) {
-            target = duration;
-          }
-          unawaited(adapter.seek(target));
+          unawaited(player.seekBy(intent.offset));
           return null;
         },
       ),

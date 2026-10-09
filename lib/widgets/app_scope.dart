@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 
 import '../app/navigation/navigation_controller.dart';
+import '../features/player/player_controller.dart';
 import '../state/app_controller.dart';
 import '../state/app_preferences_controller.dart';
-import '../state/player_controller.dart';
 import '../state/playlists_controller.dart';
 
 class AppScope extends InheritedWidget {

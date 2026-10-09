@@ -58,7 +58,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-4.2 | Shared focusable `MediaTile` | 4 TV UX | WP-4.1 | M | DONE (2026-10-07): Replaced six Home/catalog tile variants with shared activation, input-aware focus, selected semantics, bounded artwork/fallback and reduced motion. All 211 tests pass; analyzer retains one unrelated webOS info. Native remote checks pending. |
 | WP-4.3 | Root key map (Shortcuts/Actions, remote keys) | 4 TV UX | WP-2.1, WP-3.1 | M | DONE (2026-10-09): Added root common shortcuts, profile overrides, modal-first Back and player-scoped media actions; all 216 tests pass. LG hardware key capture remains pending. |
 | WP-4.4 | Focus groups, initial focus, focus restoration | 4 TV UX | WP-4.2, WP-4.3, WP-4.7 | M | DONE (2026-10-09): Added traversal groups, initial focus, modal focus, route restoration, section-removal fallback, and resize restoration; full suite passes 223 tests. |
-| WP-4.5 | Adaptive fullscreen player screen | 4 TV UX | WP-3.2, WP-4.3, WP-7.1 | M | TODO |
+| WP-4.5 | Adaptive fullscreen player screen | 4 TV UX | WP-3.2, WP-4.3, WP-7.1 | M | DONE (2026-10-09): Added fullscreen video and focusable auto-hiding controls, buffering/error/retry states, capability-gated commands, and local/system Back precedence; full suite passes 232 tests. TV hardware validation pending. |
 | WP-4.6 | Cross-device accessibility and focus tests | 4 TV UX | WP-4.4, WP-4.5 | M | TODO |
 | WP-4.7 | Adaptive shell and browsing layouts | 4 TV UX | WP-4.1, WP-3.1, WP-2.1, D-10 | M | DONE (2026-10-09): Implemented approved compact bottom navigation, medium/expanded rails, short-height fallback, and responsive insets; resize tests preserve typed route and catalog page. |
 | WP-5.1 | Feature folders + split large screen files | 5 UI structure | WP-3.2 | M | TODO |
@@ -69,7 +69,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-6.3 | Split `SqliteCatalogRepository` by responsibility | 6 Data layer | WP-6.2 | L | TODO |
 | WP-6.4 | Startup maintenance without downcasts | 6 Data layer | WP-6.3, WP-2.2 | S | TODO |
 | WP-6.5 | One HTTP playlist client | 6 Data layer | WP-6.2 | S | TODO |
-| WP-7.1 | `PlayerController` owns the playback session | 7 Playback | WP-3.2 | M | TODO |
+| WP-7.1 | `PlayerController` owns the playback session | 7 Playback | WP-3.2 | M | DONE (2026-10-09): Moved the controller to `lib/features/player/`, added adapter-state `ValueListenable` and guarded playback commands; unit and full-suite tests pass. |
 | WP-7.2 | Typed playback errors, shared mapper | 7 Playback | WP-7.1 | S | TODO |
 | WP-7.3 | Lifecycle: pause/release when hidden | 7 Playback | WP-7.1 | S | TODO |
 | WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | TODO |
@@ -725,6 +725,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Steps:** fullscreen black `Stack` with the video view filling the screen (`FittedBox`/`AspectRatio`); overlay with title, status, play/pause and ±10 s focusable controls that auto-hide after ~4 s and re-appear on any key; Back hides the overlay first, then leaves; buffering spinner; error panel with "Back" and "Retry". Diagnostics (latency, timestamps, redacted URL) only when verbose info is enabled. Switch on `PlaybackStatus` enum, not `.name` strings.
 - **Acceptance:** widget tests with `FakePlaybackAdapter`: overlay shows on key, hides after timeout (pump fake time), play/pause key toggles state.
   Compact layouts also provide touch controls, safe-area/keyboard handling, readable status, capability-gated seeking, and no clipped controls at large text sizes. Auto-hide must not hide controls while focused interaction or an accessibility user requires them. Modal Back precedes overlay Back; leaving the player stops playback as today. Mini player/system PiP is not implemented here: D-7 and separate session/lifecycle packages are required.
+- **Implementation notes (2026-10-09):** Replaced the constrained diagnostic page with a black fullscreen stack, adapter video surface, buffering indicator, readable title/status overlay, and touch/remote play-pause and ±10-second controls. Controls auto-hide after four seconds and reappear on input; focus or accessible-navigation mode keeps them visible. First Back hides the overlay; the next keyboard or system Back closes the route and stops playback. Error state presents safe text with Back and Retry. Diagnostics appear only under the existing verbose preference. Commands and state come through WP-7.1's `PlayerController`; D-7 remains open and stop-on-exit is unchanged. Six focused player widget tests cover overlay timing, media keys, both Back paths, error recovery, focus retention, and compact 2x text. `flutter test`: 232 passing. `flutter analyze`: only the existing webOS entrypoint info. LG TV playback, scaling, and remote validation remain pending.
 
 #### WP-4.6 — Cross-device accessibility and focus tests
 - **Touches:** new `test/features/navigation_focus_test.dart`, responsive shell/player tests, representative goldens/screenshots if supported by the existing toolchain.
@@ -820,6 +821,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Touches:** new `lib/features/player/player_controller.dart`; player screen; navigation.
 - **Steps:** `PlayerController(PlaybackAdapter, AppLogger)` exposes `PlaybackState` as a `ValueListenable` (bridge from `adapter.states`), commands `open(item)`, `togglePlayPause()`, `seekBy(Duration)`, `close()` (stops), logs failures instead of `catch (_)`. Opening the `PlayerRoute` calls `open`; the route's removal calls `close`. Move the playback spike to a dev-only entry (profile flag) that pushes a `PlayerRoute`.
 - **Acceptance:** unit tests with `FakePlaybackAdapter`: open → loading → playing; error → error state + log; close → stopped.
+- **Implementation notes (2026-10-09):** Moved the controller to `lib/features/player/player_controller.dart`. It bridges `PlaybackAdapter.states` through a `ValueListenable<PlaybackState>`, owns play/pause/toggle/seek/volume/close commands with capability checks, clamps relative seeks, logs failures, preserves generation-guarded load completion, and stops when the PlayerRoute is removed. Added state-transition, command, seek-bound, error/log, and stop tests. Full suite passes 232 tests; analyzer retains only the pre-existing webOS entrypoint info.
 
 #### WP-7.2 — Typed playback errors, shared mapper
 - **Steps:** `enum PlaybackErrorKind { accessDenied, notFound, timeout, unsupportedFormat, network, unknown }`; one `PlaybackErrorKind classifyPlaybackError(String raw)` used by both adapters (removes duplicated `_mapPlaybackError`); `PlaybackState` carries the kind; UI maps kind → text. Unit-test the classifier.

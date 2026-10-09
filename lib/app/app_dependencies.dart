@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../features/player/player_controller.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/platform_profile.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
@@ -12,7 +13,6 @@ import '../state/app_controller.dart';
 import '../state/app_preferences_controller.dart';
 import '../state/app_startup.dart';
 import '../state/catalog_view_state.dart';
-import '../state/player_controller.dart';
 import '../state/playlists_controller.dart';
 import 'navigation/navigation_controller.dart';
 
