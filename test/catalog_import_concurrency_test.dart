@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
-import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 
 import 'support/catalog_http_test_server.dart';
+import 'support/catalog_services.dart';
 import 'support/database_adapter.dart';
 
 const String _oneLiveChannel = '''#EXTM3U
@@ -33,18 +33,15 @@ void main() {
       beforeResponse: responseGate.future,
     );
     addTearDown(server.close);
-    final repo = SqliteCatalogRepository(
-      databaseAdapter: adapter,
-      autoStartSearchIndexWorker: false,
-    );
+    final sync = createCatalogSyncService(adapter);
 
-    final first = repo.load(
+    final first = sync.load(
       playlistId: 'concurrent-playlist',
       playlistUrl: server.url('/playlist.m3u'),
       policy: CatalogLoadPolicy.networkOnly,
     );
     await server.firstRequest.future;
-    final second = repo.load(
+    final second = sync.load(
       playlistId: 'concurrent-playlist',
       playlistUrl: server.url('/playlist.m3u'),
       policy: CatalogLoadPolicy.networkOnly,
@@ -64,16 +61,13 @@ void main() {
       responses: {'/playlist.m3u': _oneLiveChannel},
     );
     addTearDown(server.close);
-    final repo = SqliteCatalogRepository(
-      databaseAdapter: adapter,
-      autoStartSearchIndexWorker: false,
-    );
+    final sync = createCatalogSyncService(adapter);
 
-    await repo.load(
+    await sync.load(
       playlistId: 'concurrent-playlist',
       playlistUrl: server.url('/playlist.m3u'),
     );
-    await repo.load(
+    await sync.load(
       playlistId: 'concurrent-playlist',
       playlistUrl: server.url('/playlist.m3u'),
       policy: CatalogLoadPolicy.networkOnly,

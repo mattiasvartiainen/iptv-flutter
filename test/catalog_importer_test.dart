@@ -8,11 +8,13 @@ import 'package:iptv_flutter/services/catalog/catalog_import_coordinator.dart';
 import 'package:iptv_flutter/services/catalog/catalog_importer.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
+import 'package:iptv_flutter/services/catalog/catalog_search_indexer.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
 
+import 'support/catalog_services.dart';
 import 'support/database_adapter.dart';
 
 const String _playlist = '''#EXTM3U
@@ -143,22 +145,19 @@ void main() {
         playlistId: 'resume-search',
         playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
       );
-      final repository = SqliteCatalogRepository(
-        databaseAdapter: adapter,
-        autoStartSearchIndexWorker: true,
-      );
+      final indexer = SqliteCatalogSearchIndexer(databaseAdapter: adapter);
 
-      final queued = await repository.searchIndexStatus('resume-search');
+      final queued = await indexer.status('resume-search');
       expect(queued.totalItems, 4);
       expect(queued.indexedItems, 0);
       expect(queued.pendingItems, 4);
 
-      await repository.resumeSearchIndexing();
+      await indexer.resumePendingIndexing();
       final deadline = DateTime.now().add(const Duration(seconds: 3));
       var status = queued;
       while (status.pendingItems > 0 && DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
-        status = await repository.searchIndexStatus('resume-search');
+        status = await indexer.status('resume-search');
       }
 
       expect(status.pendingItems, 0);
@@ -434,8 +433,7 @@ BEGIN SELECT RAISE(ABORT, 'injected second-batch failure'); END
         'stream_url': 'https://stream.test/staged.m3u8',
       });
 
-      final repository = SqliteCatalogRepository(databaseAdapter: adapter);
-      await repository.recoverAbandonedImports();
+      await createCatalogSyncService(adapter).recoverAbandonedImports();
 
       expect(await db.query('items'), isEmpty);
       expect(await db.query('groups'), isEmpty);
@@ -482,8 +480,7 @@ BEGIN SELECT RAISE(ABORT, 'injected second-batch failure'); END
         'tier': 'legacy_import',
       });
 
-      final repository = SqliteCatalogRepository(databaseAdapter: adapter);
-      await repository.recoverAbandonedImports();
+      await createCatalogSyncService(adapter).recoverAbandonedImports();
 
       expect(await db.query('items'), hasLength(1));
       expect((await db.query('import_sessions')).single['state'], 'aborted');
@@ -537,8 +534,7 @@ BEGIN SELECT RAISE(ABORT, 'injected second-batch failure'); END
         'stream_url': 'https://stream.test/not-committed.m3u8',
       });
 
-      final repository = SqliteCatalogRepository(databaseAdapter: adapter);
-      await repository.recoverAbandonedImports();
+      await createCatalogSyncService(adapter).recoverAbandonedImports();
 
       expect((await db.query('items')).single['title'], 'Still live');
       expect(await db.query('import_rows'), isEmpty);
@@ -950,10 +946,10 @@ Future<CatalogImportResult> _importText(
 Future<int> _drainCatalogSearchIndex(
   SqfliteDatabaseAdapter adapter,
   String playlistId,
-) => SqliteCatalogRepository(
+) => SqliteCatalogSearchIndexer(
   databaseAdapter: adapter,
-  autoStartSearchIndexWorker: false,
-).processCatalogSearchIndexQueue(playlistId: playlistId);
+  autoStartWorker: false,
+).processQueue(playlistId: playlistId);
 
 Future<HttpServer> _serve(String playlist) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

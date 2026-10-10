@@ -3,10 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
-import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 
 import 'support/catalog_http_test_server.dart';
+import 'support/catalog_services.dart';
 import 'support/database_adapter.dart';
 
 void main() {
@@ -32,13 +32,10 @@ https://stream.test/alpha.m3u8
         responses: {'/playlist.m3u': content},
       );
       addTearDown(server.close);
-      final repository = SqliteCatalogRepository(
-        databaseAdapter: adapter,
-        autoStartSearchIndexWorker: false,
-      );
+      final sync = createCatalogSyncService(adapter);
       final progress = <CatalogImportProgress>[];
 
-      final result = await repository.load(
+      final result = await sync.load(
         playlistId: 'v9-successful-import',
         playlistUrl: server.url('/playlist.m3u'),
         policy: CatalogLoadPolicy.networkOnly,
@@ -79,13 +76,10 @@ https://stream.test/alpha.m3u8
         responses: {'/empty.m3u': '#EXTM3U\n'},
       );
       addTearDown(server.close);
-      final repository = SqliteCatalogRepository(
-        databaseAdapter: adapter,
-        autoStartSearchIndexWorker: false,
-      );
+      final sync = createCatalogSyncService(adapter);
 
       await expectLater(
-        repository.load(
+        sync.load(
           playlistId: 'v9-empty-import',
           playlistUrl: server.url('/empty.m3u'),
           policy: CatalogLoadPolicy.networkOnly,
@@ -133,8 +127,7 @@ https://stream.test/alpha.m3u8
         'state': 'done',
       });
 
-      final repository = SqliteCatalogRepository(databaseAdapter: adapter);
-      await repository.recoverAbandonedImports();
+      await createCatalogSyncService(adapter).recoverAbandonedImports();
 
       final sessions = await db.query('import_sessions', orderBy: 'id');
       expect(sessions.map((row) => row['state']), [
@@ -159,12 +152,9 @@ https://stream.test/first.m3u8
       beforeResponse: responseGate.future,
     );
     addTearDown(server.close);
-    final repository = SqliteCatalogRepository(
-      databaseAdapter: adapter,
-      autoStartSearchIndexWorker: false,
-    );
+    final sync = createCatalogSyncService(adapter);
     final progress = <CatalogImportProgress>[];
-    final loading = repository.load(
+    final loading = sync.load(
       playlistUrl: server.url('/cancelled.m3u'),
       playlistId: 'cancelled-playlist',
       policy: CatalogLoadPolicy.networkOnly,
@@ -172,7 +162,7 @@ https://stream.test/first.m3u8
     );
 
     await server.firstRequest.future;
-    await repository.cancelImport('cancelled-playlist');
+    await sync.cancelImport('cancelled-playlist');
     responseGate.complete();
     await expectLater(loading, throwsA(isA<Exception>()));
 

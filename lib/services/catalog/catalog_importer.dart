@@ -50,6 +50,8 @@ class CatalogImporter {
   final DatabaseAdapter _databaseAdapter;
   final CatalogImportCoordinator _coordinator;
 
+  Future<void> cancel(String playlistId) => _coordinator.cancel(playlistId);
+
   Future<CatalogImportResult> importPlaylist({
     required String playlistId,
     required String playlistUrl,
