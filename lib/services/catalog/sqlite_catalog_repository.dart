@@ -2,6 +2,7 @@ import '../../models/content_item.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_import_coordinator.dart';
 import 'catalog_importer.dart';
+import 'catalog_maintenance.dart';
 import 'catalog_query.dart';
 import 'catalog_query_service.dart';
 import 'catalog_repository.dart';
@@ -15,7 +16,7 @@ import 'user_library_repository.dart';
 /// New code should depend on [CatalogSyncService], [CatalogQueryService],
 /// [CatalogSearchIndexer] or [UserLibraryRepository] directly.
 class SqliteCatalogRepository
-    implements CatalogRepository, CatalogQueryService {
+    implements CatalogRepository, CatalogQueryService, CatalogMaintenance {
   factory SqliteCatalogRepository({
     required DatabaseAdapter databaseAdapter,
     bool autoStartSearchIndexWorker = true,
@@ -76,10 +77,12 @@ class SqliteCatalogRepository
 
   Future<void> cancelImport(String playlistId) => sync.cancelImport(playlistId);
 
+  @override
   Future<void> recoverAbandonedImports() => sync.recoverAbandonedImports();
 
   // --- CatalogSearchIndexer --------------------------------------------------
 
+  @override
   Future<void> resumeSearchIndexing() => searchIndexer.resumePendingIndexing();
 
   Future<int> processCatalogSearchIndexQueue({

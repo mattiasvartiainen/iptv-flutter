@@ -67,7 +67,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-6.1 | Port legacy-path tests to the v9 catalog | 6 Data layer | D-2 | L | DONE (2026-10-09): Ported cache policy, refresh failure/data retention, playlist isolation, query browsing, import sessions/recovery/cancellation, and concurrency coverage to v9. Legacy-internal tests are classified for WP-6.2; full suite passes 251 tests. |
 | WP-6.2 | Delete the legacy (v1–v7) catalog code path | 6 Data layer | WP-6.1 | L | DONE (2026-10-09): Repository, coordinator, tests, and benchmark now use v9 only; append-only v11 drops legacy tables. Full suite passes 239 tests; 50k v9 cold benchmark completes in 6.47s. Analyzer retains only the existing webOS info. |
 | WP-6.3 | Split `SqliteCatalogRepository` by responsibility | 6 Data layer | WP-6.2 | L | DONE (2026-10-10): Extracted sync, query, search-indexer and user-library services; `SqliteCatalogRepository` is a logic-free compatibility façade. Focused service tests added; full suite passes 251 tests. Analyzer retains only the existing webOS info. |
-| WP-6.4 | Startup maintenance without downcasts | 6 Data layer | WP-6.3, WP-2.2 | S | TODO |
+| WP-6.4 | Startup maintenance without downcasts | 6 Data layer | WP-6.3, WP-2.2 | S | DONE (2026-10-10): Injected `CatalogMaintenance` into `AppStartup`; SQLite façade implements the contract. Startup ordering is covered by tests. |
 | WP-6.5 | One HTTP playlist client | 6 Data layer | WP-6.2 | S | TODO |
 | WP-7.1 | `PlayerController` owns the playback session | 7 Playback | WP-3.2 | M | DONE (2026-10-09): Moved the controller to `lib/features/player/`, added adapter-state `ValueListenable` and guarded playback commands; unit and full-suite tests pass. |
 | WP-7.2 | Typed playback errors, shared mapper | 7 Playback | WP-7.1 | S | TODO |
@@ -827,6 +827,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 - **Fixes:** §3.4 downcast leak.
 - **Steps:** define `abstract interface class CatalogMaintenance { Future<void> recoverAbandonedImports(); Future<void> resumeSearchIndexing(); }`; `AppStartup` (WP-3.2) receives it via `AppDependencies`. Remove `is SqliteCatalogRepository`.
 - **Acceptance:** `grep "is SqliteCatalogRepository" lib` → none.
+- **Implementation notes (2026-10-10):** Added `CatalogMaintenance` and implemented it on the temporary SQLite catalog façade. `AppDependencies` now supplies it to `AppStartup`; storage initialization, abandoned-import recovery, fire-and-forget indexing resume, preferences, and playlist restoration retain their order. Startup-order and failure tests pass. Full suite: 250 passing; analyzer reports only the existing informational `unawaited_futures` in `webos/flutter/main.dart`; no `is SqliteCatalogRepository` match remains in `lib/`.
 
 #### WP-6.5 — One HTTP playlist client
 - **Steps:** after WP-6.2 identify remaining HTTP code (`HttpPlaylistSource.fetch/stream`, the worker's fetch). Keep one implementation (the worker's), with shared constants for timeout, `User-Agent`, `Accept`, and redacted error messages (WP-1.4 helper).

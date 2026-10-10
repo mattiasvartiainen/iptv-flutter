@@ -76,11 +76,8 @@ class AppDependencies {
       logger: logger,
     );
     final startup = AppStartup(
-      storageInitializer: () async {
-        await databaseAdapter.initialize();
-        await catalogRepository.recoverAbandonedImports();
-        unawaited(catalogRepository.resumeSearchIndexing());
-      },
+      storageInitializer: databaseAdapter.initialize,
+      catalogMaintenance: catalogRepository,
       preferencesController: preferencesController,
       playlistsController: playlistsController,
     );

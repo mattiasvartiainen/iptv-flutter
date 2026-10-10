@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
+import 'package:iptv_flutter/services/catalog/catalog_maintenance.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
@@ -34,6 +35,7 @@ void main() {
       addTearDown(navigationController.dispose);
       final startup = AppStartup(
         storageInitializer: () async => settings.calls.add('storage'),
+        catalogMaintenance: _RecordingCatalogMaintenance(settings.calls),
         preferencesController: preferences,
         playlistsController: playlists,
       );
@@ -41,7 +43,7 @@ void main() {
       await startup.initialize();
       final events = settings.calls;
 
-      expect(events.first, 'storage');
+      expect(events.sublist(0, 3), ['storage', 'recover', 'resume']);
       expect(events.indexOf('get:show_home_live_tv'), greaterThan(0));
       expect(
         events.indexOf('listPlaylists'),
@@ -85,6 +87,7 @@ void main() {
       addTearDown(navigation.dispose);
       final startup = AppStartup(
         storageInitializer: () async {},
+        catalogMaintenance: const _NoopCatalogMaintenance(),
         preferencesController: preferences,
         playlistsController: playlists,
       );
@@ -114,6 +117,7 @@ void main() {
     addTearDown(navigation.dispose);
     final startup = AppStartup(
       storageInitializer: () async => throw StateError('Storage unavailable'),
+      catalogMaintenance: const _NoopCatalogMaintenance(),
       preferencesController: preferences,
       playlistsController: playlists,
     );
@@ -121,4 +125,30 @@ void main() {
     await expectLater(startup.initialize(), throwsStateError);
     expect(settings.calls, isEmpty);
   });
+}
+
+class _RecordingCatalogMaintenance implements CatalogMaintenance {
+  _RecordingCatalogMaintenance(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<void> recoverAbandonedImports() async {
+    events.add('recover');
+  }
+
+  @override
+  Future<void> resumeSearchIndexing() async {
+    events.add('resume');
+  }
+}
+
+class _NoopCatalogMaintenance implements CatalogMaintenance {
+  const _NoopCatalogMaintenance();
+
+  @override
+  Future<void> recoverAbandonedImports() async {}
+
+  @override
+  Future<void> resumeSearchIndexing() async {}
 }
