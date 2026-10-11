@@ -19,6 +19,8 @@ void main() {
       () async {
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         addTearDown(() => server.close(force: true));
+        String? acceptHeader;
+        String? userAgent;
         final body = utf8.encode('''#EXTM3U
 #EXTINF:-1 group-title="News",Café
 https://stream.test/cafe.m3u8
@@ -35,6 +37,8 @@ http://[
         final splitAt = _indexOfBytes(body, accentBytes) + 1;
         unawaited(() async {
           final request = await server.first;
+          acceptHeader = request.headers.value(HttpHeaders.acceptHeader);
+          userAgent = request.headers.value(HttpHeaders.userAgentHeader);
           request.response.contentLength = body.length;
           request.response.add(body.sublist(0, splitAt));
           request.response.add(body.sublist(splitAt));
@@ -61,6 +65,8 @@ http://[
         expect(result.bodyHash, hash64(utf8.decode(body)));
         expect(result.headers.statusCode, HttpStatus.ok);
         expect(result.headers.contentLength, body.length);
+        expect(acceptHeader, 'application/x-mpegURL, text/plain, */*');
+        expect(userAgent, 'IPTV-Flutter/0.1');
         expect(rows.map((row) => row.ordinal), [0, 1, 2, 3]);
         expect(rows.first.title, 'Café');
         expect(rows[2].itemKind.name, 'episode');
@@ -167,7 +173,8 @@ http://[
 
       final handle = await CatalogImportWorker.start(
         playlistId: 'playlist-failure',
-        playlistUrl: 'http://127.0.0.1:${server.port}/failure.m3u',
+        playlistUrl:
+            'http://127.0.0.1:${server.port}/live/test-user/test-pass/failure.m3u',
         selectRows: (_) async => const [],
         onRows: (_, _) async {},
       );
@@ -177,7 +184,15 @@ http://[
         throwsA(
           isA<CatalogImportWorkerException>()
               .having((error) => error.errorType, 'errorType', 'HttpException')
-              .having((error) => error.message, 'message', contains('500')),
+              .having((error) => error.message, 'message', contains('500'))
+              .having(
+                (error) => error.message,
+                'message does not expose playlist credentials',
+                allOf(
+                  isNot(contains('test-user')),
+                  isNot(contains('test-pass')),
+                ),
+              ),
         ),
       );
     });

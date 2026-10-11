@@ -8,6 +8,7 @@ import '../../models/content_item.dart';
 import '../security/url_redaction.dart';
 import 'catalog_classifier.dart';
 import 'catalog_hash.dart';
+import 'catalog_http_config.dart';
 import 'catalog_import_protocol.dart';
 import 'catalog_normalizer.dart';
 import 'm3u_parser.dart';
@@ -59,8 +60,8 @@ class CatalogImportWorker {
 
   static const int batchSize = 1000;
   static const int maxParseSliceLength = 16 * 1024;
-  static const Duration connectionTimeout = Duration(minutes: 5);
-  static const Duration requestTimeout = Duration(minutes: 5);
+  static const Duration connectionTimeout = catalogHttpConnectionTimeout;
+  static const Duration requestTimeout = catalogHttpRequestTimeout;
 
   static Future<CatalogImportWorkerHandle> start({
     required String playlistId,
@@ -405,12 +406,20 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
           );
       httpRequest.headers.set(
         HttpHeaders.acceptHeader,
-        'application/x-mpegURL, text/plain, */*',
+        catalogHttpAcceptHeader,
       );
-      httpRequest.headers.set(HttpHeaders.userAgentHeader, 'IPTV-Flutter/0.1');
+      httpRequest.headers.set(
+        HttpHeaders.userAgentHeader,
+        catalogHttpUserAgent,
+      );
       final response = await httpRequest.close().timeout(timeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('Playlist request failed: ${response.statusCode}');
+        throw HttpException(
+          catalogHttpFailureMessage(
+            statusCode: response.statusCode,
+            url: request['playlistUrl']! as String,
+          ),
+        );
       }
       final totalBytes = response.contentLength >= 0
           ? response.contentLength
