@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
@@ -10,11 +11,14 @@ import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late NavigationController navigation;
   late FakePlaybackAdapter adapter;
   late PlayerController player;
 
   setUp(() {
+    _foregroundApp();
     navigation = NavigationController();
     adapter = FakePlaybackAdapter(transitionDelay: Duration.zero);
     player = PlayerController(
@@ -26,6 +30,7 @@ void main() {
   tearDown(() {
     player.dispose();
     navigation.dispose();
+    _foregroundApp();
   });
 
   test('opening a player loads the selected item and starts playing', () async {
@@ -114,6 +119,37 @@ void main() {
     expect(adapter.state.status, PlaybackStatus.playing);
   });
 
+  test('backgrounding pauses VOD and resumes it only when it was playing', () async {
+    final vod = fixtureCatalog.firstWhere((item) => item.type == ContentType.vod);
+    await player.openPlayer(vod);
+
+    _backgroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(adapter.state.status, PlaybackStatus.paused);
+
+    _foregroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(adapter.state.status, PlaybackStatus.playing);
+
+    await player.pause();
+    _backgroundApp();
+    _foregroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(adapter.state.status, PlaybackStatus.paused);
+  });
+
+  test('backgrounding stops live playback and does not resume it', () async {
+    await player.openPlayer(fixtureCatalog.first);
+
+    _backgroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(adapter.state.status, PlaybackStatus.stopped);
+
+    _foregroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(adapter.state.status, PlaybackStatus.stopped);
+  });
+
   test('a late load completion after exit is stopped again', () async {
     player.dispose();
     final delayedAdapter = _DelayedPlaybackAdapter();
@@ -135,6 +171,32 @@ void main() {
     expect(adapter.state.status, PlaybackStatus.stopped);
     expect(delayedAdapter.stopCount, 2);
   });
+}
+
+void _sendLifecycleState(AppLifecycleState state) {
+  TestWidgetsFlutterBinding.ensureInitialized().handleAppLifecycleStateChanged(
+    state,
+  );
+}
+
+void _backgroundApp() {
+  _sendLifecycleState(AppLifecycleState.inactive);
+  _sendLifecycleState(AppLifecycleState.hidden);
+  _sendLifecycleState(AppLifecycleState.paused);
+}
+
+void _foregroundApp() {
+  final lifecycleState = WidgetsBinding.instance.lifecycleState;
+  if (lifecycleState == AppLifecycleState.paused) {
+    _sendLifecycleState(AppLifecycleState.hidden);
+  }
+  final stateAfterHidden = WidgetsBinding.instance.lifecycleState;
+  if (stateAfterHidden == AppLifecycleState.hidden) {
+    _sendLifecycleState(AppLifecycleState.inactive);
+  }
+  if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+    _sendLifecycleState(AppLifecycleState.resumed);
+  }
 }
 
 class _DelayedPlaybackAdapter extends FakePlaybackAdapter {

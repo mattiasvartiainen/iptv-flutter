@@ -88,13 +88,12 @@ Use a hand-rolled sealed `AppRoute` hierarchy and `NavigationController` rendere
 selected section, while nested details/player/settings routes preserve their exact parent context.
 - Affects: WP-3.1 in [architecture-code-improvements.md](architecture-code-improvements.md).
 
-### D-7 - Player Back and background viewing (OPEN)
-The Kanal concept minimizes fullscreen playback into an in-app mini player and proposes Android
-system picture-in-picture. Current behavior stops playback when its route is removed. Decide which
-behavior to deliver and on which backend capabilities. Until approved and implemented in separately
-scoped session/lifecycle work, retain stop-on-exit; WP-4.5 only handles local overlay Back before exit.
-System PiP needs platform integration, capability checks, explicit close behavior, and lifecycle tests;
-it must not be inferred from Android identity alone. Only one stream may play at a time.
+### D-7 - Player Back and background viewing (RESOLVED 2026-10-11)
+Keep stop-on-route-exit. When the app is hidden or paused, pause VOD and resume it only if it was
+playing before backgrounding and the same player route/session is still active; stop live streams and
+do not resume them. Mini-player and system PiP are deferred to separately scoped work that defines
+backend capabilities, explicit close behavior, and platform integration. Only one stream may play at
+a time.
 
 ### D-8 - Catalog entry and activation behavior (OPEN)
 The concept selects the first group and includes direct-play/resume examples. Current catalog browsing

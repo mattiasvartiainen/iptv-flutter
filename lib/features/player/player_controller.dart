@@ -21,6 +21,9 @@ class PlayerController extends ChangeNotifier {
     _observedRoute = navigationController.currentRoute;
     navigationController.addListener(_handleNavigationChanged);
     _statesSubscription = playbackAdapter.states.listen(_handlePlaybackState);
+    _lifecycleListener = AppLifecycleListener(
+      onStateChange: _handleLifecycleStateChanged,
+    );
   }
 
   static const ContentItem playbackSpikeItem = ContentItem(
@@ -37,9 +40,14 @@ class PlayerController extends ChangeNotifier {
   final NavigationController navigationController;
   final AppLogger _logger;
   final ValueNotifier<PlaybackState> _playbackState;
+  late final AppLifecycleListener _lifecycleListener;
   late AppRoute _observedRoute;
   late final StreamSubscription<PlaybackState> _statesSubscription;
   int _playbackLoadGeneration = 0;
+  int? _backgroundedLoadGeneration;
+  String? _backgroundedItemId;
+  bool _isBackgrounded = false;
+  bool _resumeVodOnForeground = false;
   bool _disposed = false;
   Object? _backHandlerOwner;
   bool Function()? _backRequestHandler;
@@ -172,6 +180,48 @@ class PlayerController extends ChangeNotifier {
     _observedRoute = route;
   }
 
+  void _handleLifecycleStateChanged(AppLifecycleState state) {
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      if (_isBackgrounded) return;
+      _isBackgrounded = true;
+      final playback = _playbackState.value;
+      final item = playback.item;
+      _resumeVodOnForeground =
+          item?.type == ContentType.vod &&
+          playback.status == PlaybackStatus.playing;
+      _backgroundedItemId = item?.id;
+      _backgroundedLoadGeneration = _playbackLoadGeneration;
+      if (item == null || playback.status != PlaybackStatus.playing) return;
+
+      if (item.type == ContentType.live) {
+        unawaited(_stopPlayback());
+      } else {
+        unawaited(pause());
+      }
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed && _isBackgrounded) {
+      _isBackgrounded = false;
+      final shouldResume = _resumeVodOnForeground;
+      final itemId = _backgroundedItemId;
+      final generation = _backgroundedLoadGeneration;
+      _resumeVodOnForeground = false;
+      _backgroundedItemId = null;
+      _backgroundedLoadGeneration = null;
+
+      final route = navigationController.currentRoute;
+      if (shouldResume &&
+          route is PlayerRoute &&
+          route.item.id == itemId &&
+          generation == _playbackLoadGeneration &&
+          _playbackState.value.item?.id == itemId) {
+        unawaited(play());
+      }
+    }
+  }
+
   Future<void> _stopPlayback() async {
     try {
       await playbackAdapter.stop();
@@ -184,6 +234,7 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _lifecycleListener.dispose();
     navigationController.removeListener(_handleNavigationChanged);
     unawaited(_statesSubscription.cancel());
     playbackAdapter.dispose();
