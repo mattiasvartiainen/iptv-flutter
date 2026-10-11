@@ -1,6 +1,9 @@
 import 'package:flutter/widgets.dart';
 
 import '../../models/content_item.dart';
+import 'playback_error.dart';
+
+export 'playback_error.dart';
 
 enum PlaybackStatus { idle, loading, playing, paused, stopped, error }
 
@@ -25,6 +28,7 @@ class PlaybackState {
     required this.status,
     this.item,
     this.message,
+    this.errorKind,
     this.position = Duration.zero,
     this.duration,
     this.isBuffering = false,
@@ -37,6 +41,7 @@ class PlaybackState {
   final PlaybackStatus status;
   final ContentItem? item;
   final String? message;
+  final PlaybackErrorKind? errorKind;
   final Duration position;
   final Duration? duration;
   final bool isBuffering;
@@ -53,6 +58,8 @@ class PlaybackState {
     ContentItem? item,
     String? message,
     bool clearMessage = false,
+    PlaybackErrorKind? errorKind,
+    bool clearErrorKind = false,
     Duration? position,
     Duration? duration,
     bool clearDuration = false,
@@ -65,6 +72,7 @@ class PlaybackState {
       status: status ?? this.status,
       item: item ?? this.item,
       message: clearMessage ? null : (message ?? this.message),
+      errorKind: clearErrorKind ? null : (errorKind ?? this.errorKind),
       position: position ?? this.position,
       duration: clearDuration ? null : (duration ?? this.duration),
       isBuffering: isBuffering ?? this.isBuffering,

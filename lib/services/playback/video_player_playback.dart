@@ -68,7 +68,8 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         _publish(
           _state.copyWith(
             status: PlaybackStatus.error,
-            message: _mapPlaybackError(error.toString()),
+            errorKind: classifyPlaybackError(error.toString()),
+            clearMessage: true,
           ),
         );
       }
@@ -138,7 +139,8 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
-          message: _mapPlaybackError(value.errorDescription ?? ''),
+          errorKind: classifyPlaybackError(value.errorDescription ?? ''),
+          clearMessage: true,
         ),
       );
       return;
@@ -160,25 +162,6 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
             : null,
       ),
     );
-  }
-
-  String _mapPlaybackError(String raw) {
-    final text = raw.toLowerCase();
-    if (text.contains('401') ||
-        text.contains('403') ||
-        text.contains('forbidden')) {
-      return 'Playback failed: access denied.';
-    }
-    if (text.contains('404') || text.contains('not found')) {
-      return 'Playback failed: stream not found.';
-    }
-    if (text.contains('timeout') || text.contains('timed out')) {
-      return 'Playback failed: stream timeout.';
-    }
-    if (text.contains('unsupported') || text.contains('codec')) {
-      return 'Playback failed: unsupported media format.';
-    }
-    return 'Playback failed. Try another stream.';
   }
 
   void _publish(PlaybackState nextState) {

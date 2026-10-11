@@ -158,7 +158,8 @@ class PlayerController extends ChangeNotifier {
     if (!_disposed) {
       _playbackState.value = _playbackState.value.copyWith(
         status: PlaybackStatus.error,
-        message: _playbackState.value.message ?? 'Playback failed.',
+        errorKind: classifyPlaybackError(error.toString()),
+        clearMessage: true,
       );
     }
   }

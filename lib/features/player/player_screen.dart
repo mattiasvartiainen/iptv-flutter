@@ -395,7 +395,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               const Icon(Icons.error_outline, color: Colors.white, size: 48),
               const SizedBox(height: 16),
               Text(
-                playback.message ?? 'Playback failed.',
+                _playbackErrorMessage(playback.errorKind),
                 textAlign: TextAlign.center,
                 style: Theme.of(
                   context,
@@ -431,5 +431,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     PlaybackStatus.paused => 'Paused',
     PlaybackStatus.stopped => 'Stopped',
     PlaybackStatus.error => 'Playback error',
+  };
+
+  String _playbackErrorMessage(PlaybackErrorKind? kind) => switch (kind) {
+    PlaybackErrorKind.accessDenied => 'Playback failed: access denied.',
+    PlaybackErrorKind.notFound => 'Playback failed: stream not found.',
+    PlaybackErrorKind.timeout => 'Playback failed: stream timeout.',
+    PlaybackErrorKind.unsupportedFormat =>
+      'Playback failed: unsupported media format.',
+    PlaybackErrorKind.network => 'Playback failed: network unavailable.',
+    PlaybackErrorKind.unknown || null => 'Playback failed. Try another stream.',
   };
 }

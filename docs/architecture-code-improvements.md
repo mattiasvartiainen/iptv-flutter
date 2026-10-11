@@ -70,7 +70,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-6.4 | Startup maintenance without downcasts | 6 Data layer | WP-6.3, WP-2.2 | S | DONE (2026-10-10): Injected `CatalogMaintenance` into `AppStartup`; SQLite façade implements the contract. Startup ordering is covered by tests. |
 | WP-6.5 | One HTTP playlist client | 6 Data layer | WP-6.2 | S | DONE (2026-10-10): Removed the unused buffered/streaming client; centralized worker request settings and verified redacted failures. |
 | WP-7.1 | `PlayerController` owns the playback session | 7 Playback | WP-3.2 | M | DONE (2026-10-09): Moved the controller to `lib/features/player/`, added adapter-state `ValueListenable` and guarded playback commands; unit and full-suite tests pass. |
-| WP-7.2 | Typed playback errors, shared mapper | 7 Playback | WP-7.1 | S | TODO |
+| WP-7.2 | Typed playback errors, shared mapper | 7 Playback | WP-7.1 | S | DONE (2026-10-11): Added shared error classification to both adapters and typed playback state; player UI maps kinds to safe text. |
 | WP-7.3 | Lifecycle: pause/release when hidden | 7 Playback | WP-7.1 | S | TODO |
 | WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | TODO |
 | WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | TODO |
@@ -845,6 +845,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 
 #### WP-7.2 — Typed playback errors, shared mapper
 - **Steps:** `enum PlaybackErrorKind { accessDenied, notFound, timeout, unsupportedFormat, network, unknown }`; one `PlaybackErrorKind classifyPlaybackError(String raw)` used by both adapters (removes duplicated `_mapPlaybackError`); `PlaybackState` carries the kind; UI maps kind → text. Unit-test the classifier.
+- **Implementation notes (2026-10-11):** Added `PlaybackErrorKind` and `classifyPlaybackError` as the shared playback error contract, and removed both adapter-local mappers. `PlaybackState` carries the classified kind; `PlayerController` classifies command/load exceptions, and the player screen maps kinds to user-safe messages. Added classification coverage for each category and updated retry UI coverage. Full suite: 253 passing; analyzer retains only the existing informational `unawaited_futures` in `webos/flutter/main.dart`.
 
 #### WP-7.3 — Lifecycle
 - **Steps:** `PlayerController` registers an `AppLifecycleListener`: on `hidden`/`paused` pause (live: stop) and remember; on `resumed` resume VOD only. This covers webOS card switching and Android Home. Document decisions in `docs/decisions.md`.

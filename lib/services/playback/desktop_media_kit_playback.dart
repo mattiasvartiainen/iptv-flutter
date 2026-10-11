@@ -26,7 +26,8 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
-          message: _mapPlaybackError(errorText),
+          errorKind: classifyPlaybackError(errorText),
+          clearMessage: true,
         ),
       );
     });
@@ -129,7 +130,8 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
-          message: _mapPlaybackError(error.toString()),
+          errorKind: classifyPlaybackError(error.toString()),
+          clearMessage: true,
         ),
       );
       rethrow;
@@ -177,32 +179,6 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
   Future<void> setVolume(double volume) async {
     final clamped = volume.clamp(0.0, 100.0).toDouble();
     await _player.setVolume(clamped);
-  }
-
-  String _mapPlaybackError(String raw) {
-    final text = raw.toLowerCase();
-    if (text.contains('401') ||
-        text.contains('403') ||
-        text.contains('forbidden')) {
-      return 'Playback failed: access denied.';
-    }
-    if (text.contains('404') || text.contains('not found')) {
-      return 'Playback failed: stream not found.';
-    }
-    if (text.contains('timed out') || text.contains('timeout')) {
-      return 'Playback failed: stream timeout.';
-    }
-    if (text.contains('unsupported') ||
-        text.contains('codec') ||
-        text.contains('demux')) {
-      return 'Playback failed: unsupported media format.';
-    }
-    if (text.contains('network') ||
-        text.contains('connection') ||
-        text.contains('dns')) {
-      return 'Playback failed: network unavailable.';
-    }
-    return 'Playback failed. Try another stream.';
   }
 
   void _publish(PlaybackState nextState) {

@@ -171,14 +171,14 @@ void main() {
     final adapter = _RecoveringPlaybackAdapter();
     final harness = await _pumpPlayerApp(tester, playbackAdapter: adapter);
     expect(harness.player.playbackState.value.status, PlaybackStatus.error);
-    expect(find.text('Playback failed.'), findsOneWidget);
+    expect(find.text('Playback failed. Try another stream.'), findsOneWidget);
 
     await tester.tap(find.text('Retry'));
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pumpAndSettle();
 
     expect(harness.player.playbackState.value.status, PlaybackStatus.playing);
-    expect(find.text('Playback failed.'), findsNothing);
+    expect(find.text('Playback failed. Try another stream.'), findsNothing);
   });
 
   testWidgets('focused controls stay visible and compact large text fits', (
