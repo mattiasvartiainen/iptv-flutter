@@ -3,18 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
+import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/ui/widgets/paged_grid_view.dart';
 import 'package:iptv_flutter/ui/widgets/paged_list_view.dart';
 
 void main() {
   test('failed page two retains page one and can be retried', () async {
-    final collection = PagedCollection<int>(pageSize: 2);
+    final logger = _RecordingLogger();
+    final collection = PagedCollection<int>(pageSize: 2, logger: logger);
     addTearDown(collection.dispose);
     var secondPageAttempts = 0;
     await collection.load((offset, limit) async {
       if (offset == 2 && secondPageAttempts++ == 0) {
-        throw StateError('temporary page failure');
+        throw StateError(
+          'Request failed: https://provider.test/live/private-user/private-pass/list.m3u',
+        );
       }
       return _page(offset, limit, 4);
     });
@@ -25,11 +29,14 @@ void main() {
     expect(collection.total, 4);
     expect(collection.hasMore, isTrue);
     expect(collection.isLoadingMore, isFalse);
-    expect(collection.errorMessage, contains('temporary page failure'));
+    expect(collection.failure, CatalogFailure.pageLoadFailed);
+    expect(logger.errors.single, contains('%5Bredacted%5D'));
+    expect(logger.errors.single, isNot(contains('private-user')));
+    expect(logger.errors.single, isNot(contains('private-pass')));
 
     await collection.retry();
     expect(collection.items, [0, 1, 2, 3]);
-    expect(collection.errorMessage, isNull);
+    expect(collection.failure, isNull);
   });
 
   test('clear drops the result of an in-flight fetch', () async {
@@ -47,7 +54,7 @@ void main() {
     expect(collection.total, 0);
     expect(collection.isLoading, isFalse);
     expect(collection.isLoadingMore, isFalse);
-    expect(collection.errorMessage, isNull);
+    expect(collection.failure, isNull);
   });
 
   group('PagedListView', () {
@@ -91,7 +98,11 @@ void main() {
       var attempts = 0;
       await collection.load((offset, limit) async {
         attempts++;
-        if (attempts == 1) throw StateError('temporary failure');
+        if (attempts == 1) {
+          throw StateError(
+            'Failed URL: https://provider.test/live/private-user/private-pass/list.m3u',
+          );
+        }
         return _page(offset, limit, 2);
       });
 
@@ -108,6 +119,11 @@ void main() {
           ),
         ),
       );
+      expect(
+        find.text('Could not load results. Check your connection and try again.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('private-user'), findsNothing);
       await tester.tap(find.text('Retry'));
       await tester.pump();
       await tester.pump();
@@ -244,3 +260,23 @@ CatalogPage<int> _page(int offset, int limit, int total) => CatalogPage<int>(
   offset: offset,
   total: total,
 );
+
+class _RecordingLogger implements AppLogger {
+  final List<String> errors = [];
+
+  @override
+  void error(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?> context = const {},
+  }) {
+    errors.add(error?.toString() ?? '');
+  }
+
+  @override
+  void info(String message, {Map<String, Object?> context = const {}}) {}
+
+  @override
+  void warning(String message, {Map<String, Object?> context = const {}}) {}
+}

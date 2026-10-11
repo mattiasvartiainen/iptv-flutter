@@ -168,9 +168,9 @@ class _SearchScreenState extends State<SearchScreen> {
                     if (results.isLoading) {
                       return const LoadingView();
                     }
-                    if (results.errorMessage != null && results.items.isEmpty) {
+                    if (results.failure != null && results.items.isEmpty) {
                       return ErrorView(
-                        message: results.errorMessage!,
+                        message: catalogFailureMessage(results.failure!),
                         onRetry: _runSearch,
                       );
                     }

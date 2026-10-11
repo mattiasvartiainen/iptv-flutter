@@ -3,15 +3,18 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
+import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';
 
 import '../support/catalog_fixtures.dart';
 
 void main() {
   late CatalogViewState view;
+  late _RecordingLogger logger;
 
   setUp(() {
-    view = CatalogViewState();
+    logger = _RecordingLogger();
+    view = CatalogViewState(logger: logger);
   });
 
   tearDown(() {
@@ -32,6 +35,26 @@ void main() {
 
     expect(view.browseGroupKind, CatalogGroupKind.movie);
     expect(view.selectedGroupId, isNull);
+  });
+
+  test('group query failure is typed, logged safely, and retryable', () async {
+    const playlistId = 'browse-group-failure';
+    final service = _FailOnceGroupsService(playlistId, fixtureCatalog);
+    await view.bind(service: service, playlistId: playlistId);
+
+    await view.showItems(CatalogItemKind.live);
+
+    expect(view.groupsFailure, CatalogFailure.groupsLoadFailed);
+    expect(logger.errors, hasLength(1));
+    expect(logger.errors.single, contains('%5Bredacted%5D'));
+    expect(logger.errors.single, isNot(contains('private-user')));
+    expect(logger.errors.single, isNot(contains('private-pass')));
+
+    await view.retryBrowseGroups();
+
+    expect(view.groupsFailure, isNull);
+    expect(view.browseGroups, isNotEmpty);
+    expect(logger.errors, hasLength(1));
   });
 
   test(
@@ -80,6 +103,47 @@ class _GatedGroupsService extends InMemoryCatalogQueryService {
     required CatalogGroupKind kind,
     String profileId = 'default',
   }) => _groupResponses[kind]!.future;
+}
+
+class _FailOnceGroupsService extends InMemoryCatalogQueryService {
+  _FailOnceGroupsService(super.playlistId, super.items);
+
+  bool _shouldFail = true;
+
+  @override
+  Future<List<GroupSummary>> queryGroups(
+    String playlistId, {
+    required CatalogGroupKind kind,
+    String profileId = 'default',
+  }) {
+    if (_shouldFail) {
+      _shouldFail = false;
+      throw StateError(
+        'Failed URL: https://provider.test/live/private-user/private-pass/list.m3u',
+      );
+    }
+    return super.queryGroups(playlistId, kind: kind, profileId: profileId);
+  }
+}
+
+class _RecordingLogger implements AppLogger {
+  final errors = <String>[];
+
+  @override
+  void error(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?> context = const {},
+  }) {
+    errors.add(error?.toString() ?? '');
+  }
+
+  @override
+  void info(String message, {Map<String, Object?> context = const {}}) {}
+
+  @override
+  void warning(String message, {Map<String, Object?> context = const {}}) {}
 }
 
 GroupSummary _group(int id, CatalogGroupKind kind, String title) =>

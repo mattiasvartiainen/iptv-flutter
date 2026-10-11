@@ -83,7 +83,7 @@ class _PagedListViewState<T> extends State<PagedListView<T>> {
         _loadScheduled ||
         collection.isLoading ||
         collection.isLoadingMore ||
-        collection.errorMessage != null ||
+        collection.failure != null ||
         !collection.hasMore) {
       return;
     }
@@ -111,10 +111,10 @@ class _PagedListViewState<T> extends State<PagedListView<T>> {
       if (collection.isLoading && collection.items.isEmpty) {
         return const LoadingView();
       }
-      if (collection.errorMessage case final error?
+      if (collection.failure case final failure?
           when collection.items.isEmpty) {
         return ErrorView(
-          message: error,
+          message: catalogFailureMessage(failure),
           onRetry: widget.onRetry ?? () => unawaited(collection.retry()),
         );
       }
@@ -135,9 +135,9 @@ class _PagedListViewState<T> extends State<PagedListView<T>> {
           itemCount: items.length + (collection.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index >= items.length) {
-              if (collection.errorMessage case final error?) {
+              if (collection.failure case final failure?) {
                 return ErrorView(
-                  message: error,
+                  message: catalogFailureMessage(failure),
                   onRetry:
                       widget.onRetry ?? () => unawaited(collection.retry()),
                 );

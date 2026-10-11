@@ -55,7 +55,7 @@ class AppDependencies {
       secretStore: secretStore,
     );
     final playbackAdapter = profile.createPlaybackAdapter(logger: logger);
-    final catalogView = CatalogViewState();
+    final catalogView = CatalogViewState(logger: logger);
     final navigationController = NavigationController();
     final preferencesController = AppPreferencesController(
       settingsRepository: settingsRepository,

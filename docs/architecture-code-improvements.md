@@ -75,7 +75,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | DONE (2026-10-11): Centralized catalog fixtures, app test harness, settings fake, controller lifecycle, and SQLite test setup. |
 | WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | DONE (2026-10-11): Added page-retention/clear-race and stale browse-generation regressions; remaining priorities are covered by their owning packages. |
 | WP-9.1 | Logging: injected logger, redaction, no `print` | 9 Observability | WP-2.2 | S | DONE (2026-10-11): Routed app/media output through injected AppLogger, redacted logged text, and warn on background index failures. |
-| WP-9.2 | No raw exception text in the UI; no silent swallows | 9 Observability | WP-9.1 | S | TODO |
+| WP-9.2 | No raw exception text in the UI; no silent swallows | 9 Observability | WP-9.1 | S | DONE (2026-10-11): Catalog paging/group failures are typed, logged with redaction, and shown as friendly retryable UI messages. |
 
 Size guide: XS < 30 min of agent work, S = one focused change, M = several files, L = multi-step; split L packages into sub-commits that each keep tests green.
 
@@ -172,7 +172,7 @@ Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlat
 | ~~Global singleton behind default args~~ | `AppStorageBootstrap` and optional `AppController` repository/playback args | Resolved by WP-2.2: `AppDependencies` constructs and owns application services; tests inject dependencies. |
 | Concrete-type downcast in app state | `if (repository is SqliteCatalogRepository) { recoverAbandonedImports(); resumeSearchIndexing(); }` | App state knows the storage implementation; startup maintenance is invisible to other repositories. |
 | Settings keys as strings across layers | `'show_home_live_tv'` in `settings_screen.dart`, `app_controller.dart`, `database_adapter.dart` | A typo silently creates a new setting; no type safety. |
-| Screens pass raw exception text to users | `PagedCollection._errorMessage = '$error'`, shown by `_PagedGrid` | Users see `SqliteException(...)` strings. |
+| ~~Screens pass raw exception text to users~~ | `PagedCollection` and browse groups now store typed failures; raw details go to the injected logger | Resolved by WP-9.2: page/search/group errors show friendly text with Retry and never render exception strings. |
 | ~~Navigation is a mutable enum on the god controller~~ | Typed `AppRoute` stack in `NavigationController`, rendered by `Navigator.pages` | Resolved by WP-3.1: route parameters replace navigation side fields; Back pops actual page history and covered page state is retained. |
 
 ---
@@ -881,6 +881,7 @@ Prioritised by risk (complexity × missing coverage); these are behaviours, not 
 #### WP-9.2 — No raw exception text in UI
 - **Steps:** `PagedCollection` and `CatalogViewState` store a typed failure (`AppIssue` or enum), not `'$error'`; UI shows a friendly `ErrorView` with Retry (WP-5.2) and logs the raw error.
 - **Acceptance:** `grep "'\$error'" lib` → none.
+- **Implementation notes (2026-10-11):** Replaced raw page and browse-group exception strings with `CatalogFailure` values. Paged list/grid, Search, and group sidebar map failures to fixed user-safe messages; paging keeps its retry action and the group sidebar retries the active browse query. `PagedCollection` and group loading log sanitized error/stack details through injected `AppLogger`. Tests verify exception details stay out of the UI, page retries remain available, and group failures can be retried; `grep "'\$error'" lib` returns no matches. Full suite: 264 passing; analyzer retains only the existing informational `unawaited_futures` in `webos/flutter/main.dart`.
 
 ---
 

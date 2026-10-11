@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../services/catalog/catalog_query.dart';
 import '../../../state/catalog_view_state.dart';
 import '../../../ui/widgets/app_scope.dart';
+import '../../../ui/widgets/state_views.dart';
 
 class GroupSidebarLayout extends StatelessWidget {
   const GroupSidebarLayout({
@@ -46,10 +49,11 @@ class GroupSidebarLayout extends StatelessWidget {
                     groups: view.browseGroups,
                     selectedGroupId: view.selectedGroupId,
                     loading: view.isLoadingGroups,
-                    error: view.groupsErrorMessage,
+                    error: view.groupsFailure,
                     totalItems:
                         collection?.total ?? seriesCollection?.total ?? 0,
                     onSelected: view.selectBrowseGroup,
+                    onRetry: () => unawaited(view.retryBrowseGroups()),
                   ),
                 ),
               ),
@@ -72,15 +76,17 @@ class _GroupFilterMenu extends StatelessWidget {
     required this.error,
     required this.totalItems,
     required this.onSelected,
+    required this.onRetry,
   });
 
   final CatalogGroupKind kind;
   final List<GroupSummary> groups;
   final int? selectedGroupId;
   final bool loading;
-  final String? error;
+  final CatalogFailure? error;
   final int totalItems;
   final ValueChanged<int?> onSelected;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -99,31 +105,31 @@ class _GroupFilterMenu extends StatelessWidget {
           ),
         ),
         if (loading) const LinearProgressIndicator(minHeight: 2),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(error!, style: theme.textTheme.bodySmall),
-          ),
         Expanded(
-          child: FocusTraversalGroup(
-            child: ListView(
-              children: [
-                _GroupChoice(
-                  label: 'All groups',
-                  count: totalItems,
-                  selected: selectedGroupId == null,
-                  onTap: () => onSelected(null),
-                ),
-                for (final group in groups)
-                  _GroupChoice(
-                    label: group.title,
-                    count: group.itemCount,
-                    selected: selectedGroupId == group.id,
-                    onTap: () => onSelected(group.id),
+          child: error == null
+              ? FocusTraversalGroup(
+                  child: ListView(
+                    children: [
+                      _GroupChoice(
+                        label: 'All groups',
+                        count: totalItems,
+                        selected: selectedGroupId == null,
+                        onTap: () => onSelected(null),
+                      ),
+                      for (final group in groups)
+                        _GroupChoice(
+                          label: group.title,
+                          count: group.itemCount,
+                          selected: selectedGroupId == group.id,
+                          onTap: () => onSelected(group.id),
+                        ),
+                    ],
                   ),
-              ],
-            ),
-          ),
+                )
+              : ErrorView(
+                  message: catalogFailureMessage(error!),
+                  onRetry: onRetry,
+                ),
         ),
       ],
     );

@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../state/catalog_view_state.dart';
+
+String catalogFailureMessage(CatalogFailure failure) => switch (failure) {
+  CatalogFailure.pageLoadFailed =>
+    'Could not load results. Check your connection and try again.',
+  CatalogFailure.groupsLoadFailed => 'Could not load groups. Please try again.',
+};
+
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key, this.label});
 

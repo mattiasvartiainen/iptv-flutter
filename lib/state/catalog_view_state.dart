@@ -3,17 +3,25 @@ import 'package:flutter/foundation.dart';
 import '../models/content_item.dart';
 import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
+import '../services/logging/app_logger.dart';
+import '../services/security/url_redaction.dart';
 
 typedef PageFetcher<T> = Future<CatalogPage<T>> Function(int offset, int limit);
+
+enum CatalogFailure { pageLoadFailed, groupsLoadFailed }
 
 /// Holds one visible page window of a query result.
 ///
 /// Results are tagged with a generation so a slow page-N response can never be
 /// appended after the query has been reset or replaced.
 class PagedCollection<T> extends ChangeNotifier {
-  PagedCollection({this.pageSize = kCatalogPageSize});
+  PagedCollection({
+    this.pageSize = kCatalogPageSize,
+    AppLogger logger = const DebugAppLogger(),
+  }) : _logger = logger;
 
   final int pageSize;
+  final AppLogger _logger;
 
   PageFetcher<T>? _fetcher;
   int _generation = 0;
@@ -23,13 +31,13 @@ class PagedCollection<T> extends ChangeNotifier {
   int _total = 0;
   bool _loading = false;
   bool _loadingMore = false;
-  String? _errorMessage;
+  CatalogFailure? _failure;
 
   List<T> get items => _items;
   int get total => _total;
   bool get isLoading => _loading;
   bool get isLoadingMore => _loadingMore;
-  String? get errorMessage => _errorMessage;
+  CatalogFailure? get failure => _failure;
   bool get hasMore => _items.length < _total;
 
   Future<void> load(PageFetcher<T> fetcher) {
@@ -37,7 +45,7 @@ class PagedCollection<T> extends ChangeNotifier {
     final generation = ++_generation;
     _items = const [];
     _total = 0;
-    _errorMessage = null;
+    _failure = null;
     _loading = true;
     _loadingMore = false;
     _notify();
@@ -49,7 +57,7 @@ class PagedCollection<T> extends ChangeNotifier {
       return Future<void>.value();
     }
     _loadingMore = true;
-    _errorMessage = null;
+    _failure = null;
     _notify();
     return _fetch(_generation, offset: _items.length, append: true);
   }
@@ -69,7 +77,7 @@ class PagedCollection<T> extends ChangeNotifier {
     _total = 0;
     _loading = false;
     _loadingMore = false;
-    _errorMessage = null;
+    _failure = null;
     _notify();
   }
 
@@ -87,9 +95,17 @@ class PagedCollection<T> extends ChangeNotifier {
           ? List.unmodifiable([..._items, ...page.items])
           : page.items;
       _total = page.total;
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (generation != _generation) return;
-      _errorMessage = '$error';
+      _failure = CatalogFailure.pageLoadFailed;
+      _logger.error(
+        'catalog_page_load_failed',
+        error: redactSensitiveText(error.toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText(stackTrace.toString()),
+        ),
+        context: {'offset': offset, 'append': append},
+      );
     }
     if (generation != _generation) return;
     _loading = false;
@@ -112,10 +128,18 @@ class PagedCollection<T> extends ChangeNotifier {
 /// Query-driven replacement for the in-memory catalog that used to live on
 /// [AppController]. Only the current page plus the home previews are resident.
 class CatalogViewState extends ChangeNotifier {
-  final PagedCollection<CatalogItemSummary> items = PagedCollection();
-  final PagedCollection<SeriesSummary> series = PagedCollection();
-  final PagedCollection<CatalogItemSummary> episodes = PagedCollection();
-  final PagedCollection<CatalogItemSummary> searchResults = PagedCollection();
+  CatalogViewState({AppLogger logger = const DebugAppLogger()})
+    : _logger = logger,
+      items = PagedCollection(logger: logger),
+      series = PagedCollection(logger: logger),
+      episodes = PagedCollection(logger: logger),
+      searchResults = PagedCollection(logger: logger);
+
+  final AppLogger _logger;
+  final PagedCollection<CatalogItemSummary> items;
+  final PagedCollection<SeriesSummary> series;
+  final PagedCollection<CatalogItemSummary> episodes;
+  final PagedCollection<CatalogItemSummary> searchResults;
 
   CatalogQueryService? _service;
   String? _playlistId;
@@ -129,7 +153,7 @@ class CatalogViewState extends ChangeNotifier {
   CatalogGroupKind? browseGroupKind;
   int? selectedGroupId;
   bool isLoadingGroups = false;
-  String? groupsErrorMessage;
+  CatalogFailure? groupsFailure;
   CatalogSearchIndexStatus? searchIndexStatus;
   String _searchTerm = '';
   CatalogItemKind? _searchKind;
@@ -157,6 +181,7 @@ class CatalogViewState extends ChangeNotifier {
     browseGroups = const [];
     browseGroupKind = null;
     selectedGroupId = null;
+    groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
     _searchKind = null;
@@ -175,6 +200,7 @@ class CatalogViewState extends ChangeNotifier {
     browseGroups = const [];
     browseGroupKind = null;
     selectedGroupId = null;
+    groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
     _searchKind = null;
@@ -365,7 +391,7 @@ class CatalogViewState extends ChangeNotifier {
     required int generation,
   }) async {
     isLoadingGroups = true;
-    groupsErrorMessage = null;
+    groupsFailure = null;
     _notify();
     try {
       final loaded = await service.queryGroups(playlistId, kind: kind);
@@ -380,15 +406,23 @@ class CatalogViewState extends ChangeNotifier {
           !loaded.any((group) => group.id == selectedGroupId)) {
         selectedGroupId = null;
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (_service != service ||
           _playlistId != playlistId ||
           generation != _browseGeneration) {
         return;
       }
-      groupsErrorMessage = '$error';
+      groupsFailure = CatalogFailure.groupsLoadFailed;
       browseGroups = const [];
       selectedGroupId = null;
+      _logger.error(
+        'catalog_groups_load_failed',
+        error: redactSensitiveText(error.toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText(stackTrace.toString()),
+        ),
+        context: {'kind': kind.name},
+      );
     } finally {
       if (_service == service &&
           _playlistId == playlistId &&
@@ -396,6 +430,19 @@ class CatalogViewState extends ChangeNotifier {
         isLoadingGroups = false;
         _notify();
       }
+    }
+  }
+
+  Future<void> retryBrowseGroups() async {
+    switch (browseGroupKind) {
+      case CatalogGroupKind.live:
+        await showItems(CatalogItemKind.live, groupId: selectedGroupId);
+      case CatalogGroupKind.movie:
+        await showItems(CatalogItemKind.movie, groupId: selectedGroupId);
+      case CatalogGroupKind.series:
+        await showSeries(groupId: selectedGroupId);
+      case null:
+        return;
     }
   }
 
