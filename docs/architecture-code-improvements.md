@@ -74,7 +74,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-7.3 | Lifecycle: pause/release when hidden | 7 Playback | WP-7.1 | S | DONE (2026-10-11): VOD pauses in background and resumes only if previously playing; live playback stops. |
 | WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | DONE (2026-10-11): Centralized catalog fixtures, app test harness, settings fake, controller lifecycle, and SQLite test setup. |
 | WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | DONE (2026-10-11): Added page-retention/clear-race and stale browse-generation regressions; remaining priorities are covered by their owning packages. |
-| WP-9.1 | Logging: injected logger, redaction, no `print` | 9 Observability | WP-2.2 | S | TODO |
+| WP-9.1 | Logging: injected logger, redaction, no `print` | 9 Observability | WP-2.2 | S | DONE (2026-10-11): Routed app/media output through injected AppLogger, redacted logged text, and warn on background index failures. |
 | WP-9.2 | No raw exception text in the UI; no silent swallows | 9 Observability | WP-9.1 | S | TODO |
 
 Size guide: XS < 30 min of agent work, S = one focused change, M = several files, L = multi-step; split L packages into sub-commits that each keep tests green.
@@ -876,6 +876,7 @@ Prioritised by risk (complexity × missing coverage); these are behaviours, not 
 #### WP-9.1 — Logging
 - **Steps:** inject `AppLogger` everywhere a `debugPrint`/`print` is used in `lib/` (media_kit adapter publishes every state change incl. position ticks — downgrade to state *transitions* only); add `redactUrl` to any logged URL; background-worker `catchError` handlers log at warning level instead of discarding.
 - **Acceptance:** `grep -E "\bprint\(|debugPrint\(" lib` → only inside `DebugAppLogger`.
+- **Implementation notes (2026-10-11):** `AppDependencies` now retains the injected logger and passes it through `PlatformProfile` to MediaKit and the SQLite catalog/search indexer. The debug hardware-key logger uses `AppLogger`; MediaKit logs only status/buffering transitions, not position/duration ticks. `DebugAppLogger` redacts sensitive URLs in messages, context, errors, and stack traces, and detached indexing failures emit a warning with sanitized details. Acceptance search finds direct console output only in `DebugAppLogger`; the only `catchError` in `lib/` logs a warning. Added logger redaction, playback log-transition, and background-warning tests. Full suite: 263 passing; analyzer retains only the existing informational `unawaited_futures` in `webos/flutter/main.dart`.
 
 #### WP-9.2 — No raw exception text in UI
 - **Steps:** `PagedCollection` and `CatalogViewState` store a typed failure (`AppIssue` or enum), not `'$error'`; UI shows a friendly `ErrorView` with Retry (WP-5.2) and logs the raw error.

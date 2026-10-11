@@ -5,14 +5,18 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../models/content_item.dart';
+import '../logging/app_logger.dart';
 import 'playback_contract.dart';
+import 'playback_logging.dart';
 
 class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
   DesktopMediaKitPlaybackAdapter({
     bool disableVideoOutput = false,
     bool enableHardwareAcceleration = true,
+    AppLogger logger = const DebugAppLogger(),
   }) : _disableVideoOutput = disableVideoOutput,
-       _enableHardwareAcceleration = enableHardwareAcceleration {
+       _enableHardwareAcceleration = enableHardwareAcceleration,
+       _logger = logger {
     _playingSubscription = _player.stream.playing.listen((isPlaying) {
       if (_state.item == null) return;
       if (isPlaying) {
@@ -57,6 +61,7 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
 
   final bool _disableVideoOutput;
   final bool _enableHardwareAcceleration;
+  final AppLogger _logger;
 
   final _player = Player();
   final _stateController = StreamController<PlaybackState>.broadcast();
@@ -187,10 +192,19 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
         nextState.loadStartedAt != null) {
       nextState = nextState.copyWith(playbackStartedAt: DateTime.now());
     }
+    final previousState = _state;
     _state = nextState;
-    debugPrint(
-      '[Playback] status=${nextState.status.name} buffering=${nextState.isBuffering} position=${nextState.position.inMilliseconds}ms duration=${nextState.duration?.inMilliseconds ?? -1}ms startup=${nextState.startupLatency?.inMilliseconds ?? -1}ms title=${nextState.item?.title ?? '-'} message=${nextState.message ?? '-'}',
-    );
+    if (isPlaybackLogTransition(previousState, nextState)) {
+      _logger.info(
+        'playback_state_changed',
+        context: {
+          'status': nextState.status.name,
+          'buffering': nextState.isBuffering,
+          if (nextState.errorKind != null)
+            'errorKind': nextState.errorKind!.name,
+        },
+      );
+    }
     _stateController.add(nextState);
   }
 

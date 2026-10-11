@@ -1,4 +1,5 @@
 import '../../models/content_item.dart';
+import '../logging/app_logger.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_import_coordinator.dart';
 import 'catalog_importer.dart';
@@ -21,10 +22,12 @@ class SqliteCatalogRepository
     required DatabaseAdapter databaseAdapter,
     bool autoStartSearchIndexWorker = true,
     CatalogImportCoordinator? importCoordinator,
+    AppLogger logger = const DebugAppLogger(),
   }) {
     final searchIndexer = SqliteCatalogSearchIndexer(
       databaseAdapter: databaseAdapter,
       autoStartWorker: autoStartSearchIndexWorker,
+      logger: logger,
     );
     return SqliteCatalogRepository.fromServices(
       sync: CatalogSyncService(

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../services/logging/app_logger.dart';
 import '../services/playback/desktop_media_kit_playback.dart';
 import '../services/playback/playback_adapter.dart';
 import '../services/storage/secure_storage_service.dart';
@@ -21,7 +22,9 @@ abstract interface class PlatformProfile {
   Map<ShortcutActivator, Intent> get extraShortcuts;
 
   Future<void> initialize();
-  PlaybackAdapter createPlaybackAdapter();
+  PlaybackAdapter createPlaybackAdapter({
+    AppLogger logger = const DebugAppLogger(),
+  });
   DatabaseFactory createDatabaseFactory();
   Future<String> getDatabaseDirectory(DatabaseFactory databaseFactory);
   PlaylistSecretStore createSecretStore();
@@ -94,7 +97,9 @@ abstract base class _PlatformProfile implements PlatformProfile {
   }
 
   @override
-  PlaybackAdapter createPlaybackAdapter() => switch (resolvePlaybackBackend(
+  PlaybackAdapter createPlaybackAdapter({
+    AppLogger logger = const DebugAppLogger(),
+  }) => switch (resolvePlaybackBackend(
     platform,
     desktopBackend: build_flags.desktopPlaybackBackend,
   )) {
@@ -103,6 +108,7 @@ abstract base class _PlatformProfile implements PlatformProfile {
       disableVideoOutput: build_flags.disableDesktopVideoOutput,
       enableHardwareAcceleration:
           !build_flags.disableDesktopHardwareAcceleration,
+      logger: logger,
     ),
     PlaybackBackend.fake => FakePlaybackAdapter(),
   };

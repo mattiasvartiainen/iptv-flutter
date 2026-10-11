@@ -22,6 +22,7 @@ class AppDependencies {
     required this.playerController,
     required this.playlistsController,
     required this.preferencesController,
+    required this.logger,
     required AppStartup? startup,
     required this.capabilities,
     required this.extraShortcuts,
@@ -47,12 +48,13 @@ class AppDependencies {
     final secretStore = profile.createSecretStore();
     final catalogRepository = SqliteCatalogRepository(
       databaseAdapter: databaseAdapter,
+      logger: logger,
     );
     final settingsRepository = SqliteSettingsRepository(
       databaseAdapter: databaseAdapter,
       secretStore: secretStore,
     );
-    final playbackAdapter = profile.createPlaybackAdapter();
+    final playbackAdapter = profile.createPlaybackAdapter(logger: logger);
     final catalogView = CatalogViewState();
     final navigationController = NavigationController();
     final preferencesController = AppPreferencesController(
@@ -87,6 +89,7 @@ class AppDependencies {
       playerController: playerController,
       playlistsController: playlistsController,
       preferencesController: preferencesController,
+      logger: logger,
       startup: startup,
       capabilities: profile.capabilities,
       extraShortcuts: profile.extraShortcuts,
@@ -102,6 +105,7 @@ class AppDependencies {
     required PlayerController playerController,
     required PlaylistsController playlistsController,
     required AppPreferencesController preferencesController,
+    AppLogger logger = const DebugAppLogger(),
     PlatformCapabilities capabilities = const PlatformCapabilities(
       primaryInput: PrimaryInput.touch,
       hasHardwareBack: true,
@@ -113,6 +117,7 @@ class AppDependencies {
     playerController: playerController,
     playlistsController: playlistsController,
     preferencesController: preferencesController,
+    logger: logger,
     startup: null,
     capabilities: capabilities,
     extraShortcuts: extraShortcuts,
@@ -126,6 +131,7 @@ class AppDependencies {
   final PlayerController playerController;
   final PlaylistsController playlistsController;
   final AppPreferencesController preferencesController;
+  final AppLogger logger;
   final AppStartup? _startup;
   final PlatformCapabilities capabilities;
   final Map<ShortcutActivator, Intent> extraShortcuts;

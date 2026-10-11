@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../logging/app_logger.dart';
+import '../security/url_redaction.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_query.dart';
 
@@ -26,9 +28,12 @@ class SqliteCatalogSearchIndexer implements CatalogSearchIndexer {
   SqliteCatalogSearchIndexer({
     required DatabaseAdapter databaseAdapter,
     this.autoStartWorker = true,
-  }) : _databaseAdapter = databaseAdapter;
+    AppLogger logger = const DebugAppLogger(),
+  }) : _databaseAdapter = databaseAdapter,
+       _logger = logger;
 
   final DatabaseAdapter _databaseAdapter;
+  final AppLogger _logger;
 
   /// When false, [scheduleIndexing] is a no-op and draining only happens on
   /// an explicit [processQueue] call. Useful in tests that need to assert on
@@ -66,7 +71,16 @@ class SqliteCatalogSearchIndexer implements CatalogSearchIndexer {
     unawaited(
       processQueue(playlistId: playlistId)
           // The database may close under a detached drain; the queue persists.
-          .catchError((Object _, StackTrace stackTrace) => 0)
+          .catchError((Object error, StackTrace stackTrace) {
+            _logger.warning(
+              'catalog_search_index_background_failed',
+              context: {
+                'error': redactSensitiveText(error.toString()),
+                'stackTrace': redactSensitiveText(stackTrace.toString()),
+              },
+            );
+            return 0;
+          })
           .whenComplete(() => _indexingPlaylists.remove(playlistId)),
     );
   }

@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_importer.dart';
 import 'package:iptv_flutter/services/catalog/catalog_search_indexer.dart';
+import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
+import 'package:iptv_flutter/services/storage/storage_contracts.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 
 import '../../support/catalog_http_test_server.dart';
 import '../../support/database_adapter.dart';
@@ -102,4 +107,65 @@ void main() {
     expect((await indexer.status('indexed')).pendingItems, 0);
     expect(await search('Alpha'), hasLength(1));
   });
+
+  test('background drain failures are reported as redacted warnings', () async {
+    final logger = _RecordingLogger();
+    final indexer = SqliteCatalogSearchIndexer(
+      databaseAdapter: _FailingDatabaseAdapter(),
+      logger: logger,
+    );
+
+    indexer.scheduleIndexing('playlist');
+    await logger.warningRecorded.future;
+
+    expect(logger.warningMessage, 'catalog_search_index_background_failed');
+    final context = logger.warningContext!;
+    expect(context['error'], isNot(contains('private-user')));
+    expect(context['error'], isNot(contains('private-pass')));
+    expect(context['error'], contains('%5Bredacted%5D'));
+  });
+}
+
+class _FailingDatabaseAdapter implements DatabaseAdapter {
+  @override
+  Future<Database> get database async => throw StateError(
+    'Failed URL: https://provider.test/live/private-user/private-pass/list.m3u',
+  );
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<T> transaction<T>(
+    Future<T> Function(DatabaseExecutor txn) action,
+  ) => throw StateError(
+    'Failed URL: https://provider.test/live/private-user/private-pass/list.m3u',
+  );
+}
+
+class _RecordingLogger implements AppLogger {
+  final warningRecorded = Completer<void>();
+  String? warningMessage;
+  Map<String, Object?>? warningContext;
+
+  @override
+  void error(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    Map<String, Object?> context = const {},
+  }) {}
+
+  @override
+  void info(String message, {Map<String, Object?> context = const {}}) {}
+
+  @override
+  void warning(String message, {Map<String, Object?> context = const {}}) {
+    warningMessage = message;
+    warningContext = context;
+    if (!warningRecorded.isCompleted) warningRecorded.complete();
+  }
 }

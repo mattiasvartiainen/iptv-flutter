@@ -81,10 +81,13 @@ class _IptvAppState extends State<IptvApp> {
   }
 
   bool _logHardwareKey(KeyEvent event) {
-    debugPrint(
-      'Hardware key ${event.runtimeType}: '
-      'logical=0x${event.logicalKey.keyId.toRadixString(16)} '
-      'physical=0x${event.physicalKey.usbHidUsage.toRadixString(16)}',
+    widget.dependencies.logger.info(
+      'hardware_key',
+      context: {
+        'event': event.runtimeType.toString(),
+        'logicalKey': '0x${event.logicalKey.keyId.toRadixString(16)}',
+        'physicalKey': '0x${event.physicalKey.usbHidUsage.toRadixString(16)}',
+      },
     );
     return false;
   }
