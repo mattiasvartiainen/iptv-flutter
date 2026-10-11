@@ -72,7 +72,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-7.1 | `PlayerController` owns the playback session | 7 Playback | WP-3.2 | M | DONE (2026-10-09): Moved the controller to `lib/features/player/`, added adapter-state `ValueListenable` and guarded playback commands; unit and full-suite tests pass. |
 | WP-7.2 | Typed playback errors, shared mapper | 7 Playback | WP-7.1 | S | DONE (2026-10-11): Added shared error classification to both adapters and typed playback state; player UI maps kinds to safe text. |
 | WP-7.3 | Lifecycle: pause/release when hidden | 7 Playback | WP-7.1 | S | DONE (2026-10-11): VOD pauses in background and resumes only if previously playing; live playback stops. |
-| WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | TODO |
+| WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | DONE (2026-10-11): Centralized catalog fixtures, app test harness, settings fake, controller lifecycle, and SQLite test setup. |
 | WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | TODO |
 | WP-9.1 | Logging: injected logger, redaction, no `print` | 9 Observability | WP-2.2 | S | TODO |
 | WP-9.2 | No raw exception text in the UI; no silent swallows | 9 Observability | WP-9.1 | S | TODO |
@@ -857,6 +857,7 @@ Read [§6](#6-platform-strategy-in-detail) before starting this batch.
 #### WP-8.1 — Shared test support
 - **Steps:** move `_TestSettingsRepository` (widget_test.dart), fixture builders, temp-DB setup (`sqfliteFfiInit` + `databaseFactoryFfi` once per process) into `test/support/`. Provide `pumpIptvApp(tester, {fakes...})`.
 - **Acceptance:** no duplicated fake repositories across test files.
+- **Implementation notes (2026-10-11):** Moved `FixtureCatalogRepository` and `fixtureCatalog` to `test/support/catalog_fixtures.dart`; the production catalog repository no longer contains test fixtures. Replaced the duplicate widget-test settings fake with the shared `InMemorySettingsRepository`. Added `test/support/app_harness.dart` with shared controller creation/disposal and `pumpIptvApp`, supporting injected settings/catalog/query/playback fakes, capabilities, shortcuts, viewport size, text scale, and optional fixture/player initialization. Reused the existing `test/support/database_adapter.dart` FFI setup. Updated all fixture consumers and the root widget suite. Full suite: 255 passing; analyzer retains only the existing informational `unawaited_futures` in `webos/flutter/main.dart`.
 
 #### WP-8.2 — High-value missing tests
 Prioritised by risk (complexity × missing coverage); these are behaviours, not coverage targets:

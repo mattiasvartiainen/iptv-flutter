@@ -6,9 +6,10 @@ import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
-import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
+
+import '../support/catalog_fixtures.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -119,24 +120,29 @@ void main() {
     expect(adapter.state.status, PlaybackStatus.playing);
   });
 
-  test('backgrounding pauses VOD and resumes it only when it was playing', () async {
-    final vod = fixtureCatalog.firstWhere((item) => item.type == ContentType.vod);
-    await player.openPlayer(vod);
+  test(
+    'backgrounding pauses VOD and resumes it only when it was playing',
+    () async {
+      final vod = fixtureCatalog.firstWhere(
+        (item) => item.type == ContentType.vod,
+      );
+      await player.openPlayer(vod);
 
-    _backgroundApp();
-    await Future<void>.delayed(Duration.zero);
-    expect(adapter.state.status, PlaybackStatus.paused);
+      _backgroundApp();
+      await Future<void>.delayed(Duration.zero);
+      expect(adapter.state.status, PlaybackStatus.paused);
 
-    _foregroundApp();
-    await Future<void>.delayed(Duration.zero);
-    expect(adapter.state.status, PlaybackStatus.playing);
+      _foregroundApp();
+      await Future<void>.delayed(Duration.zero);
+      expect(adapter.state.status, PlaybackStatus.playing);
 
-    await player.pause();
-    _backgroundApp();
-    _foregroundApp();
-    await Future<void>.delayed(Duration.zero);
-    expect(adapter.state.status, PlaybackStatus.paused);
-  });
+      await player.pause();
+      _backgroundApp();
+      _foregroundApp();
+      await Future<void>.delayed(Duration.zero);
+      expect(adapter.state.status, PlaybackStatus.paused);
+    },
+  );
 
   test('backgrounding stops live playback and does not resume it', () async {
     await player.openPlayer(fixtureCatalog.first);

@@ -7,13 +7,13 @@ import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
-import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 import 'package:iptv_flutter/state/app_preferences_controller.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 
+import '../support/catalog_fixtures.dart';
 import '../support/in_memory_settings_repository.dart';
 
 typedef _PlayerHarness = ({

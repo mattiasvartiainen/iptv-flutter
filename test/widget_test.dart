@@ -4,9 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app.dart';
 import 'package:iptv_flutter/app/app_dependencies.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
-import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/catalog/catalog_screen.dart';
-import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/features/search/search_screen.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/platform/platform_capabilities.dart';
@@ -17,19 +15,15 @@ import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/errors/app_issue.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
-import 'package:iptv_flutter/state/app_controller.dart';
-import 'package:iptv_flutter/state/app_preferences_controller.dart';
-import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 import 'package:iptv_flutter/ui/theme/app_tokens.dart';
 import 'package:iptv_flutter/ui/widgets/app_scope.dart';
 
-typedef _TestControllers = ({
-  AppController app,
-  PlayerController player,
-  PlaylistsController playlists,
-  AppPreferencesController preferences,
-});
+import 'support/app_harness.dart';
+import 'support/catalog_fixtures.dart';
+import 'support/in_memory_settings_repository.dart';
+
+typedef _TestControllers = TestAppControllers;
 
 class _SequencedIndexStatusService extends InMemoryCatalogQueryService {
   _SequencedIndexStatusService(super.playlistId, super.items, this._statuses);
@@ -50,81 +44,26 @@ _TestControllers _createTestControllers({
   required SettingsRepository settingsRepository,
   required PlaybackAdapter playbackAdapter,
 }) {
-  final catalogView = CatalogViewState();
-  final navigationController = NavigationController();
-  final preferences = AppPreferencesController(
-    settingsRepository: settingsRepository,
-  );
-  final playlists = PlaylistsController(
+  return createTestControllers(
     catalogRepository: catalogRepository,
     catalogQueryService: catalogQueryService,
     settingsRepository: settingsRepository,
-    catalogView: catalogView,
-    navigationController: navigationController,
-    preferencesController: preferences,
-  );
-  final app = AppController(
-    catalogView: catalogView,
-    navigationController: navigationController,
-  );
-  final player = PlayerController(
     playbackAdapter: playbackAdapter,
-    navigationController: navigationController,
-  );
-  return (
-    app: app,
-    player: player,
-    playlists: playlists,
-    preferences: preferences,
   );
 }
 
-void _disposeTestControllers(_TestControllers controllers) {
-  controllers.player.dispose();
-  controllers.playlists.dispose();
-  controllers.preferences.dispose();
-  controllers.app.catalogView.dispose();
-  controllers.app.navigationController.dispose();
-}
+void _disposeTestControllers(_TestControllers controllers) =>
+    disposeTestControllers(controllers);
 
 void main() {
   Future<(_TestControllers, String)> pumpLoadedApp(WidgetTester tester) async {
-    final settings = _TestSettingsRepository();
-    final playlist = await settings.upsertPlaylist(
-      const PlaylistSourceConfig.url(
-        name: 'Fixture',
-        url: 'https://fixture.test/playlist.m3u',
-      ),
-    );
-    final controllers = _createTestControllers(
-      catalogRepository: const FixtureCatalogRepository(),
-      catalogQueryService: InMemoryCatalogQueryService(
-        playlist.playlistId,
-        fixtureCatalog,
-      ),
-      settingsRepository: settings,
+    final harness = await pumpIptvApp(
+      tester,
       playbackAdapter: FakePlaybackAdapter(
         transitionDelay: const Duration(milliseconds: 1),
       ),
     );
-    addTearDown(() => _disposeTestControllers(controllers));
-
-    await tester.pumpWidget(
-      IptvApp(
-        dependencies: AppDependencies.forTesting(
-          appController: controllers.app,
-          playerController: controllers.player,
-          playlistsController: controllers.playlists,
-          preferencesController: controllers.preferences,
-        ),
-      ),
-    );
-    await controllers.playlists.loadPlaylist(
-      playlist.playlistId,
-      intent: PlaylistLoadIntent.setup,
-    );
-    await tester.pumpAndSettle();
-    return (controllers, playlist.playlistId);
+    return (harness.controllers, harness.playlistId!);
   }
 
   for (final input in PrimaryInput.values) {
@@ -683,98 +622,4 @@ class _FailingCatalogRepository implements CatalogRepository {
   }
 }
 
-class _TestSettingsRepository implements SettingsRepository {
-  final Map<String, String> _appSettings = {};
-  final Map<String, ManagedPlaylist> _playlists = {};
-  final Map<String, String> _urls = {};
-
-  @override
-  Future<String?> getAppSetting(String key) async => _appSettings[key];
-
-  @override
-  Future<void> setAppSetting(String key, String value) async {
-    _appSettings[key] = value;
-  }
-
-  @override
-  Future<List<ManagedPlaylist>> listPlaylists() async =>
-      _playlists.values.toList(growable: false);
-
-  @override
-  Future<ManagedPlaylist?> getPlaylist(String playlistId) async =>
-      _playlists[playlistId];
-
-  @override
-  Future<ManagedPlaylist> upsertPlaylist(PlaylistSourceConfig config) async {
-    final id = config.playlistId ?? 'playlist-${_playlists.length + 1}';
-    final playlist = ManagedPlaylist(
-      playlistId: id,
-      name: config.name,
-      enabled: true,
-      sourceConfig: config,
-      sourceKind: config.kind,
-      sourceSummary: config.summary,
-      resolvedUrl: config.resolvedUrl,
-      sourceUrlRedacted: null,
-      lastImportStatus: null,
-      lastImportWarning: null,
-      lastImportCompletedAt: null,
-      refreshSettings: null,
-    );
-    _playlists[id] = playlist;
-    _urls[id] = config.resolvedUrl;
-    return playlist;
-  }
-
-  @override
-  Future<void> deletePlaylist(String playlistId) async {
-    _playlists.remove(playlistId);
-    _urls.remove(playlistId);
-  }
-
-  @override
-  Future<String?> resolvePlaylistUrl(String playlistId) async =>
-      _urls[playlistId];
-
-  @override
-  Future<PlaylistRefreshSettings?> getPlaylistRefreshSettings(
-    String playlistId,
-  ) async => null;
-
-  @override
-  Future<bool> isCategoryHidden({
-    required String playlistId,
-    required String categoryId,
-    String? profileId,
-  }) async => false;
-
-  @override
-  Future<void> setCategoryHidden({
-    required String playlistId,
-    required String categoryId,
-    required bool hidden,
-    String? profileId,
-  }) async {}
-
-  @override
-  Future<bool> isGroupHidden({
-    required String playlistId,
-    required CatalogGroupKind kind,
-    required String groupTitle,
-    String? profileId,
-  }) async => false;
-
-  @override
-  Future<void> setGroupHidden({
-    required String playlistId,
-    required CatalogGroupKind kind,
-    required String groupTitle,
-    required bool hidden,
-    String? profileId,
-  }) async {}
-
-  @override
-  Future<void> upsertPlaylistRefreshSettings(
-    PlaylistRefreshSettings settings,
-  ) async {}
-}
+typedef _TestSettingsRepository = InMemorySettingsRepository;

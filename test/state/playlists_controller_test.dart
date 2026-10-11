@@ -14,6 +14,7 @@ import 'package:iptv_flutter/state/app_preferences_controller.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 
+import '../support/catalog_fixtures.dart';
 import '../support/in_memory_settings_repository.dart';
 
 void main() {
