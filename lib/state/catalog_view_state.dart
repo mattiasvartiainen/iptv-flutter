@@ -134,6 +134,7 @@ class CatalogViewState extends ChangeNotifier {
   String _searchTerm = '';
   CatalogItemKind? _searchKind;
   int _searchStatusGeneration = 0;
+  int _browseGeneration = 0;
 
   /// Total media rows for the bound playlist, used for empty-state decisions.
   int itemCount = 0;
@@ -145,6 +146,7 @@ class CatalogViewState extends ChangeNotifier {
     required CatalogQueryService service,
     required String playlistId,
   }) async {
+    _browseGeneration++;
     _service = service;
     _playlistId = playlistId;
     items.clear();
@@ -162,6 +164,7 @@ class CatalogViewState extends ChangeNotifier {
   }
 
   void unbind() {
+    _browseGeneration++;
     _service = null;
     _playlistId = null;
     items.clear();
@@ -272,6 +275,7 @@ class CatalogViewState extends ChangeNotifier {
     final service = _service;
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return Future<void>.value();
+    final generation = ++_browseGeneration;
 
     final groupKind = switch (kind) {
       CatalogItemKind.live => CatalogGroupKind.live,
@@ -282,7 +286,13 @@ class CatalogViewState extends ChangeNotifier {
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     selectedGroupId = kindChanged ? null : groupId;
-    await _loadBrowseGroups(service, playlistId, groupKind);
+    await _loadBrowseGroups(
+      service,
+      playlistId,
+      groupKind,
+      generation: generation,
+    );
+    if (generation != _browseGeneration) return;
     final selectedGroup = selectedGroupId;
     await items.load(
       (offset, limit) => selectedGroup == null
@@ -307,12 +317,19 @@ class CatalogViewState extends ChangeNotifier {
     final service = _service;
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return Future<void>.value();
+    final generation = ++_browseGeneration;
 
     const groupKind = CatalogGroupKind.series;
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     selectedGroupId = kindChanged ? null : groupId;
-    await _loadBrowseGroups(service, playlistId, groupKind);
+    await _loadBrowseGroups(
+      service,
+      playlistId,
+      groupKind,
+      generation: generation,
+    );
+    if (generation != _browseGeneration) return;
     final selectedGroup = selectedGroupId;
     await series.load(
       (offset, limit) => selectedGroup == null
@@ -344,8 +361,9 @@ class CatalogViewState extends ChangeNotifier {
   Future<void> _loadBrowseGroups(
     CatalogQueryService service,
     String playlistId,
-    CatalogGroupKind kind,
-  ) async {
+    CatalogGroupKind kind, {
+    required int generation,
+  }) async {
     isLoadingGroups = true;
     groupsErrorMessage = null;
     _notify();
@@ -353,6 +371,7 @@ class CatalogViewState extends ChangeNotifier {
       final loaded = await service.queryGroups(playlistId, kind: kind);
       if (_service != service ||
           _playlistId != playlistId ||
+          generation != _browseGeneration ||
           browseGroupKind != kind) {
         return;
       }
@@ -362,12 +381,18 @@ class CatalogViewState extends ChangeNotifier {
         selectedGroupId = null;
       }
     } catch (error) {
-      if (_service != service || _playlistId != playlistId) return;
+      if (_service != service ||
+          _playlistId != playlistId ||
+          generation != _browseGeneration) {
+        return;
+      }
       groupsErrorMessage = '$error';
       browseGroups = const [];
       selectedGroupId = null;
     } finally {
-      if (_service == service && _playlistId == playlistId) {
+      if (_service == service &&
+          _playlistId == playlistId &&
+          generation == _browseGeneration) {
         isLoadingGroups = false;
         _notify();
       }

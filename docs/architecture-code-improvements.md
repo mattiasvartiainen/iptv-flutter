@@ -73,7 +73,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-7.2 | Typed playback errors, shared mapper | 7 Playback | WP-7.1 | S | DONE (2026-10-11): Added shared error classification to both adapters and typed playback state; player UI maps kinds to safe text. |
 | WP-7.3 | Lifecycle: pause/release when hidden | 7 Playback | WP-7.1 | S | DONE (2026-10-11): VOD pauses in background and resumes only if previously playing; live playback stops. |
 | WP-8.1 | Shared test support (`test/support/`) | 8 Testing | – | S | DONE (2026-10-11): Centralized catalog fixtures, app test harness, settings fake, controller lifecycle, and SQLite test setup. |
-| WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | TODO |
+| WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | DONE (2026-10-11): Added page-retention/clear-race and stale browse-generation regressions; remaining priorities are covered by their owning packages. |
 | WP-9.1 | Logging: injected logger, redaction, no `print` | 9 Observability | WP-2.2 | S | TODO |
 | WP-9.2 | No raw exception text in the UI; no silent swallows | 9 Observability | WP-9.1 | S | TODO |
 
@@ -869,6 +869,7 @@ Prioritised by risk (complexity × missing coverage); these are behaviours, not 
 6. Player controller + lifecycle (Batch 7).
 7. Focus/remote navigation (WP-4.6).
 - **Skills:** `dart-add-unit-test`, `dart-collect-coverage` (use coverage to *find* untested complex code, not as a target).
+- **Implementation notes (2026-10-11):** Added `PagedCollection` tests proving a page-2 failure retains page 1 and can be retried, and `clear()` discards a pending response. Added `CatalogViewState` tests proving kind changes reset group selection and a late groups response cannot replace the newer browse kind or item page; the latter exposed and fixed a stale continuation by generation-guarding the entire browse operation. The remaining listed behaviors are covered by the route-stack, playlist-controller, URL-redaction/form-validation, player/lifecycle, and focus suites added with their owning packages. Full suite: 259 passing; analyzer retains only the existing informational `unawaited_futures` in `webos/flutter/main.dart`.
 
 ### Batch 9 — Observability & error handling
 

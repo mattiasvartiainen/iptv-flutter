@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
@@ -6,6 +8,48 @@ import 'package:iptv_flutter/ui/widgets/paged_grid_view.dart';
 import 'package:iptv_flutter/ui/widgets/paged_list_view.dart';
 
 void main() {
+  test('failed page two retains page one and can be retried', () async {
+    final collection = PagedCollection<int>(pageSize: 2);
+    addTearDown(collection.dispose);
+    var secondPageAttempts = 0;
+    await collection.load((offset, limit) async {
+      if (offset == 2 && secondPageAttempts++ == 0) {
+        throw StateError('temporary page failure');
+      }
+      return _page(offset, limit, 4);
+    });
+
+    await collection.loadMore();
+
+    expect(collection.items, [0, 1]);
+    expect(collection.total, 4);
+    expect(collection.hasMore, isTrue);
+    expect(collection.isLoadingMore, isFalse);
+    expect(collection.errorMessage, contains('temporary page failure'));
+
+    await collection.retry();
+    expect(collection.items, [0, 1, 2, 3]);
+    expect(collection.errorMessage, isNull);
+  });
+
+  test('clear drops the result of an in-flight fetch', () async {
+    final collection = PagedCollection<int>(pageSize: 2);
+    addTearDown(collection.dispose);
+    final response = Completer<CatalogPage<int>>();
+    final loading = collection.load((_, _) => response.future);
+
+    expect(collection.isLoading, isTrue);
+    collection.clear();
+    response.complete(const CatalogPage<int>(items: [1, 2], offset: 0, total: 2));
+    await loading;
+
+    expect(collection.items, isEmpty);
+    expect(collection.total, 0);
+    expect(collection.isLoading, isFalse);
+    expect(collection.isLoadingMore, isFalse);
+    expect(collection.errorMessage, isNull);
+  });
+
   group('PagedListView', () {
     testWidgets('loads another page when the first page underfills the view', (
       tester,
