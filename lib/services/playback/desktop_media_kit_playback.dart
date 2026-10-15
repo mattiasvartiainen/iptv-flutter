@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../models/content_item.dart';
 import '../logging/app_logger.dart';
 import 'playback_contract.dart';
+import 'playback_http_headers.dart';
 import 'playback_logging.dart';
 
 class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
@@ -123,13 +124,7 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
 
     try {
       await _player.open(
-        Media(
-          item.streamUrl,
-          httpHeaders: const {
-            'Accept': 'application/x-mpegURL,application/vnd.apple.mpegurl,*/*',
-            'User-Agent': 'IPTV-Flutter/0.1',
-          },
-        ),
+        Media(item.streamUrl, httpHeaders: playbackHttpHeaders),
       );
     } catch (error) {
       _publish(

@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../models/content_item.dart';
 import 'playback_contract.dart';
+import 'playback_http_headers.dart';
 
 class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   final _stateController = StreamController<PlaybackState>.broadcast();
@@ -53,6 +54,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
 
     final controller = VideoPlayerController.networkUrl(
       Uri.parse(item.streamUrl),
+      httpHeaders: playbackHttpHeaders,
     );
     _controller = controller;
     controller.addListener(_handleControllerUpdate);
