@@ -39,7 +39,10 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
     final controller = AppScope.appControllerOf(context);
     final navigation = AppScope.navigationControllerOf(context);
     return ListenableBuilder(
-      listenable: navigation,
+      listenable: Listenable.merge([
+        navigation,
+        AppScope.preferencesControllerOf(context),
+      ]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
           final compact =
@@ -87,6 +90,8 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (_supportsViewToggle(context))
+                          _buildViewToggle(context),
                         IconButton(
                           tooltip: 'Search',
                           onPressed: controller.openSearch,
@@ -132,7 +137,10 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
                   children: [
                     Offstage(
                       offstage:
-                          compact || (!widget.showBack && widget.title == null),
+                          compact ||
+                          (!widget.showBack &&
+                              widget.title == null &&
+                              !_supportsViewToggle(context)),
                       child: _buildPageHeading(context, controller, theme),
                     ),
                     Expanded(
@@ -199,6 +207,29 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
       },
     ),
   };
+
+  bool _supportsViewToggle(BuildContext context) {
+    final route = AppScope.navigationControllerOf(context).currentRoute;
+    return route is HomeRoute ||
+        route is CatalogRoute ||
+        route is SeriesRoute ||
+        route is SeasonsRoute ||
+        route is EpisodesRoute;
+  }
+
+  Widget _buildViewToggle(BuildContext context) {
+    final preferences = AppScope.preferencesControllerOf(context);
+    return IconButton(
+      tooltip: preferences.useListView ? 'Show card view' : 'Show list view',
+      isSelected: preferences.useListView,
+      onPressed: () => preferences.setUseListView(!preferences.useListView),
+      icon: Icon(
+        preferences.useListView
+            ? Icons.grid_view_outlined
+            : Icons.view_list_outlined,
+      ),
+    );
+  }
 
   void _focusPageContent() {
     final remembered = _contentFocusScope.focusedChild;
@@ -307,6 +338,8 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
               ),
             ),
           ],
+          if (widget.title == null) const Spacer(),
+          if (_supportsViewToggle(context)) _buildViewToggle(context),
         ],
       ),
     ),

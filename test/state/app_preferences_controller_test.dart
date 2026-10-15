@@ -4,6 +4,25 @@ import 'package:iptv_flutter/state/app_preferences_controller.dart';
 import '../support/in_memory_settings_repository.dart';
 
 void main() {
+  test(
+    'list view defaults to cards and survives controller recreation',
+    () async {
+      final settings = InMemorySettingsRepository();
+      final controller = AppPreferencesController(settingsRepository: settings);
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      expect(controller.useListView, isFalse);
+      await controller.setUseListView(true);
+      expect(controller.useListView, isTrue);
+      final restored = AppPreferencesController(settingsRepository: settings);
+      addTearDown(restored.dispose);
+      await restored.initialize();
+      expect(restored.useListView, isTrue);
+      await restored.setUseListView(false);
+      expect(restored.useListView, isFalse);
+    },
+  );
+
   test('initializes defaults when settings are missing', () async {
     final controller = AppPreferencesController(
       settingsRepository: InMemorySettingsRepository(),

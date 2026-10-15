@@ -19,6 +19,16 @@ const SliverGridDelegate _cardGrid = SliverGridDelegateWithMaxCrossAxisExtent(
   mainAxisSpacing: AppTokens.gridGap,
 );
 
+SliverGridDelegate _viewGrid(BuildContext context, SliverGridDelegate cards) =>
+    AppScope.preferencesControllerOf(context).useListView
+    ? SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 1,
+        mainAxisExtent: AppTokens.mediaListExtentFor(
+          MediaQuery.textScalerOf(context),
+        ),
+      )
+    : cards;
+
 class CatalogScreen extends StatelessWidget {
   const CatalogScreen({super.key, required this.route});
 
@@ -28,31 +38,34 @@ class CatalogScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.appControllerOf(context);
     final view = controller.catalogView;
-    return switch (route) {
-      CatalogRoute(kind: CatalogItemKind.live) => _ContentGrid(
-        title: 'Live TV',
-        groupKind: CatalogGroupKind.live,
-        collection: view.items,
-        emptyText: 'No live channels found yet.',
-      ),
-      CatalogRoute(kind: CatalogItemKind.movie) => _ContentGrid(
-        title: 'Movies',
-        groupKind: CatalogGroupKind.movie,
-        collection: view.items,
-        emptyText: 'No movies found yet.',
-      ),
-      SeriesRoute() => _SeriesGrid(
-        groupKind: CatalogGroupKind.series,
-        collection: view.series,
-      ),
-      SeasonsRoute(:final series) => _SeasonGrid(series: series),
-      EpisodesRoute(:final series, :final season) => _EpisodeGrid(
-        series: series,
-        season: season,
-        collection: view.episodes,
-      ),
-      _ => const SizedBox.shrink(),
-    };
+    return ListenableBuilder(
+      listenable: AppScope.preferencesControllerOf(context),
+      builder: (context, _) => switch (route) {
+        CatalogRoute(kind: CatalogItemKind.live) => _ContentGrid(
+          title: 'Live TV',
+          groupKind: CatalogGroupKind.live,
+          collection: view.items,
+          emptyText: 'No live channels found yet.',
+        ),
+        CatalogRoute(kind: CatalogItemKind.movie) => _ContentGrid(
+          title: 'Movies',
+          groupKind: CatalogGroupKind.movie,
+          collection: view.items,
+          emptyText: 'No movies found yet.',
+        ),
+        SeriesRoute() => _SeriesGrid(
+          groupKind: CatalogGroupKind.series,
+          collection: view.series,
+        ),
+        SeasonsRoute(:final series) => _SeasonGrid(series: series),
+        EpisodesRoute(:final series, :final season) => _EpisodeGrid(
+          series: series,
+          season: season,
+          collection: view.episodes,
+        ),
+        _ => const SizedBox.shrink(),
+      },
+    );
   }
 }
 
@@ -83,8 +96,9 @@ class _ContentGrid extends StatelessWidget {
           child: PagedGridView<CatalogItemSummary>(
             collection: collection,
             emptyMessage: emptyText,
-            gridDelegate: _cardGrid,
+            gridDelegate: _viewGrid(context, _cardGrid),
             itemBuilder: (context, item, autofocus) => MediaTile(
+              listView: AppScope.preferencesControllerOf(context).useListView,
               key: ValueKey<String>(item.id),
               autofocus: autofocus,
               title: item.title,
@@ -120,8 +134,9 @@ class _SeriesGrid extends StatelessWidget {
           child: PagedGridView<SeriesSummary>(
             collection: collection,
             emptyMessage: 'No series episodes recognized yet.',
-            gridDelegate: _cardGrid,
+            gridDelegate: _viewGrid(context, _cardGrid),
             itemBuilder: (context, item, autofocus) => MediaTile(
+              listView: AppScope.preferencesControllerOf(context).useListView,
               key: ValueKey<String>(item.id),
               autofocus: autofocus,
               title: item.title,
@@ -161,17 +176,22 @@ class _SeasonGrid extends StatelessWidget {
                     return const EmptyView(message: 'No seasons found.');
                   }
                   return GridView.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: AppTokens.tileWidth,
-                          mainAxisExtent: AppTokens.seasonTileHeight,
-                          crossAxisSpacing: AppTokens.gridGap,
-                          mainAxisSpacing: AppTokens.gridGap,
-                        ),
+                    gridDelegate: _viewGrid(
+                      context,
+                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: AppTokens.tileWidth,
+                        mainAxisExtent: AppTokens.seasonTileHeight,
+                        crossAxisSpacing: AppTokens.gridGap,
+                        mainAxisSpacing: AppTokens.gridGap,
+                      ),
+                    ),
                     itemCount: seasons.length,
                     itemBuilder: (context, index) {
                       final season = seasons[index];
                       return MediaTile(
+                        listView: AppScope.preferencesControllerOf(
+                          context,
+                        ).useListView,
                         key: ValueKey<String>(season.id),
                         autofocus: index == 0,
                         title: 'Season ${season.seasonNumber}',
@@ -218,13 +238,19 @@ class _EpisodeGrid extends StatelessWidget {
             : PagedGridView<CatalogItemSummary>(
                 collection: collection,
                 emptyMessage: 'No episodes found.',
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: AppTokens.episodeTileWidth,
-                  mainAxisExtent: AppTokens.episodeTileHeight,
-                  crossAxisSpacing: AppTokens.gridGap,
-                  mainAxisSpacing: AppTokens.gridGap,
+                gridDelegate: _viewGrid(
+                  context,
+                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: AppTokens.episodeTileWidth,
+                    mainAxisExtent: AppTokens.episodeTileHeight,
+                    crossAxisSpacing: AppTokens.gridGap,
+                    mainAxisSpacing: AppTokens.gridGap,
+                  ),
                 ),
                 itemBuilder: (context, episode, autofocus) => MediaTile(
+                  listView: AppScope.preferencesControllerOf(
+                    context,
+                  ).useListView,
                   key: ValueKey<String>(episode.id),
                   autofocus: autofocus,
                   title: episode.title,

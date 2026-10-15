@@ -11,6 +11,12 @@ class AppPreferences {
   static const _showHomeSeriesKey = 'show_home_series';
   static const _verboseRefreshInfoKey = 'verbose_refresh_info';
   static const _activePlaylistIdKey = 'active_playlist_id';
+  static const _useListViewKey = 'use_list_view';
+
+  Future<bool> useListView() => _readBool(_useListViewKey, defaultValue: false);
+
+  Future<void> setUseListView(bool enabled) =>
+      _writeBool(_useListViewKey, enabled);
 
   Future<String?> activePlaylistId() =>
       _settingsRepository.getAppSetting(_activePlaylistIdKey);

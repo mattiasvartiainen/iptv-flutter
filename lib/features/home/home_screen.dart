@@ -147,28 +147,53 @@ class _ContentStrip extends StatelessWidget {
       return _EmptyTile(text: emptyText);
     }
 
-    return SizedBox(
-      height: AppTokens.homeStripHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: items.length,
-        separatorBuilder: (_, _) =>
-            const SizedBox(width: AppTokens.homeStripGap),
-        itemBuilder: (context, index) {
-          final item = items[index];
-          return SizedBox(
-            width: AppTokens.tileWidth,
-            child: MediaTile(
-              key: ValueKey<String>(item.id),
-              autofocus: autofocusFirst && index == 0,
-              title: item.title,
-              subtitle: item.group,
-              icon: item.kind.icon,
-              imageUrl: item.artworkUrl ?? item.logoUrl,
-              onActivate: () => onTap(item),
+    if (AppScope.preferencesControllerOf(context).useListView) {
+      return Column(
+        children: [
+          for (var index = 0; index < items.length; index++)
+            SizedBox(
+              width: double.infinity,
+              height: AppTokens.mediaListExtentFor(
+                MediaQuery.textScalerOf(context),
+              ),
+              child: MediaTile(
+                key: ValueKey<String>(items[index].id),
+                listView: true,
+                autofocus: autofocusFirst && index == 0,
+                title: items[index].title,
+                subtitle: items[index].group,
+                icon: items[index].kind.icon,
+                onActivate: () => onTap(items[index]),
+              ),
             ),
-          );
-        },
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) => SizedBox(
+        height: AppTokens.homeStripHeight,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: items.length,
+          separatorBuilder: (_, _) =>
+              const SizedBox(width: AppTokens.homeStripGap),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return SizedBox(
+              width: AppTokens.homeTileWidthFor(constraints.maxWidth),
+              child: MediaTile(
+                key: ValueKey<String>(item.id),
+                autofocus: autofocusFirst && index == 0,
+                title: item.title,
+                subtitle: item.group,
+                icon: item.kind.icon,
+                imageUrl: item.artworkUrl ?? item.logoUrl,
+                onActivate: () => onTap(item),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -187,29 +212,55 @@ class _SeriesStrip extends StatelessWidget {
       return const _EmptyTile(text: 'No series episodes recognized yet.');
     }
 
-    return SizedBox(
-      height: AppTokens.homeStripHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: series.length,
-        separatorBuilder: (_, _) =>
-            const SizedBox(width: AppTokens.homeStripGap),
-        itemBuilder: (context, index) {
-          final value = series[index];
-          return SizedBox(
-            width: AppTokens.episodeTileWidth,
-            child: MediaTile(
-              key: ValueKey<String>(value.id),
-              autofocus: autofocusFirst && index == 0,
-              title: value.title,
-              subtitle:
-                  '${value.seasonCount} seasons · ${value.episodeCount} episodes',
-              icon: Icons.tv,
-              imageUrl: value.artworkUrl,
-              onActivate: () => c.openSeriesSeasons(value),
+    if (AppScope.preferencesControllerOf(context).useListView) {
+      return Column(
+        children: [
+          for (var index = 0; index < series.length; index++)
+            SizedBox(
+              width: double.infinity,
+              height: AppTokens.mediaListExtentFor(
+                MediaQuery.textScalerOf(context),
+              ),
+              child: MediaTile(
+                key: ValueKey<String>(series[index].id),
+                listView: true,
+                autofocus: autofocusFirst && index == 0,
+                title: series[index].title,
+                subtitle:
+                    '${series[index].seasonCount} seasons · ${series[index].episodeCount} episodes',
+                icon: Icons.tv,
+                onActivate: () => c.openSeriesSeasons(series[index]),
+              ),
             ),
-          );
-        },
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) => SizedBox(
+        height: AppTokens.homeStripHeight,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: series.length,
+          separatorBuilder: (_, _) =>
+              const SizedBox(width: AppTokens.homeStripGap),
+          itemBuilder: (context, index) {
+            final value = series[index];
+            return SizedBox(
+              width: AppTokens.homeTileWidthFor(constraints.maxWidth),
+              child: MediaTile(
+                key: ValueKey<String>(value.id),
+                autofocus: autofocusFirst && index == 0,
+                title: value.title,
+                subtitle:
+                    '${value.seasonCount} seasons · ${value.episodeCount} episodes',
+                icon: Icons.tv,
+                imageUrl: value.artworkUrl,
+                onActivate: () => c.openSeriesSeasons(value),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

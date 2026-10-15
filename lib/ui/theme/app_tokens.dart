@@ -19,7 +19,14 @@ abstract final class AppTokens {
   static const episodeTileWidth = 320.0;
   static const episodeTileHeight = 170.0;
   static const homeStripHeight = 182.0;
+  static double mediaListExtentFor(TextScaler textScaler) =>
+      44 + textScaler.scale(48);
   static const homeStripGap = 18.0;
+  static double homeTileWidthFor(double availableWidth) {
+    final columns = (availableWidth / 240).ceil().clamp(2, 100);
+    return (availableWidth - homeStripGap * (columns - 1)) / columns;
+  }
+
   static const cardRadius = 12.0;
   static const panelRadius = 16.0;
   static const panelPadding = 20.0;

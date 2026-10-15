@@ -14,6 +14,7 @@ class MediaTile extends StatefulWidget {
     this.autofocus = false,
     this.focusNode,
     this.selected = false,
+    this.listView = false,
   });
 
   final String title;
@@ -24,6 +25,7 @@ class MediaTile extends StatefulWidget {
   final bool autofocus;
   final FocusNode? focusNode;
   final bool selected;
+  final bool listView;
 
   @override
   State<MediaTile> createState() => _MediaTileState();
@@ -139,68 +141,104 @@ class _MediaTileState extends State<MediaTile> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(AppTokens.compactCardPadding),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.topLeft,
-                            child: imageUrl == null || imageUrl.isEmpty
-                                ? fallback
-                                : ClipRRect(
-                                    borderRadius: BorderRadius.circular(
-                                      AppTokens.progressRadius,
+                    child: widget.listView
+                        ? Row(
+                            children: [
+                              fallback,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleMedium,
                                     ),
-                                    child: Image.network(
-                                      imageUrl,
-                                      width: double.infinity,
-                                      fit: BoxFit.contain,
-                                      cacheWidth: AppTokens.artworkDecodeWidth,
-                                      cacheHeight:
-                                          AppTokens.artworkDecodeHeight,
-                                      excludeFromSemantics: true,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              fallback,
-                                      loadingBuilder:
-                                          (context, child, progress) =>
-                                              progress == null
-                                              ? child
-                                              : fallback,
+                                    if (subtitle != null && subtitle.isNotEmpty)
+                                      Text(
+                                        subtitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: imageUrl == null || imageUrl.isEmpty
+                                      ? fallback
+                                      : ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            AppTokens.progressRadius,
+                                          ),
+                                          child: Image.network(
+                                            imageUrl,
+                                            width: double.infinity,
+                                            fit: BoxFit.contain,
+                                            cacheWidth:
+                                                AppTokens.artworkDecodeWidth,
+                                            cacheHeight:
+                                                AppTokens.artworkDecodeHeight,
+                                            excludeFromSemantics: true,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    fallback,
+                                            loadingBuilder:
+                                                (context, child, progress) =>
+                                                    progress == null
+                                                    ? child
+                                                    : fallback,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              Flexible(
+                                flex: 2,
+                                child: Text(
+                                  widget.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: widget.selected
+                                        ? theme.colorScheme.onSecondaryContainer
+                                        : theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                              if (subtitle != null && subtitle.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Flexible(
+                                  child: Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: widget.selected
+                                          ? theme
+                                                .colorScheme
+                                                .onSecondaryContainer
+                                          : theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ),
-                        Flexible(
-                          flex: 2,
-                          child: Text(
-                            widget.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: widget.selected
-                                  ? theme.colorScheme.onSecondaryContainer
-                                  : theme.colorScheme.onSurface,
-                            ),
-                          ),
-                        ),
-                        if (subtitle != null && subtitle.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Flexible(
-                            child: Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: widget.selected
-                                    ? theme.colorScheme.onSecondaryContainer
-                                    : theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
               ),
