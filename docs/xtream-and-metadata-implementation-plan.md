@@ -1,11 +1,11 @@
 # Xtream API And Metadata Implementation Plan
 
-Created: 2026-10-15. Updated: 2026-10-15. Status: XM-01 implemented; later packages pending.
+Created: 2026-10-15. Updated: 2026-10-15. Status: XM-01 and XM-02 implemented; later packages pending.
 Audience: developers and coding agents implementing source-aware catalogs and richer movie/series details.
 
 ## 1. Purpose And Authority
 
-Use this plan for explicit Xtream login, detecting Xtream capabilities from a playlist URL, provider identity, and extensible metadata enrichment. Implementation proceeds only for packages explicitly requested by the user; XM-01 is now complete.
+Use this plan for explicit Xtream login, detecting Xtream capabilities from a playlist URL, provider identity, and extensible metadata enrichment. Implementation proceeds only for packages explicitly requested by the user; XM-01 and XM-02 are now complete.
 
 Current source, tests, migrations, and configuration define implemented behavior. Follow [AGENTS.md](../AGENTS.md), [architecture boundaries](../test/architecture/architecture_rules_test.dart), [design rules](design-guidelines.md), and [decisions](decisions.md). Preserve paged browsing, constructor injection, existing playback adapters, Back/focus behavior, and playlist isolation.
 
@@ -197,13 +197,13 @@ Use responsive scrollable composition for portrait, short landscape, desktop and
 
 ## 10. Work Packages
 
-READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. XM-01 is complete; XM-02 is the next unblocked package. Other implementation remains pending.
+READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. XM-01 and XM-02 are complete; XM-03 is the next unblocked package. Other implementation remains pending.
 
 | ID | Deliverable | Depends On | Status |
 |---|---|---|---|
 | XM-01 | Source/capability contracts and detection parser | None | DONE (2026-10-15): Local-only contracts/parser, exact password preservation; 29 focused cases and all 315 tests pass. |
-| XM-02 | Safe Xtream authentication client and fixture contract tests | XM-01 | READY |
-| XM-03 | Source persistence/editor verification and URL promotion | XM-02 | PENDING |
+| XM-02 | Safe Xtream authentication client and fixture contract tests | XM-01 | DONE (2026-10-15): Injected credentials/transport, sanitized typed results, bounded cancellable HTTP; 59 authentication cases and all 374 tests pass. |
+| XM-03 | Source persistence/editor verification and URL promotion | XM-02 | READY |
 | XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | PENDING |
 | XM-05 | Metadata repository/cache and first Xtream provider | XM-04 | PENDING |
 | XM-06 | On-demand series mappings and episode relationships | XM-05 | PENDING |
@@ -233,6 +233,15 @@ Implemented evidence (2026-10-15):
 Owners: proposed `services/xtream/` client/mappers, injected transport/credential resolver, redaction tests and fake HTTP server. Validate auth/account response, typed failures, origin restrictions, cancellation/timeouts, response limits, capability states and safe logs. Parse only necessary safe account fields.
 
 Done: fixture contract tests cover valid string/integer auth, denied/expired/disabled account, invalid JSON/HTML/200, 401/403/407/404/429/503, bad TLS, timeout, oversized body, credential echoes, cross-origin redirects and server-info host substitution. No private provider is needed for automated tests.
+
+Implemented evidence (2026-10-15):
+
+- [Authentication contracts](../lib/services/xtream/xtream_authentication.dart) define an injected playlist/revision credential resolver, explicit endpoint confirmation, cancellation, transport responses and sanitized typed results. Results expose only verification/account state, normalized expiry/counts, whitelisted output formats, failure kind, HTTP status and bounded retry delay. Catalog capabilities remain unknown; authentication does not probe or certify them.
+- [XtreamApiClient](../lib/services/xtream/xtream_api_client.dart) validates a confirmed query-free HTTP(S) `player_api.php` endpoint, preserves credentials through structured query encoding, accepts only integer/string auth flags and ignores credential echoes, arbitrary messages and server-advertised endpoints. Logging includes only fixed event names, enum states and numeric HTTP status, never source IDs, bodies, authenticated URLs or exception text.
+- The default `IoXtreamAuthTransport` keeps standard certificate validation, enforces a 10-second connection timeout and disables all automatic redirects, including same-origin redirects. Each invocation has its own transport, a configurable 30-second overall deadline (including secret resolution), and a configurable 2 MiB response limit checked both from announced length and received bytes. Completion, cancellation and failure force-close the transport; late secret/header completions cannot initiate further work.
+- Authentication makes one attempt with no automatic retries. HTTP 429/503 return safe typed failures and parsed `Retry-After` (seconds or HTTP date, clamped to 24 hours) for an explicit later retry. Catalog/account request scheduling remains with the later integration/sync flow; no background authentication loop was introduced.
+- [Smoke test](../test/services/xtream/xtream_api_client_test.dart) and [contract tests](../test/services/xtream/xtream_authentication_contract_test.dart): 59 passing cases. Local HTTP servers verify real request encoding, successful authentication, payload rejection and zero requests to a cross-origin redirect target. Injected failures verify TLS error classification; native device TLS/provider compatibility remains pending.
+- Full suite: 374 tests pass. Final authentication suite: 59 pass. `flutter analyze` reports only the existing webOS `unawaited_futures` info. No provider requests, UI wiring, persistence, migrations or source-mode changes were added. XM-03 will supply the secure-store resolver and integrate verification with Add/Edit.
 
 ### XM-03: Persistence And Add/Edit Flow
 
