@@ -12,6 +12,10 @@ This directory contains the product and engineering decisions needed to start im
 6. [`agent-handoff.md`](agent-handoff.md) — concrete instructions for the next coding agent.
 7. [`catalog-import-and-browsing-redesign.md`](catalog-import-and-browsing-redesign.md) — current plan for the import pipeline (change-proportional refresh, schema v8) and group-first browsing; supersedes the open items in `import-performance.md` §8 and `implementation-plan4.md`.
 
+## Proposed Extensions
+
+- [Xtream API And Metadata Implementation Plan](xtream-and-metadata-implementation-plan.md): explicit Xtream login, verified URL detection, source-aware catalogs, enhanced movie/series details, and extensible metadata providers such as TMDB. Planning only; implementation status and decision gates are tracked in the document.
+
 ## Current product decisions
 
 - Target **webOS 26 "Re:New" or newer only** (confirmed). Older webOS versions are unsupported by the `flutter-webos` toolchain and are out of scope.

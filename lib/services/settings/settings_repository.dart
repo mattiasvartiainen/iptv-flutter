@@ -5,10 +5,11 @@ import 'package:sqflite/sqflite.dart';
 import '../catalog/catalog_query.dart';
 import '../catalog/id_identity.dart';
 import '../security/url_redaction.dart';
+import '../sources/source_contracts.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
 
-enum PlaylistSourceKind { url, xtream }
+export '../sources/source_contracts.dart' show PlaylistSourceKind;
 
 class PlaylistSourceConfig {
   const PlaylistSourceConfig.url({
@@ -44,7 +45,7 @@ class PlaylistSourceConfig {
     return switch (kind) {
       PlaylistSourceKind.url => url!.trim(),
       PlaylistSourceKind.xtream =>
-        '${_normalizedServer(server!)}/get.php?username=${Uri.encodeQueryComponent(username!.trim())}&password=${Uri.encodeQueryComponent(password!.trim())}&type=m3u_plus&output=m3u8',
+        '${_normalizedServer(server!)}/get.php?username=${Uri.encodeQueryComponent(username!.trim())}&password=${Uri.encodeQueryComponent(password!)}&type=m3u_plus&output=m3u8',
     };
   }
 
@@ -100,7 +101,7 @@ class PlaylistSourceConfig {
       case 'xtream':
         final server = (json['server'] as String?)?.trim();
         final username = (json['username'] as String?)?.trim();
-        final password = (json['password'] as String?)?.trim();
+        final password = json['password'] as String?;
         if (server == null || server.isEmpty) return null;
         if (username == null || username.isEmpty) return null;
         if (password == null || password.isEmpty) return null;
