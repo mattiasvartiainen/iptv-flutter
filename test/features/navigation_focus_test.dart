@@ -114,6 +114,85 @@ MediaTile? _focusedTile() => FocusManager.instance.primaryFocus?.context
     ?.findAncestorWidgetOfExactType<MediaTile>();
 
 void main() {
+  testWidgets('every rail destination retains focus after pointer selection', (
+    tester,
+  ) async {
+    await _pumpRemoteFirstApp(tester);
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.pumpAndSettle();
+    for (final label in [
+      'Movies',
+      'Series',
+      'Live',
+      'Search',
+      'Settings',
+      'Home',
+    ]) {
+      Finder destination() => find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text(label),
+      );
+      await tester.tap(destination());
+      await tester.pumpAndSettle();
+      expect(
+        Focus.of(tester.element(destination())).hasPrimaryFocus,
+        isTrue,
+        reason: '$label must retain focus after activation',
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(Focus.of(tester.element(destination())).hasPrimaryFocus, isTrue);
+    }
+  });
+
+  testWidgets('rail activation keeps Movies focused until Right is pressed', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.pumpAndSettle();
+    Finder railLabel(String label) => find.descendant(
+      of: find.byType(NavigationRail),
+      matching: find.text(label),
+    );
+    Focus.of(tester.element(railLabel('Movies'))).requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(harness.navigation.currentRoute, isA<CatalogRoute>());
+    expect(
+      Focus.of(tester.element(railLabel('Movies'))).hasPrimaryFocus,
+      isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_focusedTile(), isNotNull);
+  });
+
+  testWidgets('returning to empty Home keeps its rail destination focused', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    tester.view.physicalSize = const Size(1440, 900);
+    harness.catalog.unbind();
+    harness.app.openMovies();
+    await tester.pumpAndSettle();
+    Finder home() => find.descendant(
+      of: find.byType(NavigationRail),
+      matching: find.text('Home'),
+    );
+    await tester.tap(home());
+    await tester.pumpAndSettle();
+    expect(harness.navigation.currentRoute, isA<HomeRoute>());
+    expect(Focus.of(tester.element(home())).hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final live = find.descendant(
+      of: find.byType(NavigationRail),
+      matching: find.text('Live'),
+    );
+    expect(Focus.of(tester.element(live)).hasPrimaryFocus, isTrue);
+  });
+
   for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
     testWidgets(
       '$platform keyboard-only Settings and editor journey',

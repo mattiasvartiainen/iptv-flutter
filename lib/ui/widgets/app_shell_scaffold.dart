@@ -27,6 +27,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     with WidgetsBindingObserver {
   final FocusScopeNode _pageFocusScope = FocusScopeNode(debugLabel: 'App page');
   bool _focusCheckScheduled = false;
+  final List<GlobalKey> _railLabelKeys = List.generate(6, (_) => GlobalKey());
   final FocusScopeNode _contentFocusScope = FocusScopeNode(
     debugLabel: 'App page content',
     traversalEdgeBehavior: TraversalEdgeBehavior.parentScope,
@@ -48,6 +49,25 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
       if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       final lifecycle = WidgetsBinding.instance.lifecycleState;
       if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+      final navigation = AppScope.navigationControllerOf(context);
+      if (ModalRoute.of(context)?.settings.arguments !=
+          navigation.currentRoute) {
+        return;
+      }
+      final requestedIndex = navigation.requestedRailFocusIndex;
+      if (requestedIndex != null) {
+        if (ModalRoute.of(context)?.animation?.status !=
+            AnimationStatus.completed) {
+          _scheduleFocusCheck();
+          return;
+        }
+        final labelContext = _railLabelKeys[requestedIndex].currentContext;
+        if (labelContext != null) {
+          navigation.requestedRailFocusIndex = null;
+          Focus.of(labelContext).requestFocus();
+          return;
+        }
+      }
       final focused = FocusManager.instance.primaryFocus;
       if (focused == null || focused is FocusScopeNode) {
         _pageFocusScope.nextFocus();
@@ -315,36 +335,40 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
             )
           : const SizedBox(height: 16),
       selectedIndex: selectedIndex,
-      onDestinationSelected: (index) => _openRailDestination(controller, index),
-      destinations: const [
+      onDestinationSelected: (index) {
+        navigation.requestedRailFocusIndex = index;
+        _openRailDestination(controller, index);
+        _scheduleFocusCheck();
+      },
+      destinations: [
         NavigationRailDestination(
           icon: Icon(Icons.home_outlined),
           selectedIcon: Icon(Icons.home),
-          label: Text('Home'),
+          label: Text('Home', key: _railLabelKeys[0]),
         ),
         NavigationRailDestination(
           icon: Icon(Icons.live_tv_outlined),
           selectedIcon: Icon(Icons.live_tv),
-          label: Text('Live'),
+          label: Text('Live', key: _railLabelKeys[1]),
         ),
         NavigationRailDestination(
           icon: Icon(Icons.movie_outlined),
           selectedIcon: Icon(Icons.movie),
-          label: Text('Movies'),
+          label: Text('Movies', key: _railLabelKeys[2]),
         ),
         NavigationRailDestination(
           icon: Icon(Icons.tv_outlined),
           selectedIcon: Icon(Icons.tv),
-          label: Text('Series'),
+          label: Text('Series', key: _railLabelKeys[3]),
         ),
         NavigationRailDestination(
           icon: Icon(Icons.search),
-          label: Text('Search'),
+          label: Text('Search', key: _railLabelKeys[4]),
         ),
         NavigationRailDestination(
           icon: Icon(Icons.settings_outlined),
           selectedIcon: Icon(Icons.settings),
-          label: Text('Settings'),
+          label: Text('Settings', key: _railLabelKeys[5]),
         ),
       ],
     );

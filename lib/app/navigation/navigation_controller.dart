@@ -7,6 +7,7 @@ enum PrimaryNavItem { home, liveTv, movies, series, search }
 
 class NavigationController extends ChangeNotifier {
   final List<AppRoute> _routes = [const HomeRoute()];
+  int? requestedRailFocusIndex;
 
   List<AppRoute> get stack => List<AppRoute>.unmodifiable(_routes);
 

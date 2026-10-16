@@ -77,6 +77,7 @@ Use Flutter's standard focus and keyboard mechanisms as the foundation. Define e
 
 #### Shared shell boundaries
 
+- Activating a left-menu destination retains focus on that destination after the route transition, including Home with empty content. Do not transfer focus to a tile, See all action, or Search field just because the destination was activated. Right explicitly enters content; Tab follows normal traversal. Direct/programmatic screen entry and Back restoration retain their own initial-focus rules.
 - Treat a non-modal page as one Tab cycle. Nested content scopes must let Tab and Shift+Tab escape to their parent scope; do not accept Flutter's default closed loop for an ordinary content pane. In the current SDK, configure `FocusScopeNode.traversalEdgeBehavior` as `TraversalEdgeBehavior.parentScope` for that pane.
 - Expanded/rail order is navigation destinations, page actions, then content groups in reading order. Compact order is page actions, content, then bottom destinations. Shift+Tab reverses the same sequence. Wrap only at the whole-page boundary, not inside a sidebar, carousel, or ordinary content pane.
 - Rail Up/Down moves among destinations; Right enters remembered content, falling back to an available control. Content Left moves to a meaningful sidebar neighbor or rail at the left edge. Compact bottom destinations use Left/Right within the bar and Up to re-enter content. Do not activate routes merely to move focus.
