@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../../features/playlists/playlist_form_validation.dart';
+import '../../../services/errors/exception_diagnostics.dart';
 import '../../../services/settings/settings_repository.dart';
 import '../../../state/playlists_controller.dart';
 import '../../playlists/playlist_editor_controller.dart';
+import 'playlist_error_details.dart';
 
 class _PlaylistEditorDialog extends StatefulWidget {
   const _PlaylistEditorDialog({required this.controller, this.playlist});
@@ -26,6 +28,7 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
   late final PlaylistEditorController _editor;
   bool _saving = false;
   String? _saveError;
+  String? _saveDiagnostics;
 
   @override
   void initState() {
@@ -210,6 +213,11 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
+                    if (widget.controller.verboseErrorsEnabled &&
+                        _saveDiagnostics != null) ...[
+                      const SizedBox(height: 12),
+                      PlaylistErrorDetails(diagnostics: _saveDiagnostics!),
+                    ],
                   ],
                 ],
               ),
@@ -233,6 +241,7 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                       setState(() {
                         _saving = true;
                         _saveError = null;
+                        _saveDiagnostics = null;
                       });
                       try {
                         final config = _editor.buildConfig(
@@ -248,18 +257,24 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                         if (success) {
                           Navigator.of(context).pop(true);
                         } else {
-                          setState(
-                            () => _saveError =
+                          setState(() {
+                            _saveError =
                                 widget.controller.errorMessage ??
-                                'Could not save the playlist. Try again.',
-                          );
+                                'Could not save the playlist. Try again.';
+                            _saveDiagnostics =
+                                widget.controller.errorDiagnostics;
+                          });
                         }
-                      } catch (_) {
+                      } catch (error, stackTrace) {
                         if (mounted) {
-                          setState(
-                            () => _saveError =
-                                'Could not save the playlist. Check the connection fields and try again.',
-                          );
+                          setState(() {
+                            _saveError =
+                                'Could not save the playlist. Check the connection fields and try again.';
+                            _saveDiagnostics = formatExceptionDiagnostics(
+                              error,
+                              stackTrace,
+                            );
+                          });
                         }
                       } finally {
                         if (mounted) setState(() => _saving = false);

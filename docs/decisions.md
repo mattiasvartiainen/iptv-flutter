@@ -92,6 +92,16 @@ during on-device testing; not a day-one change.
 
 ## Architecture Work Package Decisions
 
+### Verbose playlist diagnostics (2026-10-16)
+For TV development, the existing Display verbose information setting permits exception details
+and stack traces for playlist add/edit/save and manual refresh failures. Show save details inside
+the editor and refresh details in Settings, with bounded, keyboard-scrollable output. Preserve
+original worker or wrapped exception stacks when available. Verbose mode does not permit exposing
+credential-bearing URLs: apply the shared redaction helper before retaining diagnostic strings.
+Normal mode keeps friendly errors only. This is a temporary, explicitly requested exception to
+WP-9.2's default UI policy, available in release builds for on-TV investigation; revisit before
+production launch. LG hardware display and remote validation remain pending.
+
 ### D-1 — Navigation mechanism ✅
 Use a hand-rolled sealed `AppRoute` hierarchy and `NavigationController` rendered through
 `Navigator.pages`. Keep Home as the root; top-level section navigation resets to Home and pushes the

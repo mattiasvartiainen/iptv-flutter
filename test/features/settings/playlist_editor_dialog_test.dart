@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/settings/widgets/playlist_editor_dialog.dart';
+import 'package:iptv_flutter/features/settings/widgets/playlist_error_details.dart';
+import 'package:iptv_flutter/features/settings/widgets/playlist_section.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/services/sources/source_contracts.dart';
@@ -23,6 +25,121 @@ const _verified = XtreamAuthResult(
 );
 
 void main() {
+  for (final verbose in [false, true]) {
+    for (final editing in [false, true]) {
+      testWidgets('save diagnostics verbose=$verbose editing=$editing', (
+        tester,
+      ) async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        await fixture.preferences.setVerboseRefreshInfo(verbose);
+        final initial = editing
+            ? await fixture.settings.upsertPlaylist(
+                const PlaylistSourceConfig.url(name: 'Existing', url: _url),
+              )
+            : null;
+        fixture.settings.fail = true;
+        await fixture.open(tester, playlist: initial);
+        await _enter(tester, 'Name', 'Save failure');
+        await _enter(tester, 'Playlist URL', _url);
+        await _tap(tester, find.text('Save'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+        expect(
+          find.byType(PlaylistErrorDetails),
+          verbose ? findsOneWidget : findsNothing,
+        );
+        if (verbose) {
+          final diagnostics = tester
+              .widget<PlaylistErrorDetails>(find.byType(PlaylistErrorDetails))
+              .diagnostics;
+          expect(diagnostics, contains('Exception: Bad state:'));
+          expect(diagnostics, contains('Stack trace:'));
+          expect(diagnostics, contains('_Settings.upsertPlaylist'));
+          expect(diagnostics, isNot(contains('private-user')));
+          expect(diagnostics, isNot(contains('private-pass')));
+        }
+        if (!verbose) _expectSafeStatus(tester);
+        fixture.settings.fail = false;
+        await _tap(tester, find.text('Save'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(fixture.playlists.errorDiagnostics, isNull);
+      });
+    }
+
+    testWidgets('refresh diagnostics verbose=$verbose', (tester) async {
+      final fixture = _Fixture();
+      addTearDown(fixture.dispose);
+      await fixture.preferences.setVerboseRefreshInfo(verbose);
+      await fixture.settings.upsertPlaylist(
+        const PlaylistSourceConfig.url(name: 'Refresh me', url: _url),
+      );
+      await fixture.playlists.refreshPlaylists();
+      fixture.catalog.failure = StateError('Refresh failed $_url');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: Listenable.merge([
+                fixture.playlists,
+                fixture.preferences,
+              ]),
+              builder: (context, _) => SingleChildScrollView(
+                child: PlaylistSection(
+                  controller: fixture.playlists,
+                  preferencesController: fixture.preferences,
+                  onEdit: (_) {},
+                  onDelete: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _tap(tester, find.text('Refresh'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(PlaylistErrorDetails),
+        verbose ? findsOneWidget : findsNothing,
+      );
+      if (verbose) {
+        final details = find.byType(PlaylistErrorDetails);
+        final diagnostics = tester
+            .widget<PlaylistErrorDetails>(details)
+            .diagnostics;
+        expect(diagnostics, contains('Refresh failed'));
+        expect(diagnostics, contains('Stack trace:'));
+        expect(diagnostics, isNot(contains('private-pass')));
+        final focus = tester.widget<Focus>(
+          find.descendant(of: details, matching: find.byType(Focus)).first,
+        );
+        Focus.of(
+          tester.element(
+            find.descendant(of: details, matching: find.byType(Text)).first,
+          ),
+        ).requestFocus();
+        await tester.pumpAndSettle();
+        expect(focus.onKeyEvent, isNotNull);
+        final scroll = tester
+            .widget<SingleChildScrollView>(
+              find.descendant(
+                of: details,
+                matching: find.byType(SingleChildScrollView),
+              ),
+            )
+            .controller!;
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(scroll.offset, greaterThan(0));
+        await fixture.preferences.setVerboseRefreshInfo(false);
+        await tester.pumpAndSettle();
+        expect(find.byType(PlaylistErrorDetails), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets(
     'Name has initial focus and plain URL saves without verification',
     (tester) async {
@@ -418,6 +535,7 @@ class _Settings extends InMemorySettingsRepository {
 
 class _Catalog implements CatalogRepository {
   int loads = 0;
+  Object? failure;
 
   @override
   Future<CatalogLoadResult> load({
@@ -428,6 +546,7 @@ class _Catalog implements CatalogRepository {
     CatalogImportProgressCallback? onProgress,
   }) async {
     loads++;
+    if (failure case final error?) throw error;
     return CatalogLoadResult(playlistId: playlistId, itemCount: 0);
   }
 }

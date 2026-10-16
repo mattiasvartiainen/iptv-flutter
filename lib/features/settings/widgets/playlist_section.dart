@@ -5,6 +5,7 @@ import '../../../state/app_preferences_controller.dart';
 import '../../../state/playlists_controller.dart';
 import '../../../ui/theme/app_tokens.dart';
 import 'playlist_card.dart';
+import 'playlist_error_details.dart';
 
 class PlaylistSection extends StatelessWidget {
   const PlaylistSection({
@@ -48,6 +49,11 @@ class PlaylistSection extends StatelessWidget {
                 error,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
+              if (preferencesController.verboseRefreshInfo &&
+                  controller.errorDiagnostics != null) ...[
+                const SizedBox(height: 12),
+                PlaylistErrorDetails(diagnostics: controller.errorDiagnostics!),
+              ],
             ],
             const SizedBox(height: 16),
             if (playlists.isEmpty)

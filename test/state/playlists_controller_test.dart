@@ -92,11 +92,27 @@ void main() {
             isNot(contains('private-pass')),
           );
           expect(fixture.repository.calls, isEmpty);
+          expect(fixture.playlists.errorDiagnostics, isNull);
+          await fixture.preferences.setVerboseRefreshInfo(true);
+          expect(fixture.playlists.errorDiagnostics, contains('Exception:'));
+          expect(fixture.playlists.errorDiagnostics, contains('Stack trace:'));
+          expect(
+            fixture.playlists.errorDiagnostics,
+            isNot(contains('private-user')),
+          );
+          expect(
+            fixture.playlists.errorDiagnostics,
+            isNot(contains('private-pass')),
+          );
+          await fixture.preferences.setVerboseRefreshInfo(false);
+          expect(fixture.playlists.errorDiagnostics, isNull);
 
           settings.failure = null;
           expect(await save(), isTrue);
           expect(fixture.playlists.activeIssue, isNull);
           expect(fixture.playlists.errorMessage, isNull);
+          await fixture.preferences.setVerboseRefreshInfo(true);
+          expect(fixture.playlists.errorDiagnostics, isNull);
           expect(fixture.playlists.playlistStatus, LoadStatus.ready);
           expect(logger.errors, hasLength(1));
           expect(fixture.playlists.playlists, hasLength(3));
@@ -104,6 +120,27 @@ void main() {
       );
     }
   }
+
+  test(
+    'refresh catches source lookup failures with verbose diagnostics',
+    () async {
+      final settings = _FailingSettingsRepository();
+      final fixture = await _Fixture.create(settings: settings);
+      addTearDown(fixture.dispose);
+      await fixture.preferences.setVerboseRefreshInfo(true);
+      settings.lookupFailure = StateError('Source lookup $sensitiveUrl');
+
+      expect(await fixture.playlists.refreshPlaylist('first'), isFalse);
+      expect(fixture.playlists.refreshingPlaylistId, isNull);
+      expect(fixture.playlists.errorDiagnostics, contains('Source lookup'));
+      expect(fixture.playlists.errorDiagnostics, contains('Stack trace:'));
+      expect(
+        fixture.playlists.errorDiagnostics,
+        isNot(contains('private-pass')),
+      );
+      expect(fixture.repository.calls, isEmpty);
+    },
+  );
 
   final failures = <(Object, AppIssueKind, String)>[
     (suppliedIssue, AppIssueKind.storageUnavailable, 'Failed '),
@@ -179,6 +216,19 @@ void main() {
         expect(fixture.playlists.playlistStatus, LoadStatus.error);
         expect(fixture.playlists.refreshingPlaylistId, isNull);
         expect(fixture.playlists.importProgress, isNull);
+        expect(fixture.playlists.errorDiagnostics, isNotNull);
+        expect(fixture.playlists.errorDiagnostics, contains('Stack trace:'));
+        expect(
+          fixture.playlists.errorDiagnostics,
+          isNot(contains('private-user')),
+        );
+        expect(
+          fixture.playlists.errorDiagnostics,
+          isNot(contains('private-pass')),
+        );
+        if (failure.$1 is CatalogImportWorkerException) {
+          expect(fixture.playlists.errorDiagnostics, contains('worker stack'));
+        }
         final entry = logger.errors.single;
         expect(entry.message, 'playlist_import_failed');
         expect(entry.context['playlistId'], 'first');
@@ -482,6 +532,13 @@ class _RecordingRepository implements CatalogRepository {
 
 class _FailingSettingsRepository extends InMemorySettingsRepository {
   Object? failure;
+  Object? lookupFailure;
+
+  @override
+  Future<ManagedPlaylist?> getPlaylist(String playlistId) async {
+    if (lookupFailure case final error?) throw error;
+    return super.getPlaylist(playlistId);
+  }
 
   @override
   Future<ManagedPlaylist> upsertPlaylist(PlaylistSourceConfig config) async {

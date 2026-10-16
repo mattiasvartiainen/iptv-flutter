@@ -81,6 +81,7 @@ Known toolchain gotchas (from repo memory, keep in mind):
 | WP-8.2 | High-value missing tests | 8 Testing | WP-8.1 | M | DONE (2026-10-11): Added page-retention/clear-race and stale browse-generation regressions; remaining priorities are covered by their owning packages. |
 | WP-9.1 | Logging: injected logger, redaction, no `print` | 9 Observability | WP-2.2 | S | DONE (2026-10-11): Routed app/media output through injected AppLogger, redacted logged text, and warn on background index failures. |
 | WP-9.2 | No raw exception text in the UI; no silent swallows | 9 Observability | WP-9.1 | S | DONE (2026-10-11): Catalog paging/group failures are typed, logged with redaction, and shown as friendly retryable UI messages. |
+| WP-9.2a | Verbose playlist save/refresh diagnostics | 9 Observability | WP-9.2 | S | DONE (2026-10-16): User-approved verbose-only exception and stack display in the playlist editor and Settings refresh errors, with URL credential redaction, original worker stacks, focusable remote scrolling, retry cleanup, and source-lookup failure handling. Default friendly errors remain unchanged; LG hardware validation pending. |
 
 Size guide: XS < 30 min of agent work, S = one focused change, M = several files, L = multi-step; split L packages into sub-commits that each keep tests green.
 

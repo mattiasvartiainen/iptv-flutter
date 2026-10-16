@@ -6,6 +6,7 @@ import '../services/catalog/catalog_import_worker.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/catalog/catalog_repository.dart';
 import '../services/errors/app_issue.dart';
+import '../services/errors/exception_diagnostics.dart';
 import '../services/logging/app_logger.dart';
 import '../services/security/url_redaction.dart';
 import '../services/settings/app_preferences.dart';
@@ -117,6 +118,12 @@ class PlaylistsController extends ChangeNotifier {
   List<ManagedPlaylist> playlists = const [];
   CatalogImportProgress? importProgress;
   AppIssue? activeIssue;
+  String? _errorDiagnostics;
+
+  bool get verboseErrorsEnabled => _preferencesController.verboseRefreshInfo;
+
+  String? get errorDiagnostics =>
+      verboseErrorsEnabled && errorMessage != null ? _errorDiagnostics : null;
 
   Future<void> initialize() async {
     await refreshPlaylists();
@@ -330,23 +337,32 @@ class PlaylistsController extends ChangeNotifier {
     activeIssue = null;
     notifyListeners();
     try {
-      final refreshed = await loadPlaylist(
-        playlistId,
-        intent: refreshesActivePlaylist
-            ? PlaylistLoadIntent.refreshActive
-            : PlaylistLoadIntent.refreshInactive,
-        logContext: {'source': 'manual_refresh'},
+      var refreshed = false;
+      final completed = await _runPlaylistOperation(
+        'playlist_import',
+        host: '',
+        source: AppIssueSource.playlistImport,
+        context: {'playlistId': playlistId, 'source': 'manual_refresh'},
+        body: () async {
+          refreshed = await loadPlaylist(
+            playlistId,
+            intent: refreshesActivePlaylist
+                ? PlaylistLoadIntent.refreshActive
+                : PlaylistLoadIntent.refreshInactive,
+            logContext: {'source': 'manual_refresh'},
+          );
+          if (refreshed &&
+              !refreshesActivePlaylist &&
+              activePlaylistId == playlistId) {
+            await loadPlaylist(
+              playlistId,
+              intent: PlaylistLoadIntent.refreshCompleted,
+              logContext: {'source': 'manual_refresh_completed'},
+            );
+          }
+        },
       );
-      if (refreshed &&
-          !refreshesActivePlaylist &&
-          activePlaylistId == playlistId) {
-        await loadPlaylist(
-          playlistId,
-          intent: PlaylistLoadIntent.refreshCompleted,
-          logContext: {'source': 'manual_refresh_completed'},
-        );
-      }
-      return refreshed;
+      return completed && refreshed;
     } finally {
       refreshingPlaylistId = null;
       notifyListeners();
@@ -428,10 +444,12 @@ class PlaylistsController extends ChangeNotifier {
     AppIssueSource source = AppIssueSource.setup,
     Map<String, Object?> context = const {},
   }) async {
+    _errorDiagnostics = null;
     try {
       await body();
       return true;
     } catch (error, stackTrace) {
+      _errorDiagnostics = formatExceptionDiagnostics(error, stackTrace);
       final isImport = source == AppIssueSource.playlistImport;
       final workerError = isImport && error is CatalogImportWorkerException
           ? error
