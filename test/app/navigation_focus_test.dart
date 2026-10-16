@@ -34,7 +34,10 @@ void _disposeHarness(_FocusHarness harness) {
   harness.app.navigationController.dispose();
 }
 
-Future<_FocusHarness> _pumpLoadedApp(WidgetTester tester) async {
+Future<_FocusHarness> _pumpLoadedApp(
+  WidgetTester tester, {
+  bool loadPlaylist = true,
+}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(1440, 900);
   addTearDown(() {
@@ -93,7 +96,9 @@ Future<_FocusHarness> _pumpLoadedApp(WidgetTester tester) async {
     ),
   );
   await playlists.refreshPlaylists();
-  await playlists.loadPlaylist(playlistId, intent: PlaylistLoadIntent.setup);
+  if (loadPlaylist) {
+    await playlists.loadPlaylist(playlistId, intent: PlaylistLoadIntent.setup);
+  }
   await tester.pumpAndSettle();
   return harness;
 }
@@ -102,6 +107,90 @@ MediaTile? _focusedTile() => FocusManager.instance.primaryFocus?.context
     ?.findAncestorWidgetOfExactType<MediaTile>();
 
 void main() {
+  testWidgets('empty Home starts with an actionable control focused', (
+    tester,
+  ) async {
+    await _pumpLoadedApp(tester, loadPlaylist: false);
+    final focused = FocusManager.instance.primaryFocus;
+    expect(focused, isNotNull);
+    expect(focused, isNot(isA<FocusScopeNode>()));
+    expect(
+      focused!.context?.findAncestorWidgetOfExactType<InkWell>(),
+      isNotNull,
+    );
+  });
+
+  testWidgets('Settings acquires focus and recovers without a key press', (
+    tester,
+  ) async {
+    final harness = await _pumpLoadedApp(tester);
+    harness.app.openSettings();
+    await tester.pumpAndSettle();
+
+    final focused = FocusManager.instance.primaryFocus;
+    expect(focused, isNotNull);
+    expect(focused, isNot(isA<FocusScopeNode>()));
+    expect(
+      focused!.context?.findAncestorWidgetOfExactType<InkWell>(),
+      isNotNull,
+    );
+
+    FocusManager.instance.primaryFocus!.unfocus();
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(focused));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, isNot(same(focused)));
+  });
+
+  testWidgets('D-pad recovers an actionable control after focus is lost', (
+    tester,
+  ) async {
+    await _pumpLoadedApp(tester);
+    FocusManager.instance.primaryFocus!.unfocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    final focused = FocusManager.instance.primaryFocus;
+    expect(focused, isNotNull);
+    expect(focused, isNot(isA<FocusScopeNode>()));
+    expect(
+      focused!.context?.findAncestorWidgetOfExactType<InkWell>(),
+      isNotNull,
+    );
+  });
+
+  testWidgets('foreground return restores a control when focus was lost', (
+    tester,
+  ) async {
+    await _pumpLoadedApp(tester, loadPlaylist: false);
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    FocusManager.instance.primaryFocus!.unfocus();
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, isA<FocusScopeNode>());
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    final focused = FocusManager.instance.primaryFocus;
+    expect(focused, isNotNull);
+    expect(focused, isNot(isA<FocusScopeNode>()));
+    expect(
+      focused!.context?.findAncestorWidgetOfExactType<InkWell>(),
+      isNotNull,
+    );
+  });
+
   testWidgets('Home and Catalog focus their first available tile', (
     tester,
   ) async {

@@ -59,6 +59,16 @@ Confirm webOS remote keys (arrows, OK, Back, color keys, media keys) map into Fl
 - Affects: [architecture.md](architecture.md) §9, [implementation-plan.md](implementation-plan.md) Phase 0/2.
 - WP-4.3 common key mapping and opt-in debug key logging are implemented. LG-specific key values
   remain pending capture on the target TV; do not add a platform override until observed.
+- 2026-10-16: Reproduced empty Home leaving primary focus on a route scope rather than a
+  control. WP-4.4a adds shared page focus recovery at mount, after focus loss, and on foreground
+  return, while preserving active controls and modal focus. Widget regressions pass; this does
+  not establish whether the reported LG remote keys reach Flutter. Retest a new webOS build
+  using D-pad/OK from cold launch, pointer-to-key switching, Back, and return from system UI.
+  If keys still do nothing, enable Display verbose information in a debug build and inspect
+  `hardware_key` numeric logical/physical IDs. No records means the native input path needs
+  investigation; unexpected IDs require captured values before a profile override is added.
+  LG's System UI Visibility guide describes web-app DOM events, not APIs to add directly to
+  this native Flutter entry point: https://webostv.developer.lge.com/develop/guides/system-ui-visibility
 
 ### D7 — State management approach ✅
 Use a single injectable `ChangeNotifier` application controller for the MVP.

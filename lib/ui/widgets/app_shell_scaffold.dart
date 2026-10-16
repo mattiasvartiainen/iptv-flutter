@@ -23,19 +23,54 @@ class AppShellScaffold extends StatefulWidget {
   State<AppShellScaffold> createState() => _AppShellScaffoldState();
 }
 
-class _AppShellScaffoldState extends State<AppShellScaffold> {
+class _AppShellScaffoldState extends State<AppShellScaffold>
+    with WidgetsBindingObserver {
+  final FocusScopeNode _pageFocusScope = FocusScopeNode(debugLabel: 'App page');
+  bool _focusCheckScheduled = false;
   final FocusScopeNode _contentFocusScope = FocusScopeNode(
     debugLabel: 'App page content',
   );
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addListener(_scheduleFocusCheck);
+  }
+
+  void _scheduleFocusCheck() {
+    if (!mounted || _focusCheckScheduled) return;
+    _focusCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusCheckScheduled = false;
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+      final focused = FocusManager.instance.primaryFocus;
+      if (focused == null || focused is FocusScopeNode) {
+        _pageFocusScope.nextFocus();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _scheduleFocusCheck();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    FocusManager.instance.removeListener(_scheduleFocusCheck);
+    _pageFocusScope.dispose();
     _contentFocusScope.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    _scheduleFocusCheck();
     final controller = AppScope.appControllerOf(context);
     final navigation = AppScope.navigationControllerOf(context);
     return ListenableBuilder(
@@ -68,133 +103,136 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
     required bool extendedRail,
   }) {
     final theme = Theme.of(context);
-    return FocusTraversalGroup(
-      child: Scaffold(
-        appBar: compact
-            ? AppBar(
-                automaticallyImplyLeading: false,
-                leading: widget.showBack
-                    ? IconButton(
-                        tooltip: 'Back',
-                        onPressed: controller.goBack,
-                        icon: const Icon(Icons.arrow_back),
-                      )
-                    : null,
-                title: Text(
-                  widget.title ?? 'IPTV',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                actions: [
-                  FocusTraversalGroup(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_supportsViewToggle(context))
-                          _buildViewToggle(context),
-                        IconButton(
-                          tooltip: 'Search',
-                          onPressed: controller.openSearch,
-                          icon: const Icon(Icons.search),
-                        ),
-                        IconButton(
-                          tooltip: 'Settings',
-                          onPressed: controller.openSettings,
-                          icon: const Icon(Icons.settings),
-                        ),
-                      ],
-                    ),
+    return FocusScope(
+      node: _pageFocusScope,
+      child: FocusTraversalGroup(
+        child: Scaffold(
+          appBar: compact
+              ? AppBar(
+                  automaticallyImplyLeading: false,
+                  leading: widget.showBack
+                      ? IconButton(
+                          tooltip: 'Back',
+                          onPressed: controller.goBack,
+                          icon: const Icon(Icons.arrow_back),
+                        )
+                      : null,
+                  title: Text(
+                    widget.title ?? 'IPTV',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
-              )
-            : null,
-        body: SafeArea(
-          child: Row(
-            children: [
-              Offstage(
-                offstage: compact,
-                child: Shortcuts(
-                  shortcuts: const {
-                    SingleActivator(LogicalKeyboardKey.arrowRight):
-                        _FocusPageContentIntent(),
-                  },
-                  child: Actions(
-                    actions: _focusContentActions(),
-                    child: _buildNavigationRail(
-                      context,
-                      controller,
-                      extended: extendedRail,
-                    ),
-                  ),
-                ),
-              ),
-              Offstage(
-                offstage: compact,
-                child: const VerticalDivider(width: 1),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    Offstage(
-                      offstage:
-                          compact ||
-                          (!widget.showBack &&
-                              widget.title == null &&
-                              !_supportsViewToggle(context)),
-                      child: _buildPageHeading(context, controller, theme),
-                    ),
-                    Expanded(
-                      child: FocusScope(
-                        node: _contentFocusScope,
-                        child: FocusTraversalGroup(child: widget.child),
+                  actions: [
+                    FocusTraversalGroup(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_supportsViewToggle(context))
+                            _buildViewToggle(context),
+                          IconButton(
+                            tooltip: 'Search',
+                            onPressed: controller.openSearch,
+                            icon: const Icon(Icons.search),
+                          ),
+                          IconButton(
+                            tooltip: 'Settings',
+                            onPressed: controller.openSettings,
+                            icon: const Icon(Icons.settings),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        bottomNavigationBar: compact
-            ? FocusTraversalGroup(
-                child: Shortcuts(
-                  shortcuts: const {
-                    SingleActivator(LogicalKeyboardKey.arrowUp):
-                        _FocusPageContentIntent(),
-                  },
-                  child: Actions(
-                    actions: _focusContentActions(),
-                    child: NavigationBar(
-                      selectedIndex: _compactSelectedIndex(controller),
-                      onDestinationSelected: (index) =>
-                          _openCompactDestination(controller, index),
-                      destinations: const [
-                        NavigationDestination(
-                          icon: Icon(Icons.home_outlined),
-                          selectedIcon: Icon(Icons.home),
-                          label: 'Home',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.live_tv_outlined),
-                          selectedIcon: Icon(Icons.live_tv),
-                          label: 'Live',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.movie_outlined),
-                          selectedIcon: Icon(Icons.movie),
-                          label: 'Movies',
-                        ),
-                        NavigationDestination(
-                          icon: Icon(Icons.tv_outlined),
-                          selectedIcon: Icon(Icons.tv),
-                          label: 'Series',
-                        ),
-                      ],
+                )
+              : null,
+          body: SafeArea(
+            child: Row(
+              children: [
+                Offstage(
+                  offstage: compact,
+                  child: Shortcuts(
+                    shortcuts: const {
+                      SingleActivator(LogicalKeyboardKey.arrowRight):
+                          _FocusPageContentIntent(),
+                    },
+                    child: Actions(
+                      actions: _focusContentActions(),
+                      child: _buildNavigationRail(
+                        context,
+                        controller,
+                        extended: extendedRail,
+                      ),
                     ),
                   ),
                 ),
-              )
-            : null,
+                Offstage(
+                  offstage: compact,
+                  child: const VerticalDivider(width: 1),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Offstage(
+                        offstage:
+                            compact ||
+                            (!widget.showBack &&
+                                widget.title == null &&
+                                !_supportsViewToggle(context)),
+                        child: _buildPageHeading(context, controller, theme),
+                      ),
+                      Expanded(
+                        child: FocusScope(
+                          node: _contentFocusScope,
+                          child: FocusTraversalGroup(child: widget.child),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: compact
+              ? FocusTraversalGroup(
+                  child: Shortcuts(
+                    shortcuts: const {
+                      SingleActivator(LogicalKeyboardKey.arrowUp):
+                          _FocusPageContentIntent(),
+                    },
+                    child: Actions(
+                      actions: _focusContentActions(),
+                      child: NavigationBar(
+                        selectedIndex: _compactSelectedIndex(controller),
+                        onDestinationSelected: (index) =>
+                            _openCompactDestination(controller, index),
+                        destinations: const [
+                          NavigationDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home),
+                            label: 'Home',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.live_tv_outlined),
+                            selectedIcon: Icon(Icons.live_tv),
+                            label: 'Live',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.movie_outlined),
+                            selectedIcon: Icon(Icons.movie),
+                            label: 'Movies',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.tv_outlined),
+                            selectedIcon: Icon(Icons.tv),
+                            label: 'Series',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : null,
+        ),
       ),
     );
   }
