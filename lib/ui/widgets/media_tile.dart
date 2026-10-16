@@ -58,6 +58,10 @@ class _MediaTileState extends State<MediaTile> {
     if (!oldWidget.autofocus && widget.autofocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        if (ModalRoute.of(context)?.isCurrent != true ||
+            Navigator.of(context, rootNavigator: true).canPop()) {
+          return;
+        }
         final focusedTile = FocusManager.instance.primaryFocus?.context
             ?.findAncestorWidgetOfExactType<MediaTile>();
         if (focusedTile == null) _focusNode.requestFocus();

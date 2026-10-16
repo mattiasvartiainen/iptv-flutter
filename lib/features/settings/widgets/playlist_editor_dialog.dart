@@ -20,6 +20,11 @@ class _PlaylistEditorDialog extends StatefulWidget {
 class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameFocusNode = FocusNode();
+  final _urlFocusNode = FocusNode();
+  final _serverFocusNode = FocusNode();
+  final _usernameFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+  final _saveFocusNode = FocusNode();
   late final TextEditingController _nameController;
   late final TextEditingController _urlController;
   late final TextEditingController _serverController;
@@ -53,6 +58,11 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
     _editor.dispose();
     _nameController.dispose();
     _nameFocusNode.dispose();
+    _urlFocusNode.dispose();
+    _serverFocusNode.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _saveFocusNode.dispose();
     _urlController.dispose();
     _serverController.dispose();
     _usernameController.dispose();
@@ -90,6 +100,13 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                     controller: _nameController,
                     focusNode: _nameFocusNode,
                     autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    onEditingComplete: () {},
+                    onFieldSubmitted: (_) =>
+                        (_editor.sourceKind == PlaylistSourceKind.url
+                                ? _urlFocusNode
+                                : _serverFocusNode)
+                            .requestFocus(),
                     enabled: !_saving,
                     onChanged: _editor.updateName,
                     decoration: const InputDecoration(labelText: 'Name'),
@@ -121,6 +138,10 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                   if (_editor.sourceKind == PlaylistSourceKind.url) ...[
                     TextFormField(
                       controller: _urlController,
+                      focusNode: _urlFocusNode,
+                      textInputAction: TextInputAction.done,
+                      onEditingComplete: () {},
+                      onFieldSubmitted: (_) => _saveFocusNode.requestFocus(),
                       enabled: !_saving,
                       onChanged: _editor.updateUrl,
                       decoration: const InputDecoration(
@@ -131,6 +152,11 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                   ] else ...[
                     TextFormField(
                       controller: _serverController,
+                      focusNode: _serverFocusNode,
+                      textInputAction: TextInputAction.next,
+                      onEditingComplete: () {},
+                      onFieldSubmitted: (_) =>
+                          _usernameFocusNode.requestFocus(),
                       enabled: !_saving,
                       onChanged: _editor.updateServer,
                       decoration: const InputDecoration(labelText: 'Server'),
@@ -139,6 +165,11 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _usernameController,
+                      focusNode: _usernameFocusNode,
+                      textInputAction: TextInputAction.next,
+                      onEditingComplete: () {},
+                      onFieldSubmitted: (_) =>
+                          _passwordFocusNode.requestFocus(),
                       enabled: !_saving,
                       onChanged: _editor.updateUsername,
                       decoration: const InputDecoration(labelText: 'Username'),
@@ -147,6 +178,10 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _passwordController,
+                      focusNode: _passwordFocusNode,
+                      textInputAction: TextInputAction.done,
+                      onEditingComplete: () {},
+                      onFieldSubmitted: (_) => _saveFocusNode.requestFocus(),
                       enabled: !_saving,
                       onChanged: _editor.updatePassword,
                       obscureText: true,
@@ -234,6 +269,7 @@ class _PlaylistEditorDialogState extends State<_PlaylistEditorDialog> {
               child: const Text('Cancel'),
             ),
             FilledButton(
+              focusNode: _saveFocusNode,
               onPressed: _saving || _editor.checking
                   ? null
                   : () async {

@@ -47,6 +47,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusCheckScheduled = false;
       if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      if (Navigator.of(context, rootNavigator: true).canPop()) return;
       final lifecycle = WidgetsBinding.instance.lifecycleState;
       if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
       final navigation = AppScope.navigationControllerOf(context);

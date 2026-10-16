@@ -31,6 +31,10 @@ class IptvApp extends StatefulWidget {
 }
 
 class _IptvAppState extends State<IptvApp> {
+  final ValueNotifier<bool> _rootModalActive = ValueNotifier(false);
+  late final NavigatorObserver _rootFocusObserver = _RootModalFocusObserver(
+    _rootModalActive,
+  );
   final GlobalKey<NavigatorState> _rootNavigatorKey =
       GlobalKey<NavigatorState>();
   AppController get controller => widget.dependencies.appController;
@@ -52,6 +56,7 @@ class _IptvAppState extends State<IptvApp> {
 
   @override
   void dispose() {
+    _rootModalActive.dispose();
     FocusManager.instance.removeHighlightModeListener(_highlightModeChanged);
     widget.dependencies.preferencesController.removeListener(
       _syncDebugKeyLogger,
@@ -110,6 +115,7 @@ class _IptvAppState extends State<IptvApp> {
     return MaterialApp(
       title: 'IPTV',
       navigatorKey: _rootNavigatorKey,
+      navigatorObservers: [_rootFocusObserver],
       shortcuts: buildAppShortcuts(
         extraShortcuts: widget.dependencies.extraShortcuts,
       ),
@@ -136,18 +142,34 @@ class _IptvAppState extends State<IptvApp> {
           child: child!,
         ),
       ),
-      home: AppEnvironment(
-        capabilities: widget.dependencies.capabilities,
-        child: AppScope(
-          appController: controller,
-          playerController: widget.dependencies.playerController,
-          playlistsController: widget.dependencies.playlistsController,
-          preferencesController: widget.dependencies.preferencesController,
-          navigationController: controller.navigationController,
-          child: const AppShell(),
+      home: ValueListenableBuilder<bool>(
+        valueListenable: _rootModalActive,
+        builder: (context, modalActive, child) =>
+            ExcludeFocus(excluding: modalActive, child: child!),
+        child: AppEnvironment(
+          capabilities: widget.dependencies.capabilities,
+          child: AppScope(
+            appController: controller,
+            playerController: widget.dependencies.playerController,
+            playlistsController: widget.dependencies.playlistsController,
+            preferencesController: widget.dependencies.preferencesController,
+            navigationController: controller.navigationController,
+            child: const AppShell(),
+          ),
         ),
       ),
     );
+  }
+}
+
+class _RootModalFocusObserver extends NavigatorObserver {
+  _RootModalFocusObserver(this.modalActive);
+
+  final ValueNotifier<bool> modalActive;
+
+  @override
+  void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
+    modalActive.value = !topRoute.isFirst;
   }
 }
 

@@ -98,6 +98,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 controller: _textController,
                 autofocus: true,
                 textInputAction: TextInputAction.search,
+                onEditingComplete: () {},
                 onChanged: _scheduleSearch,
                 onSubmitted: (_) {
                   _debounce?.cancel();

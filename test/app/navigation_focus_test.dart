@@ -107,6 +107,143 @@ MediaTile? _focusedTile() => FocusManager.instance.primaryFocus?.context
     ?.findAncestorWidgetOfExactType<MediaTile>();
 
 void main() {
+  for (final operation in ['Add playlist', 'Edit', 'Delete']) {
+    testWidgets('$operation contains traversal, resize and foreground focus', (
+      tester,
+    ) async {
+      final harness = await _pumpLoadedApp(tester);
+      harness.app.openSettings();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(operation).first);
+      await tester.tap(find.text(operation).first);
+      await tester.pumpAndSettle();
+      final dialogRoute = ModalRoute.of(
+        tester.element(find.byType(AlertDialog)),
+      );
+      void expectModalFocus() {
+        final focusedContext = FocusManager.instance.primaryFocus?.context;
+        expect(focusedContext, isNotNull);
+        expect(ModalRoute.of(focusedContext!), same(dialogRoute));
+      }
+
+      for (var step = 0; step < 20; step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+        expectModalFocus();
+      }
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      for (var step = 0; step < 20; step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+        expectModalFocus();
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      for (final key in [
+        LogicalKeyboardKey.arrowUp,
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowRight,
+      ]) {
+        for (var step = 0; step < 5; step++) {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+          expectModalFocus();
+        }
+      }
+      tester.view.physicalSize = const Size(800, 600);
+      await tester.pumpAndSettle();
+      expectModalFocus();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      FocusManager.instance.primaryFocus!.unfocus();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expectModalFocus();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expectModalFocus();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        harness.app.navigationController.currentRoute,
+        isA<SettingsRoute>(),
+      );
+    });
+  }
+
+  testWidgets('late Home data focus cannot steal an open root modal', (
+    tester,
+  ) async {
+    final harness = await _pumpLoadedApp(tester);
+    final context = tester.element(find.byType(AppShell));
+    showDialog<void>(
+      context: context,
+      builder: (_) => const AlertDialog(
+        title: Text('Modal focus guard'),
+        content: TextField(autofocus: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final field = tester.widget<EditableText>(find.byType(EditableText));
+    await harness.preferences.setShowHomeLiveTv(false);
+    await tester.pumpAndSettle();
+    expect(field.focusNode.hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('Search keyboard submission preserves the search field focus', (
+    tester,
+  ) async {
+    final harness = await _pumpLoadedApp(tester);
+    harness.app.openSearch();
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), 'News');
+    final search = tester.widget<EditableText>(find.byType(EditableText));
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(search.focusNode.hasPrimaryFocus, isTrue);
+    expect(harness.app.navigationController.currentRoute, isA<SearchRoute>());
+  });
+
+  testWidgets('text Done never hands modal focus to the Settings page', (
+    tester,
+  ) async {
+    final harness = await _pumpLoadedApp(tester);
+    harness.app.openSettings();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add playlist'));
+    await tester.pumpAndSettle();
+    final field = find
+        .descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(EditableText),
+        )
+        .first;
+    await tester.enterText(field, 'TV playlist');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    expect(focusedContext, isNotNull);
+    expect(
+      ModalRoute.of(focusedContext!),
+      same(ModalRoute.of(tester.element(find.byType(AlertDialog)))),
+      reason: 'An open modal must own focus after virtual-keyboard Done',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<AlertDialog>(),
+      isNotNull,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(harness.app.navigationController.currentRoute, isA<SettingsRoute>());
+  });
+
   testWidgets('empty Home starts with an actionable control focused', (
     tester,
   ) async {
