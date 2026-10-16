@@ -1,11 +1,11 @@
 # Xtream API And Metadata Implementation Plan
 
-Created: 2026-10-15. Updated: 2026-10-15. Status: XM-01 and XM-02 implemented; later packages pending.
+Created: 2026-10-15. Updated: 2026-10-15. Status: XM-01 through XM-03 implemented; later packages pending.
 Audience: developers and coding agents implementing source-aware catalogs and richer movie/series details.
 
 ## 1. Purpose And Authority
 
-Use this plan for explicit Xtream login, detecting Xtream capabilities from a playlist URL, provider identity, and extensible metadata enrichment. Implementation proceeds only for packages explicitly requested by the user; XM-01 and XM-02 are now complete.
+Use this plan for explicit Xtream login, detecting Xtream capabilities from a playlist URL, provider identity, and extensible metadata enrichment. Implementation proceeds only for packages explicitly requested by the user; XM-01 through XM-03 are now complete.
 
 Current source, tests, migrations, and configuration define implemented behavior. Follow [AGENTS.md](../AGENTS.md), [architecture boundaries](../test/architecture/architecture_rules_test.dart), [design rules](design-guidelines.md), and [decisions](decisions.md). Preserve paged browsing, constructor injection, existing playback adapters, Back/focus behavior, and playlist isolation.
 
@@ -197,14 +197,14 @@ Use responsive scrollable composition for portrait, short landscape, desktop and
 
 ## 10. Work Packages
 
-READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. XM-01 and XM-02 are complete; XM-03 is the next unblocked package. Other implementation remains pending.
+READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. XM-01 through XM-03 are complete; XM-04 is the next unblocked package. Other implementation remains pending.
 
 | ID | Deliverable | Depends On | Status |
 |---|---|---|---|
 | XM-01 | Source/capability contracts and detection parser | None | DONE (2026-10-15): Local-only contracts/parser, exact password preservation; 29 focused cases and all 315 tests pass. |
 | XM-02 | Safe Xtream authentication client and fixture contract tests | XM-01 | DONE (2026-10-15): Injected credentials/transport, sanitized typed results, bounded cancellable HTTP; 59 authentication cases and all 374 tests pass. |
-| XM-03 | Source persistence/editor verification and URL promotion | XM-02 | READY |
-| XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | PENDING |
+| XM-03 | Source persistence/editor verification and URL promotion | XM-02 | DONE (2026-10-15): Revision-safe persistence/recovery and integrated Add/Edit verification, retry/cancellation and URL-only fallback; all 469 tests pass. Native checks pending. |
+| XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | READY |
 | XM-05 | Metadata repository/cache and first Xtream provider | XM-04 | PENDING |
 | XM-06 | On-demand series mappings and episode relationships | XM-05 | PENDING |
 | XM-07 | Enhanced movie details | XM-05 | PENDING |
@@ -245,9 +245,21 @@ Implemented evidence (2026-10-15):
 
 ### XM-03: Persistence And Add/Edit Flow
 
+Completed (2026-10-15): persistence/recovery, controller and production dependency wiring, Add/Edit verification and saved status display. Save remains separate from Refresh and does not activate a playlist. API verification does not switch catalog transport or certify catalog/detail endpoint capabilities.
+
 Owners: settings repository, secret store contracts, playlist controller/editor, composition root and new migration. Reuse explicit name/server/username/password fields, add verification and detected-Xtream state, persist safe capability summaries, allow URL-only fallback and explicit retry. Recover from partial DB/secret-store writes. Preserve current save-versus-refresh and active playlist behavior.
 
 Done: legacy URL and explicit Xtream sources load without forced migration/import, verified URL gains API capability while preserving input/output options, secrets stay out of summaries/logs, and credential edits/deletion invalidate the correct revision. Key-event tests cover submit, cancellation, error recovery and Back.
+
+Implemented evidence:
+
+- [Settings persistence](../lib/services/settings/settings_repository.dart) stores safe verification/account state, API opt-in and connection revision separately from secret source JSON. The append-only [v12 migration](../lib/services/storage/source_verification_v12_migration.dart) is registered in the database adapter. Unique secret references and a durable cleanup journal recover interrupted secure-store/database writes without replacing a working source prematurely.
+- Source changes invalidate prior verification; names and equivalent normalized server addresses do not unnecessarily change connection identity. Draft edits map to one persisted revision increment. Expected-revision checks inside serialized repository saves reject stale editor writes, and separate verification updates are revision guarded. Existing catalog/user-data identities and original URL options remain intact.
+- [Editor controller](../lib/features/playlists/playlist_editor_controller.dart) recognizes URL candidates and explicit credentials, requires confirmation for insecure/ambiguous connections and bare-server scheme suggestions, supports verification/retry/cancellation and URL-only opt-out, and discards stale async results. Saved status and opt-out are restored on reopening without an automatic network request. Saving a failed revalidation replaces an earlier verified state with the latest sanitized failure status, including safe temporary-unavailable state for thrown verifier failures.
+- [Add/Edit dialog](../lib/features/settings/widgets/playlist_editor_dialog.dart) uses the editor controller with responsive scrollable form/actions, obscured passwords, host-only API preview, confirmation controls, fixed safe error text and working Back/cancel. [Playlist controller](../lib/state/playlists_controller.dart) saves source configuration independently from import/activation; [composition root](../lib/app/app_dependencies.dart) injects the production [Xtream verifier](../lib/services/xtream/xtream_source_verifier.dart). Credential-bearing drafts stay behind that verifier interface; persisted configurations are resolved through the settings repository's existing secret-store path. No background provider scan or automatic API import was added.
+- [Playlist card](../lib/features/settings/widgets/playlist_card.dart) displays a short saved source/verification state without displaying credentials. Authentication remains distinct from catalog capability checks: those capabilities stay unknown until later endpoints are implemented and verified.
+- [Persistence recovery tests](../test/services/settings/settings_repository_persistence_test.dart), [editor state tests](../test/features/playlists/playlist_editor_controller_test.dart), [real-database editor tests](../test/features/playlists/playlist_editor_persistence_test.dart), [dialog interaction tests](../test/features/settings/playlist_editor_dialog_test.dart), and [verifier tests](../test/services/xtream/xtream_source_verifier_test.dart) cover failed writes/commits, restart recovery, legacy migration, stale revisions, repeated draft edits, cancellation/late results, retry, URL fallback, safe output, keyboard/Back and no import-on-save.
+- Final editor/controller/persistence focused run: 58 passing. Full `flutter test`: 469 passing, including architecture and existing catalog/navigation checks. `flutter analyze` reports only the existing `unawaited_futures` info in `webos/flutter/main.dart`; `git diff --check` passes. No real provider requests were made during implementation. Native Android/TV, Windows and webOS visual/network checks remain pending.
 
 ### XM-04: Provider Identity Without Catalog Churn
 

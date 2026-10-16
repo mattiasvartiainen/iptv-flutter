@@ -81,6 +81,16 @@ class PlaylistCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
+                    'Source: ${playlist.sourceKind == PlaylistSourceKind.xtream ? 'Xtream Codes' : 'Playlist URL'}',
+                  ),
+                  if (playlist.verificationRecord case final verification?)
+                    Text(
+                      verification.apiEnabled
+                          ? 'API: ${verification.verification.name} - account ${verification.accountState.name}'
+                          : 'API: disabled',
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
                     'Import: ${playlist.lastImportStatus ?? 'never'}${lastImport == null ? '' : ' · ${formatDate(lastImport)}'}',
                   ),
                   if (playlist.lastImportWarning case final warning?) ...[

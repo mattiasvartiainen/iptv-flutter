@@ -14,6 +14,7 @@ import '../services/storage/secure_storage_service.dart';
 import 'app_platform.dart';
 import 'build_flags.dart' as build_flags;
 import 'platform_capabilities.dart';
+import 'windows_playlist_secret_store.dart';
 
 abstract interface class PlatformProfile {
   AppPlatform get platform;
@@ -115,7 +116,9 @@ abstract base class _PlatformProfile implements PlatformProfile {
 
   @override
   PlaylistSecretStore createSecretStore() => MigratingPlaylistSecretStore(
-    secureStore: SecurePlaylistSecretStore(),
+    secureStore: platform == AppPlatform.windows
+        ? WindowsPlaylistSecretStore()
+        : SecurePlaylistSecretStore(),
     legacyStore: FilePlaylistSecretStore(),
   );
 }

@@ -9,6 +9,8 @@ import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/logging/app_logger.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
+import '../services/xtream/xtream_api_client.dart';
+import '../services/xtream/xtream_source_verifier.dart';
 import '../state/app_controller.dart';
 import '../state/app_preferences_controller.dart';
 import '../state/app_startup.dart';
@@ -61,6 +63,10 @@ class AppDependencies {
       settingsRepository: settingsRepository,
     );
     final playlistsController = PlaylistsController(
+      sourceVerifier: XtreamSourceVerifier(
+        createClient: (resolver) =>
+            XtreamApiClient(resolveCredentials: resolver, logger: logger),
+      ),
       catalogRepository: catalogRepository,
       settingsRepository: settingsRepository,
       catalogView: catalogView,

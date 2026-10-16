@@ -10,10 +10,26 @@ import '../services/logging/app_logger.dart';
 import '../services/security/url_redaction.dart';
 import '../services/settings/app_preferences.dart';
 import '../services/settings/settings_repository.dart';
+import '../services/sources/source_contracts.dart';
+import '../services/sources/source_verifier.dart';
 import 'app_preferences_controller.dart';
 import 'catalog_view_state.dart';
 
 enum LoadStatus { idle, loading, ready, error }
+
+class _UnavailableSourceVerifier implements SourceVerifier {
+  const _UnavailableSourceVerifier();
+
+  @override
+  Future<XtreamAuthResult> verify(
+    PlaylistSourceConfig config, {
+    required bool confirmed,
+    required XtreamCancellation cancellation,
+  }) async => const XtreamAuthResult(
+    verification: SourceVerificationState.temporarilyUnavailable,
+    failure: XtreamAuthFailure.unsupported,
+  );
+}
 
 enum PlaylistLoadIntent {
   startup,
@@ -34,6 +50,7 @@ class PlaylistsController extends ChangeNotifier {
     required NavigationController navigationController,
     required AppPreferencesController preferencesController,
     AppLogger logger = const DebugAppLogger(),
+    SourceVerifier? sourceVerifier,
   }) : _catalogRepository = catalogRepository,
        _injectedQueryService = catalogQueryService,
        _settingsRepository = settingsRepository,
@@ -41,7 +58,8 @@ class PlaylistsController extends ChangeNotifier {
        _catalogView = catalogView,
        _navigationController = navigationController,
        _preferencesController = preferencesController,
-       _logger = logger {
+       _logger = logger,
+       _sourceVerifier = sourceVerifier {
     _queryService =
         _injectedQueryService ??
         (_catalogRepository is CatalogQueryService
@@ -57,6 +75,37 @@ class PlaylistsController extends ChangeNotifier {
   final NavigationController _navigationController;
   final AppPreferencesController _preferencesController;
   final AppLogger _logger;
+  final SourceVerifier? _sourceVerifier;
+
+  SourceVerifier get sourceVerifier =>
+      _sourceVerifier ?? const _UnavailableSourceVerifier();
+
+  Future<bool> savePlaylistConfig(
+    PlaylistSourceConfig config, {
+    int? expectedRevision,
+  }) async {
+    return _runPlaylistOperation(
+      'playlist_save',
+      host: Uri.tryParse(config.server ?? config.url ?? '')?.host ?? '',
+      body: () async {
+        if (config.playlistId != null && expectedRevision != null) {
+          final current = await _settingsRepository.getPlaylist(
+            config.playlistId!,
+          );
+          if (current == null ||
+              current.connectionRevision != expectedRevision) {
+            throw StateError('Source changed while editing.');
+          }
+        }
+        await _settingsRepository.upsertPlaylist(config);
+        await refreshPlaylists();
+        errorMessage = null;
+        activeIssue = null;
+        playlistStatus = LoadStatus.ready;
+        notifyListeners();
+      },
+    );
+  }
 
   CatalogQueryService? _queryService;
 

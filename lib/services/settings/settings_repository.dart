@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 
 import 'package:sqflite/sqflite.dart';
 
@@ -6,6 +9,7 @@ import '../catalog/catalog_query.dart';
 import '../catalog/id_identity.dart';
 import '../security/url_redaction.dart';
 import '../sources/source_contracts.dart';
+import '../sources/source_verification_record.dart';
 import '../storage/secure_storage_service.dart';
 import '../storage/storage_contracts.dart';
 
@@ -17,6 +21,8 @@ class PlaylistSourceConfig {
     required this.name,
     required this.url,
     this.enabled = true,
+    this.verificationRecord,
+    this.expectedConnectionRevision,
   }) : kind = PlaylistSourceKind.url,
        server = null,
        username = null,
@@ -29,6 +35,8 @@ class PlaylistSourceConfig {
     required this.username,
     required this.password,
     this.enabled = true,
+    this.verificationRecord,
+    this.expectedConnectionRevision,
   }) : kind = PlaylistSourceKind.xtream,
        url = null;
 
@@ -40,6 +48,8 @@ class PlaylistSourceConfig {
   final String? username;
   final String? password;
   final bool enabled;
+  final SourceVerificationRecord? verificationRecord;
+  final int? expectedConnectionRevision;
 
   String get resolvedUrl {
     return switch (kind) {
@@ -52,8 +62,7 @@ class PlaylistSourceConfig {
   String get summary {
     return switch (kind) {
       PlaylistSourceKind.url => _summaryForUrl(url!),
-      PlaylistSourceKind.xtream =>
-        '${Uri.tryParse(_normalizedServer(server!))?.host ?? _normalizedServer(server!)} · ${username!.trim()}',
+      PlaylistSourceKind.xtream => _summaryForUrl(server!),
     };
   }
 
@@ -74,6 +83,7 @@ class PlaylistSourceConfig {
   static PlaylistSourceConfig? fromStorageValue(
     String? value, {
     String? fallbackName,
+    SourceVerificationRecord? verificationRecord,
   }) {
     if (value == null || value.trim().isEmpty) return null;
     final trimmed = value.trim();
@@ -81,17 +91,23 @@ class PlaylistSourceConfig {
       return PlaylistSourceConfig.url(
         name: fallbackName ?? 'Playlist',
         url: trimmed,
+        verificationRecord: verificationRecord,
       );
     }
 
     final decoded = jsonDecode(trimmed);
     if (decoded is! Map<String, dynamic>) return null;
-    return fromJson(decoded, fallbackName: fallbackName);
+    return fromJson(
+      decoded,
+      fallbackName: fallbackName,
+      verificationRecord: verificationRecord,
+    );
   }
 
   static PlaylistSourceConfig? fromJson(
     Map<String, dynamic> json, {
     String? fallbackName,
+    SourceVerificationRecord? verificationRecord,
   }) {
     final kindName = json['kind'] as String?;
     final name = (json['name'] as String?)?.trim();
@@ -111,6 +127,7 @@ class PlaylistSourceConfig {
           username: username,
           password: password,
           enabled: enabled,
+          verificationRecord: verificationRecord,
         );
       case 'url':
       default:
@@ -120,6 +137,7 @@ class PlaylistSourceConfig {
           name: name?.isNotEmpty == true ? name! : (fallbackName ?? 'Playlist'),
           url: url,
           enabled: enabled,
+          verificationRecord: verificationRecord,
         );
     }
   }
@@ -134,10 +152,7 @@ class PlaylistSourceConfig {
 
   static String _summaryForUrl(String url) {
     final parsed = Uri.tryParse(url.trim());
-    if (parsed == null) return url.trim();
-    if (parsed.host.isEmpty) return url.trim();
-    final path = parsed.path.isNotEmpty ? parsed.path : '';
-    return '${parsed.host}$path';
+    return parsed?.host ?? '';
   }
 }
 
@@ -155,6 +170,8 @@ class ManagedPlaylist {
     required this.lastImportWarning,
     required this.lastImportCompletedAt,
     required this.refreshSettings,
+    this.verificationRecord,
+    this.connectionRevision = 0,
   });
 
   final String playlistId;
@@ -169,6 +186,21 @@ class ManagedPlaylist {
   final String? lastImportWarning;
   final DateTime? lastImportCompletedAt;
   final PlaylistRefreshSettings? refreshSettings;
+  final SourceVerificationRecord? verificationRecord;
+  final int connectionRevision;
+
+  SourceConnectionSummary? get connectionSummary => sourceKind == null
+      ? null
+      : SourceConnectionSummary(
+          playlistId: playlistId,
+          inputKind: sourceKind!,
+          verification:
+              verificationRecord?.verification ??
+              SourceVerificationState.unchecked,
+          accountState:
+              verificationRecord?.accountState ?? SourceAccountState.unknown,
+          connectionRevision: connectionRevision,
+        );
 }
 
 enum RefreshMode { manual, daily, every3Days, weekly, every2Weeks }
@@ -231,7 +263,16 @@ abstract interface class SettingsRepository {
   });
 }
 
-class SqliteSettingsRepository implements SettingsRepository {
+abstract interface class SourceVerificationRepository {
+  Future<bool> saveSourceVerification(
+    String playlistId,
+    int expectedRevision,
+    SourceVerificationRecord record,
+  );
+}
+
+class SqliteSettingsRepository
+    implements SettingsRepository, SourceVerificationRepository {
   SqliteSettingsRepository({
     required DatabaseAdapter databaseAdapter,
     PlaylistSecretStore? secretStore,
@@ -240,6 +281,56 @@ class SqliteSettingsRepository implements SettingsRepository {
 
   final DatabaseAdapter _databaseAdapter;
   final PlaylistSecretStore _secretStore;
+  Future<void> _sourceOperations = Future<void>.value();
+
+  Future<T> _serializeSourceOperation<T>(Future<T> Function() action) {
+    final result = Completer<T>();
+    _sourceOperations = _sourceOperations.then((_) async {
+      try {
+        await _recoverSourceSecrets();
+        result.complete(await action());
+      } catch (error, stack) {
+        result.completeError(error, stack);
+      }
+    });
+    return result.future;
+  }
+
+  Future<void> _recoverSourceSecrets() async {
+    final db = await _databaseAdapter.database;
+    final entries = await db.query('source_secret_journal');
+    for (final entry in entries) {
+      final key = entry['secret_key']! as String;
+      final references = await db.query(
+        'playlists',
+        columns: const ['id'],
+        where: 'secure_storage_key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+      if (references.isEmpty) {
+        try {
+          await _secretStore.delete(key: key);
+        } catch (e, st) {
+          stderr.writeln('Fatal error: $e');
+          stderr.writeln('Stack trace: $st');
+          continue;
+        }
+      }
+      await db.delete(
+        'source_secret_journal',
+        where: 'secret_key = ?',
+        whereArgs: [key],
+      );
+    }
+  }
+
+  Future<void> _queueSecretCleanup(DatabaseExecutor db, String? key) async {
+    if (key == null || key.isEmpty) return;
+    await db.insert('source_secret_journal', {
+      'secret_key': key,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
 
   static const Map<RefreshMode, String> _refreshModeToDb = {
     RefreshMode.manual: 'manual',
@@ -278,12 +369,20 @@ class SqliteSettingsRepository implements SettingsRepository {
   }
 
   @override
-  Future<List<ManagedPlaylist>> listPlaylists() async {
+  Future<List<ManagedPlaylist>> listPlaylists() =>
+      _serializeSourceOperation(_listPlaylists);
+
+  Future<List<ManagedPlaylist>> _listPlaylists() async {
     final db = await _databaseAdapter.database;
     final rows = await db.rawQuery('''
 SELECT p.id,
        p.name,
        p.enabled,
+      p.source_revision,
+      p.source_verification,
+      p.source_account_state,
+      p.source_checked_at,
+      p.source_api_enabled,
        p.secure_storage_key,
        p.source_url_redacted,
        p.last_import_status,
@@ -308,13 +407,21 @@ ORDER BY p.updated_at DESC, p.created_at DESC, p.name COLLATE NOCASE ASC
   }
 
   @override
-  Future<ManagedPlaylist?> getPlaylist(String playlistId) async {
+  Future<ManagedPlaylist?> getPlaylist(String playlistId) =>
+      _serializeSourceOperation(() => _getPlaylist(playlistId));
+
+  Future<ManagedPlaylist?> _getPlaylist(String playlistId) async {
     final db = await _databaseAdapter.database;
     final rows = await db.rawQuery(
       '''
 SELECT p.id,
        p.name,
        p.enabled,
+      p.source_revision,
+      p.source_verification,
+      p.source_account_state,
+      p.source_checked_at,
+      p.source_api_enabled,
        p.secure_storage_key,
        p.source_url_redacted,
        p.last_import_status,
@@ -338,83 +445,125 @@ LIMIT 1
   }
 
   @override
-  Future<ManagedPlaylist> upsertPlaylist(PlaylistSourceConfig config) async {
+  Future<ManagedPlaylist> upsertPlaylist(PlaylistSourceConfig config) =>
+      _serializeSourceOperation(() => _upsertPlaylist(config));
+
+  Future<ManagedPlaylist> _upsertPlaylist(PlaylistSourceConfig config) async {
     final db = await _databaseAdapter.database;
     final now = DateTime.now().toUtc().toIso8601String();
     final playlistId = config.playlistId ?? _createPlaylistId(config);
-    final secureStorageKey = 'playlist:$playlistId';
+    final random = Random.secure();
+    final nonce = List.generate(
+      24,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    final secureStorageKey = 'playlist:$playlistId:$nonce';
     final existingRows = await db.query(
       'playlists',
-      columns: const [
-        'created_at',
-        'last_import_started_at',
-        'last_import_completed_at',
-        'last_import_staged_rows',
-        'last_import_staged_duration_ms',
-        'last_import_status',
-        'last_import_error',
-      ],
       where: 'id = ?',
       whereArgs: [playlistId],
       limit: 1,
     );
     final existing = existingRows.isNotEmpty ? existingRows.first : null;
+    if (config.expectedConnectionRevision != null &&
+        (existing == null ||
+            existing['source_revision'] != config.expectedConnectionRevision)) {
+      throw StateError('Source changed while editing. Reopen the editor.');
+    }
+    final oldKey = existing?['secure_storage_key'] as String?;
+    final oldConfig = oldKey == null
+        ? null
+        : PlaylistSourceConfig.fromStorageValue(
+            await _secretStore.read(key: oldKey),
+          );
+    final changed = existing != null && !_sameConnection(oldConfig, config);
+    final revision =
+        (existing?['source_revision'] as int? ?? 0) + (changed ? 1 : 0);
+    final suppliedRecord = config.verificationRecord;
+    final record =
+        suppliedRecord != null && suppliedRecord.connectionRevision == revision
+        ? suppliedRecord
+        : changed
+        ? null
+        : existing == null
+        ? null
+        : _verificationFromRow(existing);
+
+    await _queueSecretCleanup(db, secureStorageKey);
 
     await _secretStore.write(
       key: secureStorageKey,
       value: config.toStorageValue(),
     );
 
-    await db.insert('playlists', {
-      'id': playlistId,
-      'name': config.name,
-      'secure_storage_key': secureStorageKey,
-      'source_url_redacted': redactUrl(config.resolvedUrl),
-      'enabled': config.enabled ? 1 : 0,
-      'created_at': existing?['created_at'] ?? now,
-      'updated_at': now,
-      'last_import_started_at': existing?['last_import_started_at'],
-      'last_import_completed_at': existing?['last_import_completed_at'],
-      'last_import_staged_rows': existing?['last_import_staged_rows'],
-      'last_import_staged_duration_ms':
-          existing?['last_import_staged_duration_ms'],
-      'last_import_status': existing?['last_import_status'] ?? 'never',
-      'last_import_error': existing?['last_import_error'],
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await _databaseAdapter.transaction((txn) async {
+      final values = <String, Object?>{
+        'name': config.name,
+        'secure_storage_key': secureStorageKey,
+        'source_url_redacted': redactUrl(config.resolvedUrl),
+        'enabled': config.enabled ? 1 : 0,
+        'updated_at': now,
+        'source_revision': revision,
+        ..._verificationValues(record),
+      };
+      if (existing == null) {
+        await txn.insert('playlists', {
+          'id': playlistId,
+          'created_at': now,
+          ...values,
+        });
+      } else {
+        await txn.update(
+          'playlists',
+          values,
+          where: 'id = ?',
+          whereArgs: [playlistId],
+        );
+      }
 
-    await db.insert('playlist_settings', {
-      'playlist_id': playlistId,
-      'refresh_enabled': 1,
-      'refresh_mode': 'weekly',
-      'refresh_interval_hours': 168,
-      'last_refresh_at': null,
-      'next_refresh_at': null,
-      'last_refresh_status': null,
-      'updated_at': now,
-    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await txn.insert('playlist_settings', {
+        'playlist_id': playlistId,
+        'refresh_enabled': 1,
+        'refresh_mode': 'weekly',
+        'refresh_interval_hours': 168,
+        'last_refresh_at': null,
+        'next_refresh_at': null,
+        'last_refresh_status': null,
+        'updated_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await _queueSecretCleanup(txn, oldKey);
+      await txn.delete(
+        'source_secret_journal',
+        where: 'secret_key = ?',
+        whereArgs: [secureStorageKey],
+      );
+    });
 
-    final refreshed = await getPlaylist(playlistId);
+    await _recoverSourceSecrets();
+    final refreshed = await _getPlaylist(playlistId);
     return refreshed!;
   }
 
   @override
-  Future<void> deletePlaylist(String playlistId) async {
-    final db = await _databaseAdapter.database;
-    final rows = await db.query(
-      'playlists',
-      columns: const ['secure_storage_key'],
-      where: 'id = ?',
-      whereArgs: [playlistId],
-      limit: 1,
-    );
-    if (rows.isNotEmpty) {
-      final secureStorageKey = rows.first['secure_storage_key'] as String?;
-      if (secureStorageKey != null && secureStorageKey.isNotEmpty) {
-        await _secretStore.delete(key: secureStorageKey);
-      }
-    }
+  Future<void> deletePlaylist(String playlistId) =>
+      _serializeSourceOperation(() => _deletePlaylist(playlistId));
 
+  Future<void> _deletePlaylist(String playlistId) async {
     await _databaseAdapter.transaction((txn) async {
+      final rows = await txn.query(
+        'playlists',
+        columns: const ['secure_storage_key'],
+        where: 'id = ?',
+        whereArgs: [playlistId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final secureStorageKey = rows.first['secure_storage_key'] as String?;
+        if (secureStorageKey != null && secureStorageKey.isNotEmpty) {
+          await _queueSecretCleanup(txn, secureStorageKey);
+        }
+      }
+
       await txn.rawInsert(
         '''
 INSERT INTO items_fts(items_fts, rowid, title)
@@ -474,6 +623,69 @@ SELECT 'delete', id, title FROM items WHERE playlist_id = ?
       );
       await txn.delete('playlists', where: 'id = ?', whereArgs: [playlistId]);
     });
+    await _recoverSourceSecrets();
+  }
+
+  @override
+  Future<bool> saveSourceVerification(
+    String playlistId,
+    int expectedRevision,
+    SourceVerificationRecord record,
+  ) => _serializeSourceOperation(() async {
+    if (expectedRevision < 0 || record.connectionRevision != expectedRevision) {
+      return false;
+    }
+    final db = await _databaseAdapter.database;
+    return await db.update(
+          'playlists',
+          _verificationValues(record),
+          where: 'id = ? AND source_revision = ?',
+          whereArgs: [playlistId, expectedRevision],
+        ) ==
+        1;
+  });
+
+  bool _sameConnection(
+    PlaylistSourceConfig? previous,
+    PlaylistSourceConfig next,
+  ) =>
+      previous != null &&
+      previous.kind == next.kind &&
+      switch (next.kind) {
+        PlaylistSourceKind.url => previous.url?.trim() == next.url?.trim(),
+        PlaylistSourceKind.xtream =>
+          PlaylistSourceConfig._normalizedServer(previous.server!) ==
+                  PlaylistSourceConfig._normalizedServer(next.server!) &&
+              previous.username?.trim() == next.username?.trim() &&
+              previous.password == next.password,
+      };
+
+  Map<String, Object?> _verificationValues(SourceVerificationRecord? record) =>
+      {
+        'source_verification': record?.verification.name,
+        'source_account_state': record?.accountState.name,
+        'source_checked_at': record?.checkedAt.toUtc().toIso8601String(),
+        'source_api_enabled': record == null
+            ? null
+            : record.apiEnabled
+            ? 1
+            : 0,
+      };
+
+  SourceVerificationRecord? _verificationFromRow(Map<String, Object?> row) {
+    final checkedAt = _tryParseDateTime(row['source_checked_at']);
+    if (checkedAt == null || row['source_verification'] == null) return null;
+    return SourceVerificationRecord(
+      verification: SourceVerificationState.values.byName(
+        row['source_verification']! as String,
+      ),
+      accountState: SourceAccountState.values.byName(
+        row['source_account_state']! as String,
+      ),
+      checkedAt: checkedAt,
+      connectionRevision: row['source_revision'] as int? ?? 0,
+      apiEnabled: row['source_api_enabled'] == 1,
+    );
   }
 
   @override
@@ -632,11 +844,13 @@ SELECT 'delete', id, title FROM items WHERE playlist_id = ?
   ) async {
     final playlistId = row['id']! as String;
     final secureStorageKey = row['secure_storage_key'] as String?;
+    final verificationRecord = _verificationFromRow(row);
     PlaylistSourceConfig? sourceConfig;
     if (secureStorageKey != null && secureStorageKey.isNotEmpty) {
       sourceConfig = PlaylistSourceConfig.fromStorageValue(
         await _secretStore.read(key: secureStorageKey),
         fallbackName: row['name'] as String?,
+        verificationRecord: verificationRecord,
       );
     }
 
@@ -664,13 +878,17 @@ SELECT 'delete', id, title FROM items WHERE playlist_id = ?
       sourceKind: sourceConfig?.kind,
       sourceSummary:
           sourceConfig?.summary ??
-          (row['source_url_redacted'] as String? ?? resolvedUrl),
+          PlaylistSourceConfig._summaryForUrl(
+            row['source_url_redacted'] as String? ?? resolvedUrl,
+          ),
       resolvedUrl: resolvedUrl,
       sourceUrlRedacted: row['source_url_redacted'] as String?,
       lastImportStatus: row['last_import_status'] as String?,
       lastImportWarning: row['last_import_error'] as String?,
       lastImportCompletedAt: _tryParseDateTime(row['last_import_completed_at']),
       refreshSettings: refreshSettings,
+      verificationRecord: verificationRecord,
+      connectionRevision: row['source_revision'] as int? ?? 0,
     );
   }
 

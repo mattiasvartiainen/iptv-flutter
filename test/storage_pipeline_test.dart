@@ -34,7 +34,7 @@ void main() {
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '11');
+    expect(rows.first['value'], '12');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(
@@ -834,8 +834,17 @@ https://stream.test/shared.m3u8
       isEmpty,
     );
 
-    final firstKey = 'playlist:${firstPlaylist.playlistId}';
-    final secondKey = 'playlist:${secondPlaylist.playlistId}';
+    final sourceRows = await db.query('playlists');
+    final firstKey =
+        sourceRows.firstWhere(
+              (row) => row['id'] == firstPlaylist.playlistId,
+            )['secure_storage_key']!
+            as String;
+    final secondKey =
+        sourceRows.firstWhere(
+              (row) => row['id'] == secondPlaylist.playlistId,
+            )['secure_storage_key']!
+            as String;
     expect(firstKey, isNot(secondKey));
     expect(await store.read(key: firstKey), isNotNull);
     expect(await store.read(key: secondKey), isNotNull);

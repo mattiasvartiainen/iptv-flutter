@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common/sqlite_api.dart';
 
+import 'source_verification_v12_migration.dart';
 import 'storage_contracts.dart';
 import 'storage_migrations.dart';
 
@@ -25,6 +26,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
              CatalogImportV9Migration(),
              CatalogSearchV10Migration(),
              DropLegacyCatalogV11Migration(),
+             SourceVerificationV12Migration(),
            ];
 
   final String fileName;
