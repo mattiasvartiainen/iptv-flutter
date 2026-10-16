@@ -29,6 +29,8 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
   bool _focusCheckScheduled = false;
   final FocusScopeNode _contentFocusScope = FocusScopeNode(
     debugLabel: 'App page content',
+    traversalEdgeBehavior: TraversalEdgeBehavior.parentScope,
+    directionalTraversalEdgeBehavior: TraversalEdgeBehavior.parentScope,
   );
 
   @override

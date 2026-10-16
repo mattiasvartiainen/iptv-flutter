@@ -37,7 +37,10 @@ void _disposeHarness(_NavigationHarness harness) {
   harness.navigation.dispose();
 }
 
-Future<_NavigationHarness> _pumpRemoteFirstApp(WidgetTester tester) async {
+Future<_NavigationHarness> _pumpRemoteFirstApp(
+  WidgetTester tester, {
+  PrimaryInput input = PrimaryInput.remote,
+}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(390, 844);
   addTearDown(() {
@@ -93,10 +96,10 @@ Future<_NavigationHarness> _pumpRemoteFirstApp(WidgetTester tester) async {
         playerController: player,
         playlistsController: playlists,
         preferencesController: preferences,
-        capabilities: const PlatformCapabilities(
-          primaryInput: PrimaryInput.remote,
+        capabilities: PlatformCapabilities(
+          primaryInput: input,
           hasHardwareBack: false,
-          supportsHover: false,
+          supportsHover: input == PrimaryInput.pointer,
         ),
       ),
     ),
@@ -111,6 +114,162 @@ MediaTile? _focusedTile() => FocusManager.instance.primaryFocus?.context
     ?.findAncestorWidgetOfExactType<MediaTile>();
 
 void main() {
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
+    testWidgets(
+      '$platform keyboard-only Settings and editor journey',
+      (tester) async {
+        final harness = await _pumpRemoteFirstApp(
+          tester,
+          input: PrimaryInput.pointer,
+        );
+        tester.view.physicalSize = const Size(1440, 900);
+        await tester.pumpAndSettle();
+        final settingsLabel = find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('Settings'),
+        );
+        final settingsFocus = Focus.of(tester.element(settingsLabel));
+        for (
+          var step = 0;
+          step < 80 && !settingsFocus.hasPrimaryFocus;
+          step++
+        ) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+        }
+        expect(settingsFocus.hasPrimaryFocus, isTrue);
+        expect(harness.navigation.currentRoute, isA<HomeRoute>());
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(harness.navigation.currentRoute, isA<SettingsRoute>());
+
+        final addFocus = Focus.of(tester.element(find.text('Add playlist')));
+        for (var step = 0; step < 80 && !addFocus.hasPrimaryFocus; step++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+        }
+        expect(addFocus.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+        final nameField = find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(EditableText),
+            )
+            .first;
+        final name = tester.widget<EditableText>(nameField);
+        expect(name.focusNode.hasPrimaryFocus, isTrue);
+        await tester.enterText(nameField, 'Keyboard name');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pumpAndSettle();
+        expect(
+          name.controller.selection.baseOffset,
+          'Keyboard name'.length - 1,
+        );
+        expect(name.focusNode.hasPrimaryFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(addFocus.hasPrimaryFocus, isTrue);
+        expect(harness.navigation.currentRoute, isA<SettingsRoute>());
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  testWidgets('Tab can leave content and Shift+Tab reverses the boundary', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    tester.view.physicalSize = const Size(1440, 900);
+    harness.app.openMovies();
+    await tester.pumpAndSettle();
+    expect(_focusedTile(), isNotNull);
+    FocusNode? previous;
+    FocusNode? navigationFocus;
+    for (var step = 0; step < 60; step++) {
+      previous = FocusManager.instance.primaryFocus;
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      final focused = FocusManager.instance.primaryFocus;
+      if (focused?.context?.findAncestorWidgetOfExactType<NavigationRail>() !=
+          null) {
+        navigationFocus = focused;
+        break;
+      }
+    }
+    expect(
+      navigationFocus,
+      isNotNull,
+      reason: 'Tab must escape the content scope',
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(previous));
+    expect(harness.navigation.currentRoute, isA<CatalogRoute>());
+  });
+
+  testWidgets('compact Tab reaches toolbar, bottom navigation and content', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    final visited = <FocusNode>{};
+    final start = FocusManager.instance.primaryFocus!;
+    var returned = false;
+    for (var step = 0; step < 80; step++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      final focused = FocusManager.instance.primaryFocus!;
+      visited.add(focused);
+      if (focused == start) {
+        returned = true;
+        break;
+      }
+    }
+    expect(returned, isTrue, reason: 'Tab must form one whole-page cycle');
+    for (final tooltip in ['Search', 'Settings', 'Show list view']) {
+      final control = find
+          .descendant(of: find.byTooltip(tooltip), matching: find.byType(Icon))
+          .first;
+      expect(visited, contains(Focus.of(tester.element(control))));
+    }
+    for (final label in ['Home', 'Live', 'Movies', 'Series']) {
+      final control = find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text(label),
+      );
+      expect(visited, contains(Focus.of(tester.element(control))));
+    }
+    expect(harness.navigation.currentRoute, isA<HomeRoute>());
+  });
+
+  testWidgets('D-pad returns from content to rail and restores its item', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    tester.view.physicalSize = const Size(1000, 900);
+    harness.app.openMovies();
+    await tester.pumpAndSettle();
+    final itemFocus = FocusManager.instance.primaryFocus;
+    final title = _focusedTile()!.title;
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<NavigationRail>(),
+      isNotNull,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(itemFocus));
+    expect(_focusedTile()?.title, title);
+    expect(harness.navigation.currentRoute, isA<CatalogRoute>());
+  });
+
   testWidgets('remote-first navigation adapts across the viewport matrix', (
     tester,
   ) async {

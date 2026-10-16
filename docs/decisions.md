@@ -133,6 +133,17 @@ rail. Layout uses constraints, interaction uses capabilities/current input, and 
 density is not inferred from window width or keyboard input alone. Implemented in WP-4.7.
 See [Cross-Device Design Contract](design-guidelines.md) for accessibility rules and test matrix.
 
+### Keyboard And Remote Traversal (2026-10-16)
+- Adopted the updated [design contract](design-guidelines.md): desktop Tab/Shift+Tab and TV
+  D-pad navigation are required alongside efficient mouse and touch operation. Android phones
+  remain touch-first without disabling external keyboard or assistive input; Android TV remains
+  remote-first. Layout selection stays constraint-based.
+- Reproduced a Tab trap in the nested shell content scope. Its Tab and directional edges now
+  defer to the parent page scope; only whole pages and active modals form closed Tab cycles.
+- Regression tests establish compact toolbar/bottom-nav reachability, content/rail return,
+  reversible Tab boundary, and Windows/Linux simulated keyboard-only Settings/editor journeys.
+  Other journey coverage and hardware/screen-reader checks must be tracked independently.
+
 ### WP-4.3 — Root key map
 - Common Select/Enter/game-button activation, Back, media, seek, and channel-step mappings are
   registered at the app root. Platform overrides are supplied by `PlatformProfile`.
