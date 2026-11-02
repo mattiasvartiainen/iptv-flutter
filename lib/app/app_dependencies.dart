@@ -5,10 +5,13 @@ import 'package:flutter/widgets.dart';
 import '../features/player/player_controller.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/platform_profile.dart';
+import '../platform/telemetry_settings_store.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/logging/app_logger.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
+import '../services/telemetry/app_telemetry.dart';
+import '../services/telemetry/otlp_app_telemetry.dart';
 import '../services/xtream/xtream_api_client.dart';
 import '../services/xtream/xtream_source_verifier.dart';
 import '../state/app_controller.dart';
@@ -16,6 +19,7 @@ import '../state/app_preferences_controller.dart';
 import '../state/app_startup.dart';
 import '../state/catalog_view_state.dart';
 import '../state/playlists_controller.dart';
+import '../state/telemetry_controller.dart';
 import 'navigation/navigation_controller.dart';
 
 class AppDependencies {
@@ -25,6 +29,7 @@ class AppDependencies {
     required this.playlistsController,
     required this.preferencesController,
     required this.logger,
+    this.telemetryController,
     required AppStartup? startup,
     required this.capabilities,
     required this.extraShortcuts,
@@ -41,16 +46,27 @@ class AppDependencies {
     required PlatformProfile profile,
     AppLogger logger = const DebugAppLogger(),
   }) {
+    final localLogger = logger;
+    final telemetry = OtlpAppTelemetry();
+    logger = TelemetryAppLogger(localLogger, telemetry);
+    final secretStore = profile.createSecretStore();
+    final telemetryController = TelemetryController(
+      telemetry: telemetry,
+      defaults: telemetryBuildConfig(),
+      store: FileTelemetrySettingsStore(secretStore),
+      localLogger: localLogger,
+    );
     final databaseFactory = profile.createDatabaseFactory();
     final databaseAdapter = SqfliteDatabaseAdapter(
       databaseFactory: databaseFactory,
+      telemetry: telemetry,
       databaseDirectoryProvider: () =>
           profile.getDatabaseDirectory(databaseFactory),
     );
-    final secretStore = profile.createSecretStore();
     final catalogRepository = SqliteCatalogRepository(
       databaseAdapter: databaseAdapter,
       logger: logger,
+      telemetry: telemetry,
     );
     final settingsRepository = SqliteSettingsRepository(
       databaseAdapter: databaseAdapter,
@@ -96,6 +112,7 @@ class AppDependencies {
       playlistsController: playlistsController,
       preferencesController: preferencesController,
       logger: logger,
+      telemetryController: telemetryController,
       startup: startup,
       capabilities: profile.capabilities,
       extraShortcuts: profile.extraShortcuts,
@@ -138,6 +155,7 @@ class AppDependencies {
   final PlaylistsController playlistsController;
   final AppPreferencesController preferencesController;
   final AppLogger logger;
+  final TelemetryController? telemetryController;
   final AppStartup? _startup;
   final PlatformCapabilities capabilities;
   final Map<ShortcutActivator, Intent> extraShortcuts;
@@ -148,7 +166,12 @@ class AppDependencies {
   Future<void>? _disposeFuture;
 
   Future<void> initialize() async {
-    if (_initializeOnStart) await _startup!.initialize();
+    if (_initializeOnStart) {
+      await telemetryController?.initialize();
+      final telemetry =
+          telemetryController?.telemetry ?? const NoopAppTelemetry();
+      await telemetry.measure('app.startup', _startup!.initialize);
+    }
   }
 
   Future<void> dispose() {
@@ -163,5 +186,7 @@ class AppDependencies {
     appController.catalogView.dispose();
     appController.navigationController.dispose();
     await _databaseAdapter!.close();
+    await telemetryController?.telemetry.close();
+    telemetryController?.dispose();
   }
 }

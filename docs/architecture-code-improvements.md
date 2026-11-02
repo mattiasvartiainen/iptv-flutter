@@ -87,6 +87,12 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 Size guide: XS < 30 min of agent work, S = one focused change, M = several files, L = multi-step; split L packages into sub-commits that each keep tests green.
 
+### Additional Observability Work
+
+| WP | Title | Depends on | Status |
+|----|-------|------------|--------|
+| WP-9.3 | Configurable Aspire OTLP diagnostics for playlist/database troubleshooting | WP-9.1, WP-9.2a | IMPLEMENTED (2026-11-01), Windows export verified; LG hardware and large-playlist overhead pending. Full suite has two independently reproducible baseline modal-focus failures. See [telemetry.md](telemetry.md) for scope, verification, configuration, and remaining gates. |
+
 ---
 
 ## 2. Executive summary

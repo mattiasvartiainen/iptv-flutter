@@ -52,6 +52,7 @@ dependencies:
       path: packages/flutter_secure_storage
       ref: 3780db6e4cd17108ca66c2bfdf96740343d99f7a
   crypto: ^3.0.6
+  dartastic_opentelemetry: ^0.12.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

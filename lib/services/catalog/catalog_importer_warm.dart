@@ -5,6 +5,20 @@ extension _CatalogImporterWarm on CatalogImporter {
     required String playlistId,
     required String playlistUrl,
     required CatalogImportReporter reporter,
+  }) => _telemetry.measure(
+    'playlist.import.warm',
+    () => _importWarmBody(
+      playlistId: playlistId,
+      playlistUrl: playlistUrl,
+      reporter: reporter,
+    ),
+    attributes: const {'import.path': 'warm'},
+  );
+
+  Future<CatalogImportResult> _importWarmBody({
+    required String playlistId,
+    required String playlistUrl,
+    required CatalogImportReporter reporter,
   }) async {
     final db = await _databaseAdapter.database;
     final totalStopwatch = Stopwatch()..start();
@@ -26,6 +40,7 @@ extension _CatalogImporterWarm on CatalogImporter {
 
     try {
       worker = await CatalogImportWorker.start(
+        telemetry: _telemetry,
         playlistId: playlistId,
         playlistUrl: playlistUrl,
         selectRows: (batch) async {
@@ -143,15 +158,34 @@ extension _CatalogImporterWarm on CatalogImporter {
           currentOperation: 'finalizing_diff',
         ),
       );
-      final reconciliation = await _finalizeWarmImport(
-        db,
-        playlistId: playlistId,
-        sessionId: sessionId,
-        result: result,
-        newCount: newCount,
-        changedCount: changedCount,
-        movedCount: movedCount,
-        totalStopwatch: totalStopwatch,
+      final reconciliation = await _telemetry.measure(
+        'db.import.finalize',
+        () => _finalizeWarmImport(
+          db,
+          playlistId: playlistId,
+          sessionId: sessionId,
+          result: result,
+          newCount: newCount,
+          changedCount: changedCount,
+          movedCount: movedCount,
+          totalStopwatch: totalStopwatch,
+        ),
+        attributes: const {'db.system': 'sqlite', 'import.path': 'warm'},
+      );
+      _telemetry.event(
+        'playlist.import.counts',
+        attributes: {
+          'playlistId': playlistId,
+          'importSessionId': sessionId,
+          'new': newCount,
+          'changed': changedCount,
+          'moved': movedCount,
+          'removed': reconciliation.removedCount,
+          'rejected': result.itemsRejected,
+          'bytes': result.bytesReceived,
+          'accepted': reconciliation.itemCount,
+          'parsed': result.itemsParsed,
+        },
       );
       reporter.emit(
         CatalogImportProgress(
@@ -177,16 +211,20 @@ extension _CatalogImporterWarm on CatalogImporter {
       );
     } catch (error) {
       await worker?.cancel();
-      await _cleanupWarmImport(
-        db,
-        sessionId: sessionId,
-        error: error,
-        bytesReceived: bytesReceived,
-        bytesTotal: bytesTotal,
-        parsedItems: parsedItems,
-        newCount: newCount,
-        changedCount: changedCount,
-        movedCount: movedCount,
+      await _telemetry.measure(
+        'db.import.cleanup',
+        () => _cleanupWarmImport(
+          db,
+          sessionId: sessionId,
+          error: error,
+          bytesReceived: bytesReceived,
+          bytesTotal: bytesTotal,
+          parsedItems: parsedItems,
+          newCount: newCount,
+          changedCount: changedCount,
+          movedCount: movedCount,
+        ),
+        attributes: const {'db.system': 'sqlite', 'import.path': 'warm'},
       );
       rethrow;
     }
@@ -503,15 +541,21 @@ GROUP BY series_key, playlist_id, group_id
       where: 'id = ?',
       whereArgs: [playlistId],
     );
-    await txn.delete(
-      'import_rows',
-      where: 'import_id = ?',
-      whereArgs: [sessionId],
-    );
-    await txn.delete(
-      'import_seen',
-      where: 'import_id = ?',
-      whereArgs: [sessionId],
+    await _telemetry.measure(
+      'db.import.cleanup',
+      () async {
+        await txn.delete(
+          'import_rows',
+          where: 'import_id = ?',
+          whereArgs: [sessionId],
+        );
+        await txn.delete(
+          'import_seen',
+          where: 'import_id = ?',
+          whereArgs: [sessionId],
+        );
+      },
+      attributes: const {'db.system': 'sqlite', 'import.path': 'warm'},
     );
     return (
       itemCount: itemCount,

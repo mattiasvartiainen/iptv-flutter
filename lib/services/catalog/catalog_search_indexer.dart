@@ -3,6 +3,7 @@ import 'dart:async';
 import '../logging/app_logger.dart';
 import '../security/url_redaction.dart';
 import '../storage/storage_contracts.dart';
+import '../telemetry/app_telemetry.dart';
 import 'catalog_query.dart';
 
 /// Maintains the v9 `items_fts` index from the `items_fts_queue`.
@@ -29,9 +30,21 @@ class SqliteCatalogSearchIndexer implements CatalogSearchIndexer {
     required DatabaseAdapter databaseAdapter,
     this.autoStartWorker = true,
     AppLogger logger = const DebugAppLogger(),
+    AppTelemetry telemetry = const NoopAppTelemetry(),
   }) : _databaseAdapter = databaseAdapter,
+       _telemetry = telemetry,
        _logger = logger;
 
+  final AppTelemetry _telemetry;
+
+  Future<T> _measure<T>(String name, Future<T> Function() action) =>
+      _telemetry is NoopAppTelemetry
+      ? action()
+      : _telemetry.measure(
+          name,
+          action,
+          attributes: const {'db.system': 'sqlite'},
+        );
   final DatabaseAdapter _databaseAdapter;
   final AppLogger _logger;
 
@@ -86,7 +99,10 @@ class SqliteCatalogSearchIndexer implements CatalogSearchIndexer {
   }
 
   @override
-  Future<void> resumePendingIndexing() async {
+  Future<void> resumePendingIndexing() =>
+      _measure('db.index.recovery', _resumePendingIndexing);
+
+  Future<void> _resumePendingIndexing() async {
     final db = await _databaseAdapter.database;
     final rows = await db.rawQuery(
       'SELECT DISTINCT playlist_id FROM items_fts_queue',
@@ -100,6 +116,19 @@ class SqliteCatalogSearchIndexer implements CatalogSearchIndexer {
   Future<int> processQueue({
     String? playlistId,
     int batchSize = defaultBatchSize,
+  }) {
+    if (playlistId != null && _pausedPlaylists.contains(playlistId)) {
+      return Future.value(0);
+    }
+    return _measure(
+      'db.index.process_queue',
+      () => _processQueue(playlistId: playlistId, batchSize: batchSize),
+    );
+  }
+
+  Future<int> _processQueue({
+    required String? playlistId,
+    required int batchSize,
   }) async {
     var processed = 0;
     while (true) {
@@ -107,13 +136,24 @@ class SqliteCatalogSearchIndexer implements CatalogSearchIndexer {
         playlistId: playlistId,
         batchSize: batchSize,
       );
-      if (batchCount == 0) return processed;
+      if (batchCount == 0) {
+        if (_telemetry is! NoopAppTelemetry) {
+          _telemetry.event(
+            'db.index.counts',
+            attributes: {'processed': processed},
+          );
+        }
+        return processed;
+      }
       processed += batchCount;
     }
   }
 
   @override
-  Future<CatalogSearchIndexStatus> status(String playlistId) async {
+  Future<CatalogSearchIndexStatus> status(String playlistId) =>
+      _measure('db.index.status', () => _status(playlistId));
+
+  Future<CatalogSearchIndexStatus> _status(String playlistId) async {
     final db = await _databaseAdapter.database;
     final rows = await db.rawQuery(
       '''
@@ -146,61 +186,67 @@ SELECT
     if (playlistId != null && _pausedPlaylists.contains(playlistId)) {
       return 0;
     }
-    return _databaseAdapter.transaction((txn) async {
-      final rows = await txn.query(
-        'items_fts_queue',
-        columns: const ['item_id', 'operation', 'old_title'],
-        where: playlistId == null ? null : 'playlist_id = ?',
-        whereArgs: playlistId == null ? null : [playlistId],
-        orderBy: 'priority, queued_at, item_id',
-        limit: batchSize,
-      );
-      if (rows.isEmpty) return 0;
-      if (playlistId != null && _pausedPlaylists.contains(playlistId)) {
-        return 0;
-      }
-
-      final queuedIds = <int>[];
-      final deleteEntries = <(int, String)>[];
-      final upsertIds = <int>[];
-      for (final row in rows) {
-        final itemId = (row['item_id'] as num).toInt();
-        queuedIds.add(itemId);
-        final operation = row['operation']! as String;
-        final oldTitle = row['old_title'] as String?;
-        if (oldTitle != null) deleteEntries.add((itemId, oldTitle));
-        if (operation == 'upsert') upsertIds.add(itemId);
-      }
-
-      for (final chunk in _chunked(deleteEntries, size: 300)) {
-        final values = <Object?>[];
-        for (final entry in chunk) {
-          values
-            ..add(entry.$1)
-            ..add(entry.$2);
+    return _measure(
+      'db.index.batch',
+      () => _databaseAdapter.transaction((txn) async {
+        final rows = await txn.query(
+          'items_fts_queue',
+          columns: const ['item_id', 'operation', 'old_title'],
+          where: playlistId == null ? null : 'playlist_id = ?',
+          whereArgs: playlistId == null ? null : [playlistId],
+          orderBy: 'priority, queued_at, item_id',
+          limit: batchSize,
+        );
+        if (rows.isEmpty) return 0;
+        if (playlistId != null && _pausedPlaylists.contains(playlistId)) {
+          return 0;
         }
-        final tuples = List.filled(chunk.length, "('delete', ?, ?)").join(', ');
-        await txn.rawInsert(
-          'INSERT INTO items_fts(items_fts, rowid, title) VALUES $tuples',
-          values,
-        );
-      }
-      for (final chunk in _chunked(upsertIds)) {
-        final placeholders = _placeholders(chunk.length);
-        await txn.rawInsert(
-          'INSERT INTO items_fts(rowid, title) '
-          'SELECT id, title FROM items WHERE id IN ($placeholders)',
-          chunk,
-        );
-      }
-      for (final chunk in _chunked(queuedIds)) {
-        await txn.rawDelete(
-          'DELETE FROM items_fts_queue WHERE item_id IN (${_placeholders(chunk.length)})',
-          chunk,
-        );
-      }
-      return rows.length;
-    });
+
+        final queuedIds = <int>[];
+        final deleteEntries = <(int, String)>[];
+        final upsertIds = <int>[];
+        for (final row in rows) {
+          final itemId = (row['item_id'] as num).toInt();
+          queuedIds.add(itemId);
+          final operation = row['operation']! as String;
+          final oldTitle = row['old_title'] as String?;
+          if (oldTitle != null) deleteEntries.add((itemId, oldTitle));
+          if (operation == 'upsert') upsertIds.add(itemId);
+        }
+
+        for (final chunk in _chunked(deleteEntries, size: 300)) {
+          final values = <Object?>[];
+          for (final entry in chunk) {
+            values
+              ..add(entry.$1)
+              ..add(entry.$2);
+          }
+          final tuples = List.filled(
+            chunk.length,
+            "('delete', ?, ?)",
+          ).join(', ');
+          await txn.rawInsert(
+            'INSERT INTO items_fts(items_fts, rowid, title) VALUES $tuples',
+            values,
+          );
+        }
+        for (final chunk in _chunked(upsertIds)) {
+          final placeholders = _placeholders(chunk.length);
+          await txn.rawInsert(
+            'INSERT INTO items_fts(rowid, title) '
+            'SELECT id, title FROM items WHERE id IN ($placeholders)',
+            chunk,
+          );
+        }
+        for (final chunk in _chunked(queuedIds)) {
+          await txn.rawDelete(
+            'DELETE FROM items_fts_queue WHERE item_id IN (${_placeholders(chunk.length)})',
+            chunk,
+          );
+        }
+        return rows.length;
+      }),
+    );
   }
 
   static Iterable<List<T>> _chunked<T>(

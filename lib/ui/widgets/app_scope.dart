@@ -5,6 +5,7 @@ import '../../features/player/player_controller.dart';
 import '../../state/app_controller.dart';
 import '../../state/app_preferences_controller.dart';
 import '../../state/playlists_controller.dart';
+import '../../state/telemetry_controller.dart';
 
 class AppScope extends InheritedWidget {
   const AppScope({
@@ -14,6 +15,7 @@ class AppScope extends InheritedWidget {
     required this.playlistsController,
     required this.preferencesController,
     required this.navigationController,
+    this.telemetryController,
     required super.child,
   });
 
@@ -22,6 +24,10 @@ class AppScope extends InheritedWidget {
   final PlaylistsController playlistsController;
   final AppPreferencesController preferencesController;
   final NavigationController navigationController;
+  final TelemetryController? telemetryController;
+
+  static TelemetryController? telemetryControllerOf(BuildContext context) =>
+      _scopeOf(context).telemetryController;
 
   static AppController appControllerOf(BuildContext context) =>
       _scopeOf(context).appController;
@@ -54,5 +60,6 @@ class AppScope extends InheritedWidget {
       playerController != oldWidget.playerController ||
       playlistsController != oldWidget.playlistsController ||
       preferencesController != oldWidget.preferencesController ||
-      navigationController != oldWidget.navigationController;
+      navigationController != oldWidget.navigationController ||
+      telemetryController != oldWidget.telemetryController;
 }

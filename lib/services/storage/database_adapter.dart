@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common/sqlite_api.dart';
 
+import '../telemetry/app_telemetry.dart';
 import 'source_verification_v12_migration.dart';
 import 'storage_contracts.dart';
 import 'storage_migrations.dart';
@@ -10,6 +11,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
     required DatabaseFactory databaseFactory,
     this.databaseDirectoryProvider,
     this.fileName = 'iptv_app.sqlite',
+    this.telemetry = const NoopAppTelemetry(),
     List<StorageMigration>? migrations,
   }) : _databaseFactory = databaseFactory,
        _migrations =
@@ -30,6 +32,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
            ];
 
   final String fileName;
+  final AppTelemetry telemetry;
   final DatabaseFactory _databaseFactory;
   final Future<String> Function()? databaseDirectoryProvider;
   final List<StorageMigration> _migrations;
@@ -41,7 +44,11 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
       : _migrations.map((x) => x.version).reduce((a, b) => a > b ? a : b);
 
   @override
-  Future<void> initialize() async {
+  Future<void> initialize() => _database == null
+      ? telemetry.measure('db.open', _initialize)
+      : _initialize();
+
+  Future<void> _initialize() async {
     if (_database != null) {
       final currentVersion = await _readDatabaseVersion(_database!);
       if (currentVersion < _targetVersion) {
@@ -103,17 +110,19 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
     final now = DateTime.now().toUtc().toIso8601String();
 
     for (final migration in applicable) {
-      await migration.up(db);
-      await db.insert('schema_migrations', {
-        'version': migration.version,
-        'name': migration.name,
-        'applied_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-      await db.insert('schema_meta', {
-        'key': 'schema_version',
-        'value': migration.version.toString(),
-        'updated_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await telemetry.measure('db.migration', () async {
+        await migration.up(db);
+        await db.insert('schema_migrations', {
+          'version': migration.version,
+          'name': migration.name,
+          'applied_at': now,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        await db.insert('schema_meta', {
+          'key': 'schema_version',
+          'value': migration.version.toString(),
+          'updated_at': now,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }, attributes: {'version': migration.version});
     }
 
     await db.insert('profiles', {
@@ -164,12 +173,11 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
   }
 
   @override
-  Future<T> transaction<T>(
-    Future<T> Function(DatabaseExecutor txn) action,
-  ) async {
-    final db = await database;
-    return db.transaction(action);
-  }
+  Future<T> transaction<T>(Future<T> Function(DatabaseExecutor txn) action) =>
+      telemetry.measure('db.transaction', () async {
+        final db = await database;
+        return db.transaction(action);
+      });
 
   @override
   Future<void> close() async {

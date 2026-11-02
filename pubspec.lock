@@ -89,6 +89,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.9"
+  dartastic_opentelemetry:
+    dependency: "direct main"
+    description:
+      name: dartastic_opentelemetry
+      sha256: "35d9e6f69d3da6ab188103cdf2445f92b9c56e5bd1fd68e8d79ede23b1241d64"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.0"
+  dartastic_opentelemetry_api:
+    dependency: transitive
+    description:
+      name: dartastic_opentelemetry_api
+      sha256: "4e3958bd6b2e8440755ba9e63633a17b1ffb66224eb8086580857e7fab7dd494"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.0"
   dbus:
     dependency: transitive
     description:
@@ -217,6 +233,38 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  google_cloud:
+    dependency: transitive
+    description:
+      name: google_cloud
+      sha256: b385e20726ef5315d302c5933bfb728103116c5be2d3d17094b01a82da538c1f
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.0"
+  google_identity_services_web:
+    dependency: transitive
+    description:
+      name: google_identity_services_web
+      sha256: "5d187c46dc59e02646e10fe82665fc3884a9b71bc1c90c2b8b749316d33ee454"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.3+1"
+  googleapis_auth:
+    dependency: transitive
+    description:
+      name: googleapis_auth
+      sha256: e15d48204e2f3c852dc1091a49705a163a8ba5897823f9abe1c0795e512357c4
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.5"
+  grpc:
+    dependency: transitive
+    description:
+      name: grpc
+      sha256: "0cde49bc17f6b1e96c374ad1b5d389816cc8ade2015f24294eaa76193de87090"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.2.0"
   hooks:
     dependency: transitive
     description:
@@ -241,6 +289,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.0"
+  http2:
+    dependency: transitive
+    description:
+      name: http2
+      sha256: "382d3aefc5bd6dc68c6b892d7664f29b5beb3251611ae946a98d35158a82bbfa"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.1"
   http_parser:
     dependency: transitive
     description:
@@ -545,6 +601,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.5.2"
+  protobuf:
+    dependency: transitive
+    description:
+      name: protobuf
+      sha256: "13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.0"
   pub_semver:
     dependency: transitive
     description:

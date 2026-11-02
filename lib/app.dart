@@ -153,6 +153,7 @@ class _IptvAppState extends State<IptvApp> {
             playerController: widget.dependencies.playerController,
             playlistsController: widget.dependencies.playlistsController,
             preferencesController: widget.dependencies.preferencesController,
+            telemetryController: widget.dependencies.telemetryController,
             navigationController: controller.navigationController,
             child: const AppShell(),
           ),
@@ -166,10 +167,31 @@ class _RootModalFocusObserver extends NavigatorObserver {
   _RootModalFocusObserver(this.modalActive);
 
   final ValueNotifier<bool> modalActive;
+  FocusNode? _invokingFocus;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute?.isFirst == true) {
+      _invokingFocus = FocusManager.instance.primaryFocus;
+    }
+  }
 
   @override
   void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
-    modalActive.value = !topRoute.isFirst;
+    final active = !topRoute.isFirst;
+    final wasActive = modalActive.value;
+    modalActive.value = active;
+    if (wasActive && !active) {
+      final invokingFocus = _invokingFocus;
+      _invokingFocus = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!modalActive.value &&
+            invokingFocus?.context?.mounted == true &&
+            invokingFocus!.canRequestFocus) {
+          invokingFocus.requestFocus();
+        }
+      });
+    }
   }
 }
 

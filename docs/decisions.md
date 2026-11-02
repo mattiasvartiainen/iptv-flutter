@@ -92,6 +92,18 @@ during on-device testing; not a day-one change.
 
 ## Architecture Work Package Decisions
 
+### Aspire Diagnostics (2026-11-01)
+User-approved direct OTLP/HTTP export of structured logs, traces and operation
+metrics to a configurable standalone Aspire dashboard, focused on playlist
+download/import and database access. Disabled by default; build defaults and
+independent runtime settings support TV troubleshooting without rebuilding for
+address changes. Use the existing injected logger and an injected telemetry
+contract. Preserve local logging, platform boundaries, database migrations and
+import semantics. Export only allowlisted metadata; no raw URLs, SQL data,
+exception messages or credentials. API keys use the platform secret store.
+Windows export is verified; webOS hardware and large-playlist overhead remain
+acceptance gates. Details and limits: [telemetry.md](telemetry.md).
+
 ### Verbose playlist diagnostics (2026-10-16)
 For TV development, the existing Display verbose information setting permits exception details
 and stack traces for playlist add/edit/save and manual refresh failures. Show save details inside

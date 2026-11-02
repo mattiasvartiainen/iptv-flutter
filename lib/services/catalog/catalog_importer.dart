@@ -5,6 +5,7 @@ import 'package:sqflite_common/sqlite_api.dart';
 
 import '../security/url_redaction.dart';
 import '../storage/storage_contracts.dart';
+import '../telemetry/app_telemetry.dart';
 import 'catalog_import_coordinator.dart';
 import 'catalog_import_progress.dart';
 import 'catalog_import_protocol.dart' hide CatalogImportProgressCallback;
@@ -44,9 +45,13 @@ class CatalogImporter {
   CatalogImporter({
     required DatabaseAdapter databaseAdapter,
     CatalogImportCoordinator? coordinator,
+    AppTelemetry telemetry = const NoopAppTelemetry(),
   }) : _databaseAdapter = databaseAdapter,
-       _coordinator = coordinator ?? CatalogImportCoordinator();
+       _telemetry = telemetry,
+       _coordinator =
+           coordinator ?? CatalogImportCoordinator(telemetry: telemetry);
 
+  final AppTelemetry _telemetry;
   final DatabaseAdapter _databaseAdapter;
   final CatalogImportCoordinator _coordinator;
 
@@ -109,6 +114,20 @@ class CatalogImporter {
     required String playlistId,
     required String playlistUrl,
     required CatalogImportReporter reporter,
+  }) => _telemetry.measure(
+    'playlist.import.cold',
+    () => _importColdBody(
+      playlistId: playlistId,
+      playlistUrl: playlistUrl,
+      reporter: reporter,
+    ),
+    attributes: const {'import.path': 'cold'},
+  );
+
+  Future<CatalogImportResult> _importColdBody({
+    required String playlistId,
+    required String playlistUrl,
+    required CatalogImportReporter reporter,
   }) async {
     final db = await _databaseAdapter.database;
     final existingRows = await db.rawQuery(
@@ -168,6 +187,7 @@ class CatalogImporter {
         ),
       );
       worker = await CatalogImportWorker.start(
+        telemetry: _telemetry,
         playlistId: playlistId,
         playlistUrl: playlistUrl,
         selectRows: (batch) async =>
@@ -253,13 +273,32 @@ class CatalogImporter {
           currentOperation: 'finalizing',
         ),
       );
-      final groupCount = await _finalizeColdImport(
-        db,
-        playlistId: playlistId,
-        sessionId: sessionId,
-        acceptedItems: acceptedItems,
-        result: result,
-        totalStopwatch: totalStopwatch,
+      final groupCount = await _telemetry.measure(
+        'db.import.finalize',
+        () => _finalizeColdImport(
+          db,
+          playlistId: playlistId,
+          sessionId: sessionId,
+          acceptedItems: acceptedItems,
+          result: result,
+          totalStopwatch: totalStopwatch,
+        ),
+        attributes: const {'db.system': 'sqlite', 'import.path': 'cold'},
+      );
+      _telemetry.event(
+        'playlist.import.counts',
+        attributes: {
+          'playlistId': playlistId,
+          'importSessionId': sessionId,
+          'new': acceptedItems,
+          'changed': 0,
+          'moved': 0,
+          'removed': 0,
+          'rejected': result.itemsRejected,
+          'bytes': result.bytesReceived,
+          'accepted': acceptedItems,
+          'parsed': result.itemsParsed,
+        },
       );
       reporter.emit(
         CatalogImportProgress(
@@ -282,15 +321,19 @@ class CatalogImporter {
       );
     } catch (error) {
       await worker?.cancel();
-      await _cleanupFailedColdImport(
-        db,
-        playlistId: playlistId,
-        sessionId: sessionId,
-        error: error,
-        bytesReceived: bytesReceived,
-        bytesTotal: bytesTotal,
-        parsedItems: parsedItems,
-        acceptedItems: acceptedItems,
+      await _telemetry.measure(
+        'db.import.cleanup',
+        () => _cleanupFailedColdImport(
+          db,
+          playlistId: playlistId,
+          sessionId: sessionId,
+          error: error,
+          bytesReceived: bytesReceived,
+          bytesTotal: bytesTotal,
+          parsedItems: parsedItems,
+          acceptedItems: acceptedItems,
+        ),
+        attributes: const {'db.system': 'sqlite', 'import.path': 'cold'},
       );
       rethrow;
     }

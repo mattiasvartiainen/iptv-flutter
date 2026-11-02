@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import '../telemetry/app_telemetry.dart';
 import 'catalog_import_progress.dart';
 import 'catalog_import_protocol.dart'
     show
+        CatalogImportCancelledException,
         CatalogImportRowSelector,
         CatalogImportRowsCallback,
         CatalogImportWorkerResult;
@@ -12,6 +14,10 @@ typedef CatalogImportOperation<T> =
     Future<T> Function(CatalogImportReporter reporter);
 
 class CatalogImportCoordinator {
+  CatalogImportCoordinator({AppTelemetry telemetry = const NoopAppTelemetry()})
+    : _telemetry = telemetry;
+
+  final AppTelemetry _telemetry;
   final Map<String, _ImportJob<dynamic>> _jobs = {};
 
   Future<T> run<T>({
@@ -25,42 +31,44 @@ class CatalogImportCoordinator {
       return existing.future.then((value) => value as T);
     }
 
-    final job = _ImportJob<T>(playlistId: playlistId);
+    final job = _ImportJob<T>(playlistId: playlistId, telemetry: _telemetry);
     job.listen(onProgress);
     _jobs[playlistId] = job;
     final reporter = CatalogImportReporter._(job);
-    job.emit(
-      CatalogImportProgress(
-        phase: CatalogImportPhase.starting,
-        startedAt: DateTime.now(),
-        message: 'Preparing playlist import',
-      ),
-    );
-
     () async {
       try {
-        final result = await operation(reporter);
-        job.emit(
-          CatalogImportProgress(
-            phase: CatalogImportPhase.completed,
-            startedAt: DateTime.now(),
-            message: 'Playlist import completed',
-          ),
-        );
+        final result = await _telemetry.measure('playlist.import', () async {
+          job.telemetryZone = Zone.current;
+          job.emit(
+            CatalogImportProgress(
+              phase: CatalogImportPhase.starting,
+              startedAt: job.startedAt,
+              message: 'Preparing playlist import',
+            ),
+          );
+          final heartbeat = !_telemetry.enabled
+              ? null
+              : Timer.periodic(const Duration(seconds: 5), (_) {
+                  job.emitHeartbeat();
+                });
+          try {
+            final value = await operation(reporter);
+            job.emitTerminal(CatalogImportPhase.completed);
+            return value;
+          } catch (error) {
+            job.emitTerminal(
+              job.isCancelled || error is CatalogImportCancelledException
+                  ? CatalogImportPhase.cancelled
+                  : CatalogImportPhase.failed,
+              error: error,
+            );
+            rethrow;
+          } finally {
+            heartbeat?.cancel();
+          }
+        }, attributes: const {'import.kind': 'playlist'});
         job.complete(result);
       } catch (error, stackTrace) {
-        job.emit(
-          CatalogImportProgress(
-            phase: job.isCancelled
-                ? CatalogImportPhase.cancelled
-                : CatalogImportPhase.failed,
-            startedAt: DateTime.now(),
-            message: job.isCancelled
-                ? 'Playlist import cancelled'
-                : 'Playlist import failed',
-            error: error,
-          ),
-        );
         job.fail(error, stackTrace);
       } finally {
         _jobs.remove(playlistId);
@@ -88,6 +96,7 @@ class CatalogImportCoordinator {
       final worker = await CatalogImportWorker.start(
         playlistId: playlistId,
         playlistUrl: playlistUrl,
+        telemetry: _telemetry,
         sourceUrl: sourceUrl,
         selectRows: selectRows,
         onRows: onRows,
@@ -152,8 +161,13 @@ class CatalogImportReporter {
 }
 
 class _ImportJob<T> {
-  _ImportJob({required this.playlistId}) : startedAt = DateTime.now();
+  _ImportJob({required this.playlistId, required this.telemetry})
+    : startedAt = DateTime.now();
 
+  final AppTelemetry telemetry;
+  Zone? telemetryZone;
+  CatalogImportProgress? lastProgress;
+  DateTime? lastTelemetryAt;
   final String playlistId;
   final DateTime startedAt;
   final _result = Completer<T>();
@@ -178,9 +192,78 @@ class _ImportJob<T> {
       startedAt: startedAt,
       updatedAt: DateTime.now(),
     );
+    lastProgress = enriched.copyWith(
+      parsedItems: enriched.parsedItems == 0 ? lastProgress?.parsedItems : null,
+      stagedItems: enriched.stagedItems == 0 ? lastProgress?.stagedItems : null,
+      acceptedItems: enriched.acceptedItems == 0
+          ? lastProgress?.acceptedItems
+          : null,
+      rejectedItems: enriched.rejectedItems == 0
+          ? lastProgress?.rejectedItems
+          : null,
+      indexedItems: enriched.indexedItems == 0
+          ? lastProgress?.indexedItems
+          : null,
+    );
+    if (telemetry.enabled &&
+        (lastTelemetryAt == null ||
+            enriched.isTerminal ||
+            DateTime.now().difference(lastTelemetryAt!) >=
+                const Duration(seconds: 2))) {
+      _event('playlist.import.progress', lastProgress!);
+    }
     for (final listener in List.of(listeners)) {
       listener(enriched);
     }
+  }
+
+  void emitTerminal(CatalogImportPhase phase, {Object? error}) {
+    emit(
+      (lastProgress ??
+              CatalogImportProgress(phase: phase, startedAt: startedAt))
+          .copyWith(
+            phase: phase,
+            error: error,
+            message: switch (phase) {
+              CatalogImportPhase.completed => 'Playlist import completed',
+              CatalogImportPhase.cancelled => 'Playlist import cancelled',
+              _ => 'Playlist import failed',
+            },
+          ),
+    );
+  }
+
+  void emitHeartbeat() {
+    final progress = lastProgress;
+    if (progress != null &&
+        !progress.isTerminal &&
+        DateTime.now().difference(lastTelemetryAt!) >=
+            const Duration(seconds: 5)) {
+      _event('playlist.import.heartbeat', progress);
+    }
+  }
+
+  void _event(String name, CatalogImportProgress progress) {
+    lastTelemetryAt = DateTime.now();
+    telemetryZone!.run(
+      () => telemetry.event(
+        name,
+        attributes: {
+          'playlistId': playlistId,
+          'jobId': jobId,
+          'importSessionId': importSessionId,
+          'phase': progress.phase.name,
+          'currentOperation': progress.currentOperation,
+          'current': progress.current,
+          'total': progress.total,
+          'parsed': progress.parsedItems,
+          'staged': progress.stagedItems,
+          'accepted': progress.acceptedItems,
+          'rejected': progress.rejectedItems,
+          'indexed': progress.indexedItems,
+        },
+      ),
+    );
   }
 
   void complete(T value) {

@@ -1,6 +1,7 @@
 import '../../models/content_item.dart';
 import '../logging/app_logger.dart';
 import '../storage/storage_contracts.dart';
+import '../telemetry/app_telemetry.dart';
 import 'catalog_import_coordinator.dart';
 import 'catalog_importer.dart';
 import 'catalog_maintenance.dart';
@@ -23,11 +24,13 @@ class SqliteCatalogRepository
     bool autoStartSearchIndexWorker = true,
     CatalogImportCoordinator? importCoordinator,
     AppLogger logger = const DebugAppLogger(),
+    AppTelemetry telemetry = const NoopAppTelemetry(),
   }) {
     final searchIndexer = SqliteCatalogSearchIndexer(
       databaseAdapter: databaseAdapter,
       autoStartWorker: autoStartSearchIndexWorker,
       logger: logger,
+      telemetry: telemetry,
     );
     return SqliteCatalogRepository.fromServices(
       sync: CatalogSyncService(
@@ -35,12 +38,14 @@ class SqliteCatalogRepository
         importer: CatalogImporter(
           databaseAdapter: databaseAdapter,
           coordinator: importCoordinator,
+          telemetry: telemetry,
         ),
         searchIndexer: searchIndexer,
       ),
       queries: SqliteCatalogQueryService(
         databaseAdapter: databaseAdapter,
         searchIndexer: searchIndexer,
+        telemetry: telemetry,
       ),
       searchIndexer: searchIndexer,
       userLibrary: SqliteUserLibraryRepository(

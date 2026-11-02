@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import '../../models/content_item.dart';
 import '../security/url_redaction.dart';
+import '../telemetry/app_telemetry.dart';
 import 'catalog_classifier.dart';
 import 'catalog_hash.dart';
 import 'catalog_http_config.dart';
@@ -71,6 +72,46 @@ class CatalogImportWorker {
     required CatalogImportRowsCallback onRows,
     void Function(CatalogImportHeaders headers)? onHeaders,
     CatalogImportProgressCallback? onProgress,
+    AppTelemetry telemetry = const NoopAppTelemetry(),
+  }) async {
+    final headersReady = Completer<void>();
+    unawaited(
+      telemetry
+          .measure(
+            'http.playlist.headers',
+            () => headersReady.future,
+            attributes: const {'http.request.method': 'GET'},
+          )
+          .then<void>((_) {}, onError: (Object error, StackTrace stack) {}),
+    );
+    try {
+      return await _start(
+        playlistId: playlistId,
+        playlistUrl: playlistUrl,
+        sourceUrl: sourceUrl,
+        selectRows: selectRows,
+        onRows: onRows,
+        onHeaders: onHeaders,
+        onProgress: onProgress,
+        telemetry: telemetry,
+        headersReady: headersReady,
+      );
+    } catch (error, stack) {
+      if (!headersReady.isCompleted) headersReady.completeError(error, stack);
+      rethrow;
+    }
+  }
+
+  static Future<CatalogImportWorkerHandle> _start({
+    required String playlistId,
+    required String playlistUrl,
+    required String? sourceUrl,
+    required CatalogImportRowSelector selectRows,
+    required CatalogImportRowsCallback onRows,
+    required void Function(CatalogImportHeaders headers)? onHeaders,
+    required CatalogImportProgressCallback? onProgress,
+    required AppTelemetry telemetry,
+    required Completer<void> headersReady,
   }) async {
     final receivePort = ReceivePort();
     final messages = StreamIterator<Object?>(receivePort);
@@ -83,6 +124,7 @@ class CatalogImportWorker {
           'batchSize': batchSize,
           'connectionTimeoutMs': connectionTimeout.inMilliseconds,
           'requestTimeoutMs': requestTimeout.inMilliseconds,
+          'diagnostics': telemetry.enabled,
         });
     final completion = Completer<CatalogImportWorkerResult>();
     final ready = await messages.moveNext();
@@ -120,6 +162,8 @@ class CatalogImportWorker {
         onRows: onRows,
         onHeaders: onHeaders,
         onProgress: onProgress,
+        telemetry: telemetry,
+        headersReady: headersReady,
       ),
     );
     return handle;
@@ -135,6 +179,8 @@ class CatalogImportWorker {
     required CatalogImportRowsCallback onRows,
     required void Function(CatalogImportHeaders headers)? onHeaders,
     required CatalogImportProgressCallback? onProgress,
+    required AppTelemetry telemetry,
+    required Completer<void> headersReady,
   }) async {
     CatalogImportHeaders? headers;
     try {
@@ -142,6 +188,13 @@ class CatalogImportWorker {
         if (handle._cancelled) throw const CatalogImportCancelledException();
         final message = messages.current! as Map<Object?, Object?>;
         switch (message['type']) {
+          case 'status':
+            telemetry.event(
+              'http.playlist.status',
+              attributes: {
+                'http.response.status_code': message['statusCode']! as int,
+              },
+            );
           case 'headers':
             headers = CatalogImportHeaders(
               statusCode: message['statusCode']! as int,
@@ -150,6 +203,19 @@ class CatalogImportWorker {
               lastModified: message['lastModified'] as String?,
             );
             onHeaders?.call(headers);
+            if (!headersReady.isCompleted) headersReady.complete();
+          case 'diagnostics':
+            telemetry.event(
+              'playlist.import.worker',
+              attributes: {
+                'parsingCpuUs': message['parsingCpuUs']! as int,
+                'acknowledgementWaitUs':
+                    message['acknowledgementWaitUs']! as int,
+                'selectionWaitUs': message['selectionWaitUs']! as int,
+                'parsed': message['itemsParsed']! as int,
+                'bytes': message['bytesReceived']! as int,
+              },
+            );
           case 'progress':
             onProgress?.call(
               message['bytesReceived']! as int,
@@ -159,7 +225,15 @@ class CatalogImportWorker {
           case 'keys':
             final batch = _decodeKeys(message);
             final selected = await Future.any<List<int>>([
-              selectRows(batch),
+              telemetry.measure(
+                'db.import.diff',
+                () => selectRows(batch),
+                attributes: {
+                  'db.system': 'sqlite',
+                  'batchNumber': batch.batchNumber,
+                  'batchRows': batch.itemKeys.length,
+                },
+              ),
               handle._cancellation.future.then<List<int>>(
                 (_) => throw const CatalogImportCancelledException(),
               ),
@@ -179,15 +253,23 @@ class CatalogImportWorker {
           case 'rows':
             final batchNumber = message['batchNumber']! as int;
             final rowMessages = message['rows']! as List<Object?>;
-            await onRows(
-              batchNumber,
-              rowMessages
-                  .map(
-                    (row) => CatalogImportRow.fromMessage(
-                      row! as Map<Object?, Object?>,
-                    ),
-                  )
-                  .toList(growable: false),
+            await telemetry.measure(
+              'db.import.write',
+              () => onRows(
+                batchNumber,
+                rowMessages
+                    .map(
+                      (row) => CatalogImportRow.fromMessage(
+                        row! as Map<Object?, Object?>,
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+              attributes: {
+                'db.system': 'sqlite',
+                'batchNumber': batchNumber,
+                'batchRows': rowMessages.length,
+              },
             );
             workerCommands.send({'type': 'ack', 'batchNumber': batchNumber});
           case 'done':
@@ -231,6 +313,9 @@ class CatalogImportWorker {
       }
       throw const CatalogImportCancelledException();
     } catch (error, stackTrace) {
+      if (!headersReady.isCompleted) {
+        headersReady.completeError(error, stackTrace);
+      }
       if (!completion.isCompleted) completion.completeError(error, stackTrace);
       handle._isolate.kill(priority: Isolate.immediate);
       receivePort.close();
@@ -274,6 +359,27 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
   var batchNumber = 0;
   var batch = <CatalogImportRow>[];
   var cancelled = false;
+  final diagnostics = request['diagnostics'] == true;
+  final parsingCpu = Stopwatch();
+  final selectionWait = Stopwatch();
+  final acknowledgementWait = Stopwatch();
+  final diagnosticInterval = Stopwatch()..start();
+
+  void reportDiagnostics({bool force = false}) {
+    if (!diagnostics ||
+        (!force && diagnosticInterval.elapsed < const Duration(seconds: 2))) {
+      return;
+    }
+    diagnosticInterval.reset();
+    replyTo.send({
+      'type': 'diagnostics',
+      'parsingCpuUs': parsingCpu.elapsedMicroseconds,
+      'selectionWaitUs': selectionWait.elapsedMicroseconds,
+      'acknowledgementWaitUs': acknowledgementWait.elapsedMicroseconds,
+      'itemsParsed': itemsParsed,
+      'bytesReceived': bytesReceived,
+    });
+  }
 
   replyTo.send({'type': 'ready', 'sendPort': commands.sendPort});
 
@@ -336,13 +442,18 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
         ordinals.buffer.asUint8List(),
       ]),
     });
+    if (diagnostics) selectionWait.start();
     final indices = await waitForIndices(currentBatchNumber);
+    selectionWait.stop();
     replyTo.send({
       'type': 'rows',
       'batchNumber': currentBatchNumber,
       'rows': [for (final index in indices) sending[index].toMessage()],
     });
+    if (diagnostics) acknowledgementWait.start();
     await waitForAck(currentBatchNumber);
+    acknowledgementWait.stop();
+    reportDiagnostics();
     batch = batch.sublist(sendCount);
   }
 
@@ -413,6 +524,7 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
         catalogHttpUserAgent,
       );
       final response = await httpRequest.close().timeout(timeout);
+      replyTo.send({'type': 'status', 'statusCode': response.statusCode});
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
           catalogHttpFailureMessage(
@@ -447,7 +559,12 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
             0,
             text.length,
           );
-          parser.addChunk(text.substring(offset, end), collectItem);
+          if (diagnostics) parsingCpu.start();
+          try {
+            parser.addChunk(text.substring(offset, end), collectItem);
+          } finally {
+            parsingCpu.stop();
+          }
           while (batch.length >= batchSize) {
             await sendBatch(limit: batchSize);
           }
@@ -459,9 +576,15 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
           'itemsParsed': itemsParsed,
         });
       }
-      parser.finish(collectItem);
+      if (diagnostics) parsingCpu.start();
+      try {
+        parser.finish(collectItem);
+      } finally {
+        parsingCpu.stop();
+      }
       itemsRejected += parser.rejectedRecordCount;
       await sendBatch();
+      reportDiagnostics(force: true);
       replyTo.send({
         'type': 'done',
         'bytesReceived': bytesReceived,
@@ -474,6 +597,9 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
       client.close(force: true);
     }
   } catch (error, stackTrace) {
+    selectionWait.stop();
+    acknowledgementWait.stop();
+    reportDiagnostics(force: true);
     replyTo.send({
       'type': 'error',
       'errorType': error.runtimeType.toString(),
@@ -481,6 +607,8 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
       'stackTrace': redactSensitiveText(stackTrace.toString()),
     });
   } finally {
+    selectionWait.stop();
+    acknowledgementWait.stop();
     commands.close();
     await commandIterator.cancel();
   }

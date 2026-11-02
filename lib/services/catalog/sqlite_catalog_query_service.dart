@@ -2,6 +2,7 @@ import 'package:sqflite_common/sqlite_api.dart';
 
 import '../../models/content_item.dart';
 import '../storage/storage_contracts.dart';
+import '../telemetry/app_telemetry.dart';
 import 'catalog_item_sql.dart';
 import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
@@ -14,28 +15,34 @@ class SqliteCatalogQueryService implements CatalogQueryService {
   SqliteCatalogQueryService({
     required DatabaseAdapter databaseAdapter,
     required CatalogSearchIndexer searchIndexer,
+    this.telemetry = const NoopAppTelemetry(),
   }) : _databaseAdapter = databaseAdapter,
        _searchIndexer = searchIndexer;
 
   final DatabaseAdapter _databaseAdapter;
   final CatalogSearchIndexer _searchIndexer;
+  final AppTelemetry telemetry;
 
   @override
-  Future<CatalogPage<CatalogItemSummary>> queryItems(CatalogQuery query) async {
-    final db = await _databaseAdapter.database;
-    return _queryItems(db, query);
-  }
+  Future<CatalogPage<CatalogItemSummary>> queryItems(CatalogQuery query) =>
+      telemetry.measure('db.query.items', () async {
+        final db = await _databaseAdapter.database;
+        return _queryItems(db, query);
+      });
 
   @override
   Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId) =>
-      _searchIndexer.status(playlistId);
+      telemetry.measure(
+        'db.query.search_index_status',
+        () => _searchIndexer.status(playlistId),
+      );
 
   @override
   Future<List<CatalogItemSummary>> homePreview(
     String playlistId, {
     required CatalogItemKind kind,
     int limit = kHomePreviewCount,
-  }) async {
+  }) => telemetry.measure('db.query.home_preview', () async {
     final db = await _databaseAdapter.database;
     final rows = await db.rawQuery(
       'SELECT $catalogItemSummaryColumns FROM items m '
@@ -48,7 +55,7 @@ class SqliteCatalogQueryService implements CatalogQueryService {
       [playlistId, _itemKindValue(kind), limit],
     );
     return rows.map(CatalogItemSummary.fromRow).toList(growable: false);
-  }
+  });
 
   @override
   Future<CatalogPage<SeriesSummary>> querySeries(
@@ -56,7 +63,7 @@ class SqliteCatalogQueryService implements CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
-  }) async {
+  }) => telemetry.measure('db.query.series', () async {
     final db = await _databaseAdapter.database;
     return _querySeries(
       db,
@@ -65,15 +72,16 @@ class SqliteCatalogQueryService implements CatalogQueryService {
       limit: limit,
       searchTerm: searchTerm,
     );
-  }
+  });
 
   @override
-  Future<List<SeasonSummary>> seasons(String seriesId) async {
-    final seriesKey = int.tryParse(seriesId);
-    if (seriesKey == null) return const [];
-    final db = await _databaseAdapter.database;
-    final rows = await db.rawQuery(
-      '''
+  Future<List<SeasonSummary>> seasons(String seriesId) =>
+      telemetry.measure('db.query.seasons', () async {
+        final seriesKey = int.tryParse(seriesId);
+        if (seriesKey == null) return const [];
+        final db = await _databaseAdapter.database;
+        final rows = await db.rawQuery(
+          '''
 SELECT ? AS series_key, season_number,
        COUNT(*) AS episode_count
 FROM items
@@ -81,26 +89,26 @@ WHERE series_key = ? AND season_number IS NOT NULL
 GROUP BY season_number
 ORDER BY season_number
 ''',
-      [seriesKey, seriesKey],
-    );
-    return rows
-        .map(
-          (row) => SeasonSummary(
-            id: '$seriesKey:${row['season_number']}',
-            seriesId: '$seriesKey',
-            seasonNumber: row['season_number']! as int,
-            episodeCount: (row['episode_count'] as num).toInt(),
-          ),
-        )
-        .toList(growable: false);
-  }
+          [seriesKey, seriesKey],
+        );
+        return rows
+            .map(
+              (row) => SeasonSummary(
+                id: '$seriesKey:${row['season_number']}',
+                seriesId: '$seriesKey',
+                seasonNumber: row['season_number']! as int,
+                episodeCount: (row['episode_count'] as num).toInt(),
+              ),
+            )
+            .toList(growable: false);
+      });
 
   @override
   Future<CatalogPage<CatalogItemSummary>> episodes(
     String seasonId, {
     int offset = 0,
     int limit = kCatalogPageSize,
-  }) async {
+  }) => telemetry.measure('db.query.episodes', () async {
     final seasonParts = seasonId.split(':');
     final seriesKey = seasonParts.length == 2
         ? int.tryParse(seasonParts.first)
@@ -123,13 +131,13 @@ ORDER BY season_number
       offset: offset,
       limit: limit,
     );
-  }
+  });
 
   @override
   Future<List<String>> groups(
     String playlistId, {
     List<CatalogItemKind> kinds = const [],
-  }) async {
+  }) => telemetry.measure('db.query.groups', () async {
     final db = await _databaseAdapter.database;
     final clauses = <String>['playlist_id = ?'];
     final args = <Object?>[playlistId];
@@ -143,14 +151,14 @@ ORDER BY season_number
       args,
     );
     return rows.map((row) => row['title']! as String).toList(growable: false);
-  }
+  });
 
   @override
   Future<List<GroupSummary>> queryGroups(
     String playlistId, {
     required CatalogGroupKind kind,
     String profileId = 'default',
-  }) async {
+  }) => telemetry.measure('db.query.group_summaries', () async {
     final db = await _databaseAdapter.database;
     final rows = await db.rawQuery(
       '''
@@ -167,7 +175,7 @@ ORDER BY g.ord, g.sort_title, g.id
       [playlistId, _groupKindValue(kind), profileId],
     );
     return rows.map(GroupSummary.fromRow).toList(growable: false);
-  }
+  });
 
   @override
   Future<CatalogPage<CatalogItemSummary>> itemsInGroup(
@@ -176,7 +184,7 @@ ORDER BY g.ord, g.sort_title, g.id
     int offset = 0,
     int limit = kCatalogPageSize,
     CatalogSort sort = CatalogSort.title,
-  }) async {
+  }) => telemetry.measure('db.query.items_in_group', () async {
     final db = await _databaseAdapter.database;
     final groupRows = await db.query(
       'groups',
@@ -204,7 +212,7 @@ ORDER BY g.ord, g.sort_title, g.id
         sort: sort,
       ),
     );
-  }
+  });
 
   @override
   Future<CatalogPage<SeriesSummary>> seriesInGroup(
@@ -213,7 +221,7 @@ ORDER BY g.ord, g.sort_title, g.id
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
-  }) async {
+  }) => telemetry.measure('db.query.series_in_group', () async {
     final db = await _databaseAdapter.database;
     final groupRows = await db.query(
       'groups',
@@ -249,25 +257,26 @@ ORDER BY g.ord, g.sort_title, g.id
       searchTerm: searchTerm,
       groupId: groupId,
     );
-  }
+  });
 
   @override
-  Future<ContentItem?> itemById(String itemId) async {
-    final rowId = int.tryParse(itemId);
-    if (rowId == null) return null;
-    final db = await _databaseAdapter.database;
-    final rows = await db.rawQuery(
-      '''
+  Future<ContentItem?> itemById(String itemId) =>
+      telemetry.measure('db.query.item_by_id', () async {
+        final rowId = int.tryParse(itemId);
+        if (rowId == null) return null;
+        final db = await _databaseAdapter.database;
+        final rows = await db.rawQuery(
+          '''
 SELECT m.id, m.title, m.kind, m.stream_url, g.title AS group_title,
        m.logo_url, m.tvg_id, m.tvg_name, m.tvg_chno, m.xui_id, m.ord
 FROM items m JOIN groups g ON g.id = m.group_id
 WHERE m.id = ? LIMIT 1
 ''',
-      [rowId],
-    );
-    if (rows.isEmpty) return null;
-    return _mapRowToItem(rows.single);
-  }
+          [rowId],
+        );
+        if (rows.isEmpty) return null;
+        return _mapRowToItem(rows.single);
+      });
 
   Future<bool> _isGroupHidden(
     DatabaseExecutor db, {
@@ -479,13 +488,13 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
     required String from,
     required String where,
     required List<Object?> args,
-  }) async {
+  }) => telemetry.measure('db.query.count', () async {
     final rows = await db.rawQuery(
       'SELECT COUNT(*) AS total FROM $from WHERE $where',
       args,
     );
     return (rows.first['total'] as int?) ?? 0;
-  }
+  });
 
   String _escapeLike(String value) => value
       .replaceAll(r'\', r'\\')

@@ -5,6 +5,7 @@ import '../../ui/widgets/app_scope.dart';
 import '../../ui/widgets/app_shell_scaffold.dart';
 import 'widgets/playlist_editor_dialog.dart';
 import 'widgets/playlist_section.dart';
+import 'widgets/telemetry_section.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -102,6 +103,10 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               OutlinedButton(onPressed: app.goBack, child: const Text('Back')),
+              const SizedBox(height: 20),
+              if (AppScope.telemetryControllerOf(context)
+                  case final controller?)
+                TelemetrySection(controller: controller),
             ],
           ),
         ),
