@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -24,6 +26,9 @@ class _TelemetrySectionState extends State<TelemetrySection> {
   late TelemetryConfig _observedConfig;
   late TelemetryConfig _draftBase;
   final _fieldFocus = List.generate(4, (_) => FocusNode());
+  Timer? _sessionTimer;
+  int _sessionRevision = 0;
+  bool _sessionPending = false;
 
   @override
   void initState() {
@@ -89,6 +94,7 @@ class _TelemetrySectionState extends State<TelemetrySection> {
 
   @override
   void dispose() {
+    _sessionTimer?.cancel();
     widget.controller.removeListener(_syncConfig);
     for (final node in _fieldFocus) {
       node.dispose();
@@ -112,7 +118,38 @@ class _TelemetrySectionState extends State<TelemetrySection> {
 
   Future<void> _save() async {
     if (!(_form.currentState?.validate() ?? false)) return;
+    _sessionTimer?.cancel();
+    _sessionRevision++;
+    setState(() => _sessionPending = false);
     await widget.controller.save(_config());
+  }
+
+  void _scheduleSessionUpdate() {
+    _sessionTimer?.cancel();
+    final revision = ++_sessionRevision;
+    setState(() => _sessionPending = true);
+    _sessionTimer = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted || revision != _sessionRevision) return;
+      if (widget.controller.busy) {
+        _scheduleSessionUpdate();
+        return;
+      }
+      final current = widget.controller.config;
+      final config = _enabled
+          ? _config()
+          : TelemetryConfig(
+              endpoint: current.endpoint,
+              serviceName: current.serviceName,
+              deviceAlias: current.deviceAlias,
+              verbose: current.verbose,
+              apiKey: current.apiKey,
+              protocol: current.protocol,
+            );
+      await widget.controller.applySession(config);
+      if (mounted && revision == _sessionRevision) {
+        setState(() => _sessionPending = false);
+      }
+    });
   }
 
   @override
@@ -148,7 +185,10 @@ class _TelemetrySectionState extends State<TelemetrySection> {
               value: _enabled,
               onChanged: widget.controller.busy
                   ? null
-                  : (value) => setState(() => _enabled = value),
+                  : (value) {
+                      setState(() => _enabled = value);
+                      _scheduleSessionUpdate();
+                    },
             ),
             TextFormField(
               controller: _endpoint,
@@ -158,6 +198,9 @@ class _TelemetrySectionState extends State<TelemetrySection> {
               ),
               keyboardType: TextInputType.url,
               autocorrect: false,
+              onChanged: (_) {
+                if (_enabled) _scheduleSessionUpdate();
+              },
               validator: (_) {
                 try {
                   _config().validate();
@@ -173,6 +216,9 @@ class _TelemetrySectionState extends State<TelemetrySection> {
               focusNode: _fieldFocus[1],
               decoration: const InputDecoration(labelText: 'Service name'),
               maxLength: 80,
+              onChanged: (_) {
+                if (_enabled) _scheduleSessionUpdate();
+              },
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -180,6 +226,9 @@ class _TelemetrySectionState extends State<TelemetrySection> {
               focusNode: _fieldFocus[2],
               decoration: const InputDecoration(labelText: 'Device alias'),
               maxLength: 80,
+              onChanged: (_) {
+                if (_enabled) _scheduleSessionUpdate();
+              },
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -188,6 +237,9 @@ class _TelemetrySectionState extends State<TelemetrySection> {
               obscureText: true,
               autocorrect: false,
               enableSuggestions: false,
+              onChanged: (_) {
+                if (_enabled) _scheduleSessionUpdate();
+              },
               decoration: const InputDecoration(
                 labelText: 'OTLP API key (optional)',
               ),
@@ -198,7 +250,10 @@ class _TelemetrySectionState extends State<TelemetrySection> {
               value: _verbose,
               onChanged: widget.controller.busy
                   ? null
-                  : (value) => setState(() => _verbose = value),
+                  : (value) {
+                      setState(() => _verbose = value);
+                      if (_enabled) _scheduleSessionUpdate();
+                    },
             ),
             Wrap(
               spacing: 12,
@@ -212,6 +267,7 @@ class _TelemetrySectionState extends State<TelemetrySection> {
                 OutlinedButton.icon(
                   onPressed:
                       widget.controller.busy ||
+                          _sessionPending ||
                           !widget.controller.config.enabled
                       ? null
                       : widget.controller.sendTest,

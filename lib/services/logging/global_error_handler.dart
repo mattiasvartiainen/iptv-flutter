@@ -34,13 +34,19 @@ class GlobalErrorHandler {
         };
   }
 
-  void run(void Function() body) {
-    runZonedGuarded(body, (Object error, StackTrace stackTrace) {
-      _logger.error(
-        'uncaught_zone_error',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    });
+  Future<void> run(FutureOr<void> Function() body) async {
+    final future = runZonedGuarded<Future<void>>(
+      () async {
+        await body();
+      },
+      (Object error, StackTrace stackTrace) {
+        _logger.error(
+          'uncaught_zone_error',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
+    await (future ?? Future<void>.value());
   }
 }

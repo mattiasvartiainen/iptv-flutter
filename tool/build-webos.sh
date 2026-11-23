@@ -22,6 +22,22 @@ unset NODE_OPTIONS || true
 unset VSCODE_INSPECTOR_OPTIONS || true
 unset ELECTRON_RUN_AS_NODE || true
 
+node_found=false
+IFS=: read -r -a path_entries <<< "$PATH"
+for directory in "${path_entries[@]}"; do
+  directory=${directory:-.}
+  if [[ -x "$directory/node" ]] && [[ "$("$directory/node" -p 'Number(process.versions.node.split(".")[0]) >= 20' 2>/dev/null)" == true ]]; then
+    export PATH="$directory:$PATH"
+    node_found=true
+    break
+  fi
+done
+
+if [[ "$node_found" != true ]]; then
+  echo "[build-webos] ERROR: Node.js 20 or newer is required for ares-package" >&2
+  exit 1
+fi
+
 echo "[build-webos] Running dependency sync..."
 flutter-webos pub get >/dev/null
 

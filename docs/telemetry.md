@@ -133,9 +133,11 @@ implemented. Export failure must not change the business result or throw from a
 database/import operation. The Settings test explicitly checks delivery failure.
 
 Export attributes are allowlisted. Raw URLs are removed entirely; playlist bodies,
-SQL statements/arguments/results, headers, keys, and exception messages are not
-exported. Failures contain exception type and optionally filtered package/Dart
-stack frames. Local debug output continues using the existing redaction policy.
+SQL statements/arguments/results, headers, keys, file paths, and raw exception
+messages are not exported. Filesystem failures include a fixed operation summary
+and OS error code when available. Failures also contain exception type and
+optionally filtered package/Dart stack frames. Local debug output continues using
+the existing redaction policy.
 Native plugin output is not automatically intercepted or shipped.
 
 SDK 0.12.0 caches named providers. Each endpoint change shuts down old exporters

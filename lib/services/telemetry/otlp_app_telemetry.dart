@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart' as otel;
 
@@ -285,6 +286,18 @@ class OtlpAppTelemetry extends AppTelemetry {
             severityNumber: otel.Severity.ERROR,
             attributes: otel.OTel.attributesFromMap({
               'exception.type': error.runtimeType.toString(),
+              if (error is FileSystemException) ...{
+                'exception.message': switch (error.message) {
+                  'Creation failed' => 'Could not create a filesystem entry.',
+                  'Cannot open file' => 'Could not open a file.',
+                  'Write failed' => 'Could not write to a file.',
+                  _ when error is PathAccessException =>
+                    'Filesystem access was denied.',
+                  _ => 'A filesystem operation failed.',
+                },
+                if (error.osError != null)
+                  'exception.os_error_code': error.osError!.errorCode,
+              },
               if (config.verbose) 'exception.stacktrace': safeStack(stackTrace),
             }),
             context: otel.Context.current,

@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/platform/telemetry_settings_store.dart';
 import 'package:iptv_flutter/services/telemetry/otlp_app_telemetry.dart';
+import 'package:iptv_flutter/services/telemetry/app_telemetry.dart';
+import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/services/telemetry/telemetry_config.dart';
 import 'package:iptv_flutter/state/telemetry_controller.dart';
 
@@ -146,6 +149,7 @@ void main() {
     expect(controller.busy, isTrue);
     expect(await controller.save(defaults), isFalse);
     await controller.sendTest();
+    await Future<void>.delayed(Duration.zero);
     expect(store.writeCount, 1);
     expect(controller.status, isNull);
     expect(states, [true]);
@@ -156,18 +160,59 @@ void main() {
     expect(telemetry.deliveries, isEmpty);
   });
 
-  test('storage failure reports safe status and retains config', () async {
-    store.failWrite = true;
-    final before = controller.config;
-    expect(await controller.save(defaults), isFalse);
-    expect(controller.config, same(before));
-    expect(controller.busy, isFalse);
-    expect(
-      controller.status,
-      'Could not save telemetry settings. Check the endpoint and secure storage.',
+  test(
+    'storage failure keeps enabled telemetry active for the session',
+    () async {
+      store.failWrite = true;
+      const config = TelemetryConfig(
+        enabled: true,
+        endpoint: 'https://collector.example',
+      );
+      expect(await controller.save(config), isFalse);
+      expect(controller.config, same(config));
+      expect(telemetry.enabled, isTrue);
+      expect(controller.busy, isFalse);
+      expect(controller.status, contains('session'));
+      expect(controller.status, contains('could not be saved'));
+      expect(store.saved, isNull);
+    },
+  );
+
+  test('unsaved session exports application and Apply failures', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final payloads = <String>[];
+    final subscription = server.listen((request) async {
+      payloads.add(await utf8.decoder.bind(request).join());
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{}');
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final config = TelemetryConfig(
+      enabled: true,
+      endpoint: 'http://127.0.0.1:${server.port}',
+      protocol: 'http/json',
     );
-    expect(store.saved, isNull);
-    expect(telemetry.deliveries, isEmpty);
+    await controller.applySession(config);
+    expect(store.writeCount, 0);
+    expect(telemetry.enabled, isTrue);
+    TelemetryAppLogger(const DebugAppLogger(), telemetry).error(
+      'application.test',
+      error: StateError('sensitive details'),
+      stackTrace: StackTrace.current,
+    );
+    store.failWrite = true;
+    expect(await controller.save(config), isFalse);
+    expect(await telemetry.flush(), isTrue);
+    final payload = payloads.join();
+    expect(payload, contains('application.test'));
+    expect(payload, contains('telemetry.settings.save failed'));
+    expect(payload, contains('StateError'));
+    expect(payload, isNot(contains('secure storage unavailable')));
+    expect(payload, isNot(contains('sensitive details')));
   });
 
   test('active operation prevents persistence and configuration', () async {

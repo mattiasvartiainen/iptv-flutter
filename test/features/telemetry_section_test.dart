@@ -13,6 +13,7 @@ class _MemoryStore implements TelemetrySettingsStore {
   final readResult = Completer<TelemetryConfig?>();
   final writes = <TelemetryConfig>[];
   Completer<void>? writeGate;
+  bool failWrite = false;
 
   @override
   Future<TelemetryConfig?> read() => readResult.future;
@@ -21,6 +22,7 @@ class _MemoryStore implements TelemetrySettingsStore {
   Future<void> write(TelemetryConfig config) async {
     writes.add(config);
     await writeGate?.future;
+    if (failWrite) throw StateError('sensitive storage error');
   }
 }
 
@@ -141,6 +143,59 @@ void main() {
       isTrue,
     );
     expect(telemetry.config.enabled, isFalse);
+  });
+
+  testWidgets('remote enables an unsaved endpoint for this session', (
+    tester,
+  ) async {
+    await _mount(
+      tester,
+      controller,
+      navigationMode: NavigationMode.directional,
+    );
+    await tester.enterText(
+      _field('OTLP HTTP endpoint'),
+      'http://127.0.0.1:4318',
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(_hasFocus(_controls().first), isTrue);
+    final activated = Completer<void>();
+    controller.addListener(() {
+      if (!controller.busy &&
+          controller.config.enabled &&
+          !activated.isCompleted) {
+        activated.complete();
+      }
+    });
+    await tester.runAsync(() async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 450));
+      await activated.future;
+    });
+    await tester.pump();
+    expect(telemetry.enabled, isTrue);
+    expect(controller.config.endpoint, 'http://127.0.0.1:4318');
+    expect(store.writes, isEmpty);
+    expect(
+      find.text('Telemetry enabled for this session. Apply to save.'),
+      findsOneWidget,
+    );
+    await tester.runAsync(telemetry.close);
+  });
+
+  testWidgets('Apply reports persistence failure without exposing details', (
+    tester,
+  ) async {
+    store.failWrite = true;
+    await _mount(tester, controller);
+    await tester.ensureVisible(find.text('Apply'));
+    await tester.runAsync(() async => tester.tap(find.text('Apply')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('settings could not be saved'), findsOneWidget);
+    expect(find.textContaining('sensitive storage error'), findsNothing);
   });
 
   testWidgets('late config preserves active editing even before text changes', (
@@ -402,47 +457,32 @@ void main() {
       },
     );
 
-    testWidgets(
-      'keyboard activates toggles Apply and test at width $width without SDK setup',
-      (tester) async {
-        telemetry.config = const TelemetryConfig(enabled: true);
-        await _mount(tester, controller, width: width);
-        final controls = _controls();
+    testWidgets('keyboard activates toggles and Apply at width $width', (
+      tester,
+    ) async {
+      telemetry.config = const TelemetryConfig(enabled: true);
+      await _mount(tester, controller, width: width);
+      final controls = _controls();
+      await _keyPress(tester, LogicalKeyboardKey.tab);
+      await _keyPress(tester, LogicalKeyboardKey.enter);
+      expect(tester.widget<SwitchListTile>(controls.first).value, isFalse);
+      for (var step = 0; step < 12 && !_hasFocus(controls[5]); step++) {
         await _keyPress(tester, LogicalKeyboardKey.tab);
-        await _keyPress(tester, LogicalKeyboardKey.enter);
-        expect(tester.widget<SwitchListTile>(controls.first).value, isFalse);
-        for (var step = 0; step < 12 && !_hasFocus(controls[5]); step++) {
-          await _keyPress(tester, LogicalKeyboardKey.tab);
-        }
-        expect(_hasFocus(controls[5]), isTrue);
-        await _keyPress(tester, LogicalKeyboardKey.enter);
-        expect(tester.widget<SwitchListTile>(controls[5]).value, isTrue);
-        await _keyPress(tester, LogicalKeyboardKey.tab);
-        expect(_hasFocus(controls[6]), isTrue);
-        await _keyPress(tester, LogicalKeyboardKey.tab);
-        expect(_hasFocus(controls[7]), isTrue);
-        await tester.runAsync(() async {
-          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-        });
-        await tester.pumpAndSettle();
-        expect(
-          controller.status,
-          'Export failed. Check the endpoint and authentication.',
-        );
-        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-        await _keyPress(tester, LogicalKeyboardKey.tab);
-        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-        expect(_hasFocus(controls[6]), isTrue);
-        await tester.runAsync(() async {
-          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-        });
-        await tester.pumpAndSettle();
-        expect(store.writes.single.enabled, isFalse);
-        expect(store.writes.single.verbose, isTrue);
-        expect(controller.status, 'Telemetry disabled.');
-        expect(telemetry.deliveries, isEmpty);
-      },
-    );
+      }
+      expect(_hasFocus(controls[5]), isTrue);
+      await _keyPress(tester, LogicalKeyboardKey.enter);
+      expect(tester.widget<SwitchListTile>(controls[5]).value, isTrue);
+      await _keyPress(tester, LogicalKeyboardKey.tab);
+      expect(_hasFocus(controls[6]), isTrue);
+      await tester.runAsync(() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      });
+      await tester.pumpAndSettle();
+      expect(store.writes.single.enabled, isFalse);
+      expect(store.writes.single.verbose, isTrue);
+      expect(controller.status, 'Telemetry disabled.');
+      expect(telemetry.deliveries, isEmpty);
+    });
   }
 
   testWidgets('traditional keyboard arrows still edit text', (tester) async {

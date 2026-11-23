@@ -53,7 +53,10 @@ class AppDependencies {
     final telemetryController = TelemetryController(
       telemetry: telemetry,
       defaults: telemetryBuildConfig(),
-      store: FileTelemetrySettingsStore(secretStore),
+      store: FileTelemetrySettingsStore(
+        secretStore,
+        directoryProvider: profile.getTelemetrySettingsDirectory,
+      ),
       localLogger: localLogger,
     );
     final databaseFactory = profile.createDatabaseFactory();

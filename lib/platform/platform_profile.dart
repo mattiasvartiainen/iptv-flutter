@@ -28,6 +28,7 @@ abstract interface class PlatformProfile {
   });
   DatabaseFactory createDatabaseFactory();
   Future<String> getDatabaseDirectory(DatabaseFactory databaseFactory);
+  Future<Directory> getTelemetrySettingsDirectory();
   PlaylistSecretStore createSecretStore();
 }
 
@@ -96,6 +97,10 @@ abstract base class _PlatformProfile implements PlatformProfile {
     }
     return databaseFactory.getDatabasesPath();
   }
+
+  @override
+  Future<Directory> getTelemetrySettingsDirectory() =>
+      getApplicationSupportDirectory();
 
   @override
   PlaybackAdapter createPlaybackAdapter({
@@ -167,6 +172,31 @@ final class WebOsProfile extends _PlatformProfile {
           supportsHover: false,
         ),
       );
+
+  @override
+  Future<Directory> getTelemetrySettingsDirectory() async =>
+      webOsAppDataDirectory(Platform.environment);
+
+  @override
+  PlaylistSecretStore createSecretStore() =>
+      webOsSecretStore(webOsAppDataDirectory(Platform.environment));
+}
+
+@visibleForTesting
+PlaylistSecretStore webOsSecretStore(Directory directory) =>
+    MigratingPlaylistSecretStore(
+      secureStore: SecurePlaylistSecretStore(),
+      legacyStore: FilePlaylistSecretStore(baseDirectory: directory),
+    );
+
+@visibleForTesting
+Directory webOsAppDataDirectory(Map<String, String> environment) {
+  final base = environment['FLUTTER_APPDATA_HOME'];
+  final appId = environment['FLUTTER_APP_ID'];
+  if (base == null || base.isEmpty || appId == null || appId.isEmpty) {
+    throw StateError('webOS application data directory is unavailable');
+  }
+  return Directory(p.join(base, appId));
 }
 
 final class OtherPlatformProfile extends _PlatformProfile {

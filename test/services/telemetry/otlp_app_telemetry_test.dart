@@ -356,6 +356,46 @@ void main() {
       isNot(contains('secret')),
     );
   });
+
+  test(
+    'exports safe filesystem diagnostics without paths or messages',
+    () async {
+      final collector = await _Collector.start();
+      final telemetry = OtlpAppTelemetry();
+      addTearDown(() async {
+        await telemetry.close();
+        await collector.close();
+      });
+      await telemetry.configure(collector.config());
+      telemetry.failure(
+        'telemetry.settings.save',
+        const PathAccessException(
+          '/private/secret-path',
+          OSError('secret operating system message', 13),
+          'Creation failed',
+        ),
+        StackTrace.current,
+      );
+      telemetry.failure(
+        'other',
+        const FileSystemException(
+          'secret error message',
+          '/private/secret-path',
+        ),
+        StackTrace.current,
+      );
+      expect(await telemetry.flush(), isTrue);
+      final payload = jsonEncode(collector.received);
+      expect(payload, contains('Could not create a filesystem entry.'));
+      expect(payload, contains('A filesystem operation failed.'));
+      expect(payload, contains('PathAccessException'));
+      expect(payload, contains('exception.os_error_code'));
+      expect(payload, contains('13'));
+      expect(payload, isNot(contains('secret-path')));
+      expect(payload, isNot(contains('secret operating system message')));
+      expect(payload, isNot(contains('secret error message')));
+    },
+  );
 }
 
 class _ThrowingText {

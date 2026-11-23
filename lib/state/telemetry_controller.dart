@@ -20,10 +20,12 @@ class TelemetryController extends ChangeNotifier {
   bool busy = false;
   String? status;
   bool _disposed = false;
+  int _configurationRevision = 0;
 
   TelemetryConfig get config => telemetry.config;
 
   Future<void> initialize() async {
+    final revision = _configurationRevision;
     TelemetryConfig config = defaults;
     try {
       config = await store.read() ?? defaults;
@@ -32,6 +34,7 @@ class TelemetryController extends ChangeNotifier {
         'Telemetry settings unavailable; using build defaults.',
       );
     }
+    if (revision != _configurationRevision) return;
     try {
       await telemetry.configure(config);
     } catch (_) {
@@ -41,8 +44,36 @@ class TelemetryController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> applySession(TelemetryConfig config) async {
+    if (busy) return;
+    _configurationRevision++;
+    busy = true;
+    status = null;
+    _notify();
+    try {
+      config.validate();
+      if (telemetry.activeOperations != 0) {
+        status = 'Wait for active operations to finish.';
+        return;
+      }
+      await telemetry.configure(config);
+      status = config.enabled
+          ? 'Telemetry enabled for this session. Apply to save.'
+          : 'Telemetry disabled for this session. Apply to save.';
+    } on FormatException catch (error) {
+      status = error.message;
+    } catch (error, stack) {
+      telemetry.failure('telemetry.settings.apply', error, stack);
+      status = 'Could not enable telemetry. Check the configuration.';
+    } finally {
+      busy = false;
+      _notify();
+    }
+  }
+
   Future<bool> save(TelemetryConfig config) async {
     if (busy) return false;
+    _configurationRevision++;
     busy = true;
     status = null;
     _notify();
@@ -52,8 +83,16 @@ class TelemetryController extends ChangeNotifier {
         status = 'Wait for active operations to finish.';
         return false;
       }
-      await store.write(config);
       await telemetry.configure(config);
+      try {
+        await store.write(config);
+      } catch (error, stack) {
+        telemetry.failure('telemetry.settings.save', error, stack);
+        status = config.enabled
+            ? 'Telemetry is enabled for this session, but settings could not be saved. Check device and secure storage.'
+            : 'Telemetry is disabled for this session, but settings could not be saved. Check device and secure storage.';
+        return false;
+      }
       status = config.enabled ? 'Telemetry enabled.' : 'Telemetry disabled.';
       return true;
     } catch (_) {

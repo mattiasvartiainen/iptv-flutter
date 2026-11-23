@@ -52,7 +52,8 @@ Windows output is written to `build/windows/x64/runner/Release`.
 ## webOS packaging and deployment
 
 Run these commands inside the Linux devcontainer. The build wrapper automatically sets
-`IPTV_WEBOS=true` and writes an IPK under `build/webos/`:
+`IPTV_WEBOS=true`, requires Node.js 20 or newer on `PATH`, and writes an IPK under
+`build/webos/`:
 
 ```bash
 bash tool/build-webos.sh

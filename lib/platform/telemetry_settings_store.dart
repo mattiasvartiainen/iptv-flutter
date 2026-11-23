@@ -13,13 +13,15 @@ abstract interface class TelemetrySettingsStore {
 }
 
 class FileTelemetrySettingsStore implements TelemetrySettingsStore {
-  FileTelemetrySettingsStore(this.secretStore);
+  FileTelemetrySettingsStore(this.secretStore, {this.directoryProvider});
 
   final PlaylistSecretStore secretStore;
+  final Future<Directory> Function()? directoryProvider;
   static const _secretKey = 'telemetry_otlp_api_key_v1';
 
   Future<File> _file() async {
-    final directory = await getApplicationSupportDirectory();
+    final directory =
+        await (directoryProvider ?? getApplicationSupportDirectory)();
     await directory.create(recursive: true);
     return File(p.join(directory.path, 'telemetry-settings.json'));
   }
@@ -30,9 +32,11 @@ class FileTelemetrySettingsStore implements TelemetrySettingsStore {
     if (!await file.exists()) return null;
     final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     String key = '';
-    try {
-      key = await secretStore.read(key: _secretKey) ?? '';
-    } catch (_) {}
+    if (json['hasApiKey'] != false) {
+      try {
+        key = await secretStore.read(key: _secretKey) ?? '';
+      } catch (_) {}
+    }
     final config = TelemetryConfig.fromJson(json, apiKey: key);
     config.validate();
     return config;
@@ -41,13 +45,20 @@ class FileTelemetrySettingsStore implements TelemetrySettingsStore {
   @override
   Future<void> write(TelemetryConfig config) async {
     config.validate();
+    final file = await _file();
     if (config.apiKey.isNotEmpty) {
       await secretStore.write(key: _secretKey, value: config.apiKey);
-    } else {
-      await secretStore.delete(key: _secretKey);
+    } else if (await file.exists()) {
+      final previous =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      if (previous['hasApiKey'] != false) {
+        await secretStore.delete(key: _secretKey);
+      }
     }
-    final file = await _file();
-    await file.writeAsString(jsonEncode(config.toJson()), flush: true);
+    await file.writeAsString(
+      jsonEncode({...config.toJson(), 'hasApiKey': config.apiKey.isNotEmpty}),
+      flush: true,
+    );
   }
 }
 

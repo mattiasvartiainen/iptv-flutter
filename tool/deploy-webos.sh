@@ -28,6 +28,26 @@ if [[ -z "$device" ]]; then
   exit 2
 fi
 
+unset NODE_OPTIONS || true
+unset VSCODE_INSPECTOR_OPTIONS || true
+unset ELECTRON_RUN_AS_NODE || true
+
+node_found=false
+IFS=: read -r -a path_entries <<< "$PATH"
+for directory in "${path_entries[@]}"; do
+  directory=${directory:-.}
+  if [[ -x "$directory/node" ]] && [[ "$("$directory/node" -p 'Number(process.versions.node.split(".")[0]) >= 20' 2>/dev/null)" == true ]]; then
+    export PATH="$directory:$PATH"
+    node_found=true
+    break
+  fi
+done
+
+if [[ "$node_found" != true ]]; then
+  echo '[deploy-webos] ERROR: Node.js 20 or newer is required for the webOS CLI' >&2
+  exit 1
+fi
+
 if ! command -v ares-install >/dev/null 2>&1 || ! command -v ares-launch >/dev/null 2>&1; then
   echo 'webOS CLI commands ares-install and ares-launch are required.' >&2
   exit 1
@@ -41,7 +61,18 @@ if [[ -z "$package" || ! -f "$package" ]]; then
   exit 1
 fi
 
-ares-install --device "$device" "$package"
+if ares-install --device "$device" "$package"; then
+  :
+else
+  status=$?
+  if command -v ares-setup-device >/dev/null 2>&1; then
+    echo 'Configured webOS devices:' >&2
+    ares-setup-device --list >&2 || true
+  else
+    echo 'Cannot list devices: ares-setup-device is not available.' >&2
+  fi
+  exit "$status"
+fi
 if [[ "$launch" == true ]]; then
   ares-launch --device "$device" com.flutter.app.iptv-flutter
 fi

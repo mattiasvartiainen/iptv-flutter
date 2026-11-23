@@ -91,7 +91,7 @@ Size guide: XS < 30 min of agent work, S = one focused change, M = several files
 
 | WP | Title | Depends on | Status |
 |----|-------|------------|--------|
-| WP-9.3 | Configurable Aspire OTLP diagnostics for playlist/database troubleshooting | WP-9.1, WP-9.2a | IMPLEMENTED (2026-11-01), Windows export verified; LG hardware and large-playlist overhead pending. Full suite has two independently reproducible baseline modal-focus failures. See [telemetry.md](telemetry.md) for scope, verification, configuration, and remaining gates. |
+| WP-9.3 | Configurable Aspire OTLP diagnostics for playlist/database troubleshooting | WP-9.1, WP-9.2a | IMPLEMENTED (2026-11-01), Windows export verified; LG hardware export observed, settings persistence and large-playlist overhead pending. Filesystem failures now report a safe summary and OS error code. Full suite has two independently reproducible baseline modal-focus failures. See [telemetry.md](telemetry.md) for scope, verification, configuration, and remaining gates. |
 
 ---
 

@@ -6,7 +6,7 @@ ARG WEBOS_NDK_VERSION=11.2.0
 ENV DEBIAN_FRONTEND=noninteractive \
     FLUTTER_WEBOS_HOME=/opt/flutter-webos \
     WEBOS_FLUTTER_NDK_ENV=/usr/local/starfish-sdk-x86_64/environment-setup-ca9v1-webosmllib32-linux-gnueabi \
-    PATH=/opt/flutter-webos/bin:/home/vscode/.nvm/versions/node/v16.20.2/bin:${PATH}
+    PATH=/opt/flutter-webos/bin:/home/vscode/.nvm/versions/node/v22.14.0/bin:${PATH}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -33,11 +33,11 @@ RUN git clone https://github.com/lg-flutter-webos/flutter-webos.git "${FLUTTER_W
 
 RUN su vscode -c 'curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash' \
     && su vscode -c '. /home/vscode/.nvm/nvm.sh \
-        && nvm install 16.20.2 \
-        && nvm alias default 16.20.2'
+        && nvm install 22.14.0 \
+        && nvm alias default 22.14.0'
 
 RUN su vscode -c '. /home/vscode/.nvm/nvm.sh \
-    && nvm use 16.20.2 \
+    && nvm use 22.14.0 \
     && npm install --global @webos-tools/cli'
 
 RUN mkdir -p /tmp/webos-ndk \
@@ -50,7 +50,7 @@ RUN mkdir -p /tmp/webos-ndk \
 RUN printf '%s\n' \
     'export FLUTTER_WEBOS_HOME=/opt/flutter-webos' \
     'export WEBOS_FLUTTER_NDK_ENV=/usr/local/starfish-sdk-x86_64/environment-setup-ca9v1-webosmllib32-linux-gnueabi' \
-    'export PATH="$FLUTTER_WEBOS_HOME/bin:$HOME/.nvm/versions/node/v16.20.2/bin:$PATH"' \
+    'export PATH="$FLUTTER_WEBOS_HOME/bin:$HOME/.nvm/versions/node/v22.14.0/bin:$PATH"' \
     > /etc/profile.d/flutter-webos.sh \
     && echo 'source /etc/profile.d/flutter-webos.sh' >> /home/vscode/.bashrc \
     && chown -R vscode:vscode /opt/flutter-webos /home/vscode/.bashrc
