@@ -49,6 +49,13 @@ powershell -ExecutionPolicy Bypass -File tool/build-windows.ps1
 
 Windows output is written to `build/windows/x64/runner/Release`.
 
+If the build reports `Building native assets failed`, run
+`flutter build windows --release -v` to see the underlying error. Flutter may
+select an incomplete MSVC toolset directory left by a Visual Studio update,
+even when `flutter doctor` succeeds. If the verbose output reports missing
+`cl.exe`, `link.exe`, or `lib.exe`, use Visual Studio Installer to repair the
+C++ desktop build tools or remove the incomplete toolset component, then retry.
+
 ## webOS packaging and deployment
 
 Run these commands inside the Linux devcontainer. The build wrapper automatically sets
