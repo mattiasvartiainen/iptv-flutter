@@ -92,6 +92,30 @@ during on-device testing; not a day-one change.
 
 ## Architecture Work Package Decisions
 
+### Content activation and details planning (2026-11-25)
+
+Requested product scope: activating a Live TV channel should open playback
+directly; movies should retain a richer Details page with Xtream API metadata
+preferred when available; series should show backdrop/information and seasons,
+with selected-season episodes below on the same screen. Standard M3U/M3U8
+playlists must continue to work without API or external enrichment.
+
+The initial request was for a plan; the follow-up explicitly requests implementing
+Xtream movie enrichment and richer movie Details first. The
+[updated implementation plan](xtream-and-metadata-implementation-plan.md#9-details-and-interaction)
+defines staged delivery, local fallbacks and recommended focus/Back behavior.
+It replaces the older proposed Series -> Overview -> Seasons -> Episodes flow
+with inline season selection. Episode activation remains Details -> Player
+unless separately changed. External-provider choice (TMDB is a candidate),
+token ownership/distribution, privacy/opt-in and usage terms remain undecided.
+API-native catalog import, Resume/history and EPG are outside this scope.
+
+The movie-only WP-XM-movie vertical slice combines the required movie-scoped
+identity, cache/provider and UI prerequisites. It leaves Live/Series navigation
+unchanged and uses only the verified playlist's provider, not TMDB or other
+external services. Preserve original streams and local identity, fetch metadata
+only for selected movies, and keep Play usable independently of enrichment.
+
 ### Catalog sorting (2026-11-25)
 User-approved scope: Live TV defaults to provider playlist order, with an explicit
 Playlist order / Alphabetical (A-Z) toggle beside the list/card-view control.

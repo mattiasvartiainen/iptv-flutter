@@ -9,12 +9,16 @@ import '../platform/telemetry_settings_store.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/diagnostics/startup_preflight.dart';
 import '../services/logging/app_logger.dart';
+import '../services/metadata/movie_metadata.dart';
+import '../services/metadata/sqlite_movie_metadata_repository.dart';
 import '../services/settings/app_preferences.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
 import '../services/telemetry/app_telemetry.dart';
 import '../services/telemetry/otlp_app_telemetry.dart';
+import '../services/xtream/stored_xtream_credentials.dart';
 import '../services/xtream/xtream_api_client.dart';
+import '../services/xtream/xtream_movie_metadata_provider.dart';
 import '../services/xtream/xtream_source_verifier.dart';
 import '../state/app_controller.dart';
 import '../state/app_preferences_controller.dart';
@@ -31,6 +35,7 @@ class AppDependencies {
     required this.playlistsController,
     required this.preferencesController,
     required this.logger,
+    this.movieMetadataRepository,
     this.telemetryController,
     required AppStartup? startup,
     required this.capabilities,
@@ -78,6 +83,20 @@ class AppDependencies {
       secretStore: secretStore,
     );
     final playbackAdapter = profile.createPlaybackAdapter(logger: logger);
+    final credentials = StoredXtreamCredentials(settingsRepository);
+    final movieMetadata = SqliteMovieMetadataRepository(
+      database: databaseAdapter,
+      resolveCredentials: credentials.resolve,
+      providers: [
+        XtreamMovieMetadataProvider(
+          XtreamApiClient(
+            resolveCredentials: credentials.resolve,
+            logger: logger,
+          ),
+        ),
+      ],
+      logger: logger,
+    );
     final catalogView = CatalogViewState(
       logger: logger,
       preferences: AppPreferences(settingsRepository: settingsRepository),
@@ -126,6 +145,7 @@ class AppDependencies {
       preferencesController: preferencesController,
       logger: logger,
       telemetryController: telemetryController,
+      movieMetadataRepository: movieMetadata,
       startup: startup,
       capabilities: profile.capabilities,
       extraShortcuts: profile.extraShortcuts,
@@ -142,6 +162,7 @@ class AppDependencies {
     required PlaylistsController playlistsController,
     required AppPreferencesController preferencesController,
     AppLogger logger = const DebugAppLogger(),
+    MovieMetadataRepository? movieMetadataRepository,
     PlatformCapabilities capabilities = const PlatformCapabilities(
       primaryInput: PrimaryInput.touch,
       hasHardwareBack: true,
@@ -154,6 +175,7 @@ class AppDependencies {
     playlistsController: playlistsController,
     preferencesController: preferencesController,
     logger: logger,
+    movieMetadataRepository: movieMetadataRepository,
     startup: null,
     capabilities: capabilities,
     extraShortcuts: extraShortcuts,
@@ -168,6 +190,7 @@ class AppDependencies {
   final PlaylistsController playlistsController;
   final AppPreferencesController preferencesController;
   final AppLogger logger;
+  final MovieMetadataRepository? movieMetadataRepository;
   final TelemetryController? telemetryController;
   final AppStartup? _startup;
   final PlatformCapabilities capabilities;

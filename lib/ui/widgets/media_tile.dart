@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_tokens.dart';
+import 'media_artwork.dart';
 
 class MediaTile extends StatefulWidget {
   const MediaTile({
@@ -190,23 +191,15 @@ class _MediaTileState extends State<MediaTile> {
                                           borderRadius: BorderRadius.circular(
                                             AppTokens.progressRadius,
                                           ),
-                                          child: Image.network(
-                                            imageUrl,
-                                            width: double.infinity,
-                                            fit: BoxFit.contain,
-                                            cacheWidth:
+                                          child: MediaArtwork(
+                                            imageUrl: imageUrl,
+                                            fallbackIcon:
+                                                widget.icon ??
+                                                Icons.ondemand_video,
+                                            decodeWidth:
                                                 AppTokens.artworkDecodeWidth,
-                                            cacheHeight:
+                                            decodeHeight:
                                                 AppTokens.artworkDecodeHeight,
-                                            excludeFromSemantics: true,
-                                            errorBuilder:
-                                                (context, error, stackTrace) =>
-                                                    fallback,
-                                            loadingBuilder:
-                                                (context, child, progress) =>
-                                                    progress == null
-                                                    ? child
-                                                    : fallback,
                                           ),
                                         ),
                                 ),

@@ -497,6 +497,9 @@ void main() {
           "UPDATE series_v8 SET ord = -series_key WHERE playlist_id = 'vod'",
         );
         // Reconstruct a persisted v12 cache with stale series positions.
+        await db.execute('DROP TRIGGER invalidate_movie_metadata_source');
+        await db.execute('DROP TABLE movie_provider_bindings');
+        await db.execute('DROP TABLE movie_metadata_cache');
         await db.execute('DROP INDEX idx_series_v8_group_ord');
         await db.execute('DROP INDEX idx_series_v8_playlist_ord');
         await db.delete('schema_migrations', where: 'version = 13');
@@ -510,7 +513,7 @@ void main() {
           (await upgradedDb.rawQuery(
             'PRAGMA user_version',
           )).single.values.single,
-          13,
+          14,
         );
         await const CatalogSortV13Migration().up(upgradedDb);
         expect(

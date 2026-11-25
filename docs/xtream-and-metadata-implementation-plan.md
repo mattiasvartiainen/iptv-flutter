@@ -1,15 +1,38 @@
 # Xtream API And Metadata Implementation Plan
 
-Created: 2026-10-15. Updated: 2026-10-15. Status: XM-01 through XM-03 implemented; later packages pending.
+Created: 2026-10-15. Updated: 2026-11-25. Status: XM-01 through XM-03 and the selected-movie enrichment/Details slice implemented. Live activation and inline series browsing remain planned, not implemented.
 Audience: developers and coding agents implementing source-aware catalogs and richer movie/series details.
 
 ## 1. Purpose And Authority
 
-Use this plan for explicit Xtream login, detecting Xtream capabilities from a playlist URL, provider identity, and extensible metadata enrichment. Implementation proceeds only for packages explicitly requested by the user; XM-01 through XM-03 are now complete.
+Use this plan for explicit Xtream login, detecting Xtream capabilities from a playlist URL, provider identity, and extensible metadata enrichment. Implementation proceeds only for packages explicitly requested by the user. The 2026-11-25 follow-up requests movie enrichment and richer Details first; WP-XM-movie explicitly combines its movie-scoped identity, repository/cache and presentation prerequisites.
 
 Current source, tests, migrations, and configuration define implemented behavior. Follow [AGENTS.md](../AGENTS.md), [architecture boundaries](../test/architecture/architecture_rules_test.dart), [design rules](design-guidelines.md), and [decisions](decisions.md). Preserve paged browsing, constructor injection, existing playback adapters, Back/focus behavior, and playlist isolation.
 
-This plan extends source and metadata behavior, not playback continuity, recommendations, EPG, or branding. Historical MVP exclusions in older product/handoff documents do not describe the requested future scope. Record approved behavioral decisions before implementing their gated steps; do not silently rewrite those documents.
+This plan extends source, metadata, and the content-selection flows requested on 2026-11-25, not playback continuity, recommendations, EPG, or branding. Historical MVP exclusions in older product/handoff documents do not describe the requested future scope. Record approved behavioral decisions before implementing their gated steps; do not silently rewrite those documents.
+
+### Requested Experience (2026-11-25)
+
+| Selected Content | Planned Destination | Works Without Metadata/API |
+|---|---|---|
+| Live channel | Existing fullscreen player immediately; no intermediate Details page. | Yes, using the imported stream. |
+| Movie | Scrollable movie details with artwork, synopsis and real available fields, then Play. | Yes, using imported metadata and placeholders for absent artwork. |
+| Series | One overview containing backdrop/information, seasons, and the selected season's episodes below. | Yes, using the existing local series/season/episode queries. |
+
+Opening the Live TV section itself does not auto-play anything. Playback starts only when the user activates a channel. Source-native metadata is preferred when a verified Xtream connection and a trustworthy entity binding are available. External enrichment is optional and cannot become a requirement for browsing or playback.
+
+### Implemented Movie Slice (2026-11-25)
+
+- Production composition injects [SqliteMovieMetadataRepository](../lib/services/metadata/sqlite_movie_metadata_repository.dart) through AppScope into a route-owned [MovieDetailsController](../lib/features/details/movie_details_controller.dart). Browsing does not fetch metadata.
+- [DetailsScreen](../lib/features/details/details_screen.dart) renders imported title/group/description and Play immediately, with responsive bounded artwork and scrollable synopsis/facts/cast/director. Enrichment arriving does not rename the browsing identity or steal Play focus. Metadata errors have safe text and a keyboard-reachable retry.
+- Resolve the selected item only, within its playlist and stored movie classification. [StoredXtreamCredentials](../lib/services/xtream/stored_xtream_credentials.dart) permits credentials only for a verified, enabled, API-approved connection at the current revision. URL inputs can retain M3U import and still enrich.
+- A candidate movie ID requires an exact verified origin, base path and account match on `/movie/<username>/<password>/<id>[.<extension>]`. Bare numeric URLs, placeholders, foreign origins, episodes and unverified sources do not trigger a detail request. `get_vod_info` must echo the requested `movie_data.stream_id`; a contradictory stream type is rejected. Only a validated response becomes a persisted `verifiedDetail` binding.
+- Authentication and movie details share bounded, cancellable HTTP handling. Detail bodies are capped at 10 MiB and decoded/normalized off the UI isolate. Missing/placeholder fields stay absent; valid aliases fill missing fields. Credential echoes and authenticated artwork are rejected/redacted; public image query options such as `raw=true` remain usable. No external metadata networking is enabled.
+- Append-only [v14 migration](../lib/services/storage/movie_metadata_v14_migration.dart) adds movie bindings and normalized metadata caches without changing import hashes or local catalog IDs. Caches are playlist/item/revision/locale scoped, fresh for seven days, with 15-minute unsupported/not-found negatives and a 50 MiB LRU byte budget. Stale metadata remains usable on network failure; auth failures are not saved as empty metadata. Identical requests share work, account requests serialize, and `Retry-After` prevents premature manual retries.
+- Source edits/API disabling invalidate caches/bindings; playlist/item deletion cascades cleanup. Late responses cannot write into an edited/deleted source. Leaving Details cancels its lease; interrupted loading resumes when returning from the player. Source revision changes clear the current view's metadata.
+- Validation: all 172 focused tests pass; completed broad regression run has 661 passes and the two pre-existing Windows/Linux Settings/editor focus failures. The full run separately reproduced the pre-existing telemetry-section stall; that file was excluded from the completed broad run. Analyzer retains only its two existing infos. Details are tested at 360x800, 390x844, 800x360, 1440x900 and 1920x1080 at 1x/2x text. Playback activation is checked at a wide viewport because the existing compact player overflows at 2x text; it was not redesigned here. Deterministic artwork visual snapshots and native/provider smoke tests remain pending.
+
+XM-04's broader provider identity/catalog-membership work, series mappings, external providers and the Live/Series navigation changes are not completed by this slice.
 
 ### References And Evidence
 
@@ -32,7 +55,8 @@ This plan extends source and metadata behavior, not playback continuity, recomme
 | [Classifier](../lib/services/catalog/catalog_classifier.dart) | URL path, extension, group/provider hints and episode-title inference. | Verified API kinds take precedence for positively mapped records. Never classify a bare numeric URL by ID alone. |
 | [Read API](../lib/services/catalog/catalog_query_service.dart) | Bounded summaries; full item lookup only for selected content; series/seasons/episodes queries. | Selected-entity provider identity and metadata lookup without per-card requests. |
 | [Catalog storage design](catalog-import-and-browsing-redesign.md) | Local item keys derive from stream URLs; series keys are derived from playlist/group/title. | Separate provider identifiers and metadata bindings; do not replace local identity. |
-| [Details](../lib/features/details/details_screen.dart) | Selected item group/description and Play; series activation currently browses seasons. | Async richer movie details and a separately approved series overview transition. |
+| [Details](../lib/features/details/details_screen.dart) | Adaptive local Details and async Xtream movie enrichment/cache are implemented; live/episode activation remains Details and series activation browses seasons. | Direct live playback and inline series overview remain separate steps. |
+| [Activation facade](../lib/state/app_controller.dart) | Home, catalog and Search items all use `openDetailsById`; series/season activation pushes separate routes. | One type-aware activation command and an inline season-selection command without a route push. |
 
 The presence of credentials or `PlaylistSourceKind.xtream` is not evidence that API authentication has succeeded. Conversely, a URL source can support Xtream metadata while continuing to import its original M3U.
 
@@ -82,7 +106,7 @@ An unresolved `xui-id="{XUI_ID}"`, empty `tvg-id`, thematic channel name or fina
 
 ## 5. Xtream Client And Endpoint Routing
 
-Introduce a data-layer `XtreamApiClient` with an injected HTTP transport and credential resolver. Widgets/controllers consume safe service interfaces, never client implementations or raw authenticated URIs. Wire implementations in [AppDependencies](../lib/app/app_dependencies.dart); keep platform decisions in `lib/platform/`.
+Extend the existing authentication-only [XtreamApiClient](../lib/services/xtream/xtream_api_client.dart) with bounded catalog/detail operations, reusing injected transport and credential resolution. Its current `authenticate` method does not fetch movie or series metadata. Widgets/controllers consume safe service interfaces, never client implementations or raw authenticated URIs. Wire implementations in [AppDependencies](../lib/app/app_dependencies.dart); keep platform decisions in `lib/platform/`.
 
 | Operation | Common Action / Parameter | Use |
 |---|---|---|
@@ -189,29 +213,107 @@ On credential/server edits, increment connection revision, cancel old requests, 
 
 ## 9. Details And Interaction
 
-Movie selection opens existing Details immediately. Render local title/artwork/group/description and Play first, then load enrichment independently. Optional areas include plot, genres, release date, runtime, rating with source, cast/director and supported artwork. Hide unavailable fields. A metadata error gets a bounded safe retry state, not a full-screen playback failure.
+### Live: Activate To Play
 
-For series, propose a series overview with metadata and a clear Browse seasons command before the existing season/episode routes. This changes the current activation destination and is gated for approval in XM-08. Keep a simple season-browser fallback and preserve Back to the original series tile. Do not invent Resume, watched state or episode availability.
+Route: `Live catalog / Home live row / live Search result -> Player -> originating screen`.
 
-Use responsive scrollable composition for portrait, short landscape, desktop and remote-first layouts. Address the known short-landscape/2x Details overflow in the scoped UI step. Keep the card/list preference, focus restoration, visible focus and target sizes; metadata arriving must not steal focus, move Play unpredictably or auto-start a trailer. Trailers/external links require a separate capability and approved action, not an automatic embedded player.
+- Introduce one application-level, type-aware activation command, injected with the existing playback entry point. Resolve the selected local item only; do not load full playlists or retrieve metadata before playing.
+- Use trusted catalog classification, not the current screen, title or file extension, so mixed Search results behave correctly. Movies and episodes retain Details activation in this package.
+- Wire all callers in [CatalogScreen](../lib/features/catalog/catalog_screen.dart), [HomeScreen](../lib/features/home/home_screen.dart) and [SearchScreen](../lib/features/search/search_screen.dart). Do not add three separate playback decision implementations.
+- Reuse [PlayerController.openPlayer](../lib/features/player/player_controller.dart) and its current stop-on-exit/lifecycle behavior. Preserve the player's control-overlay Back handling; once the player exits, return directly to the originating screen, with its group, sort, page, scroll and channel focus restored.
+- Guard lookup completion by playlist binding and originating route/activation generation. Back, another activation, playlist changes and double OK while lookup is pending must not open a stale player or push duplicate routes.
+- Missing/deleted items and lookup failures get safe visible errors and existing redacted logging. No silent return or replacement stream.
+
+### Movies: Immediate Local Details, Then Provider-First Enrichment
+
+Route: `Movies / Home movie row / movie Search result -> Movie details -> Player`.
+
+Render local title/artwork/group/description and Play first. Independently load optional plot, genres, release date, runtime, rating with source, cast/director and supported poster/backdrop. Hide unavailable fields; never fabricate values. Play remains usable while loading, offline, or after metadata failure.
+
+Resolution order:
+
+1. Show cached/local data immediately.
+2. For a verified Xtream source and validated VOD binding, lazily request `get_vod_info` for that one movie; cache normalized fields.
+3. If an external provider is enabled, use verified external IDs from provider metadata first, or a conservative title/year match with ambiguity handling. Fill missing descriptive fields without replacing valid Xtream fields.
+4. For ordinary M3U/M3U8, skip Xtream entirely. Show imported fields, optionally enrich through the same external-provider contract.
+
+Input kind and import transport are not metadata eligibility: a verified Xtream-backed URL playlist can keep M3U import and still use API metadata. An explicit Xtream login is not proof that every detail action is supported. Unsupported actions, denied credentials, malformed payloads and timeouts remain distinguishable and get a bounded safe retry/status area, not a fullscreen playback failure.
+
+### Series: One Overview With Inline Season Selection
+
+Route: `Series catalog / Home series tile -> Series overview -> existing episode Details -> Player`.
+
+The overview replaces the normal separate Seasons and Episodes browsing steps:
+
+```text
+[backdrop with contrast overlay, or neutral fallback]
+[poster] Series title, real available facts, synopsis
+
+Seasons
+[Season 1] [Season 2] [Season 3] ...
+
+Episodes - Season 2
+[episode rows/cards, paged from the local catalog]
+```
+
+- A typed `SeriesDetailsRoute` identifies a real local series, not a fabricated playable `ContentItem`. The show itself has no stream or Play command.
+- Load existing seasons immediately. Initially show "Select a season to see episodes"; activating a season selects it and loads its episodes below, without pushing a route. Restore the selected season when returning from episode Details/player.
+- A small route-owned `ChangeNotifier` controller holds selected series/season, season load state, one `PagedCollection` of episodes, and independent metadata state. Inject `CatalogQueryService` and the metadata contract. Do not duplicate the catalog or add another state-management framework.
+- Reuse existing season queries and numeric ordering. Only selected-season episodes are paged. Existing `showSeasons` checks service identity but not series-request generation; the new owner must guard series/season changes even when the service stays the same.
+- Clear/invalidate old episode pages immediately on season activation. Late pages for Season 1 cannot append after Season 2 is selected. Preserve local episode IDs, availability and playback URLs.
+- For a confident Xtream show binding, request one `get_series_info`, use its normalized show metadata/backdrop and validated relation bindings. Never crawl every show's episodes during import.
+- Descriptive API/external metadata cannot add phantom playable seasons/episodes or replace local relationships. A provider reporting episodes absent from the imported playlist does not make those episodes available; API-native catalog sync remains a separate gated package.
+- No mapping/API/metadata: the same overview remains usable with local title/artwork, counts, seasons and episodes. A poster is not assumed to be a landscape backdrop; use a neutral background when suitable artwork is unavailable.
+- Preserve existing episode activation through Details for now. Direct episode playback, Resume and watched indicators are separate behavioral decisions, not implied by inline browsing.
+- Home and series-catalog entry paths share this route. Current Search returns playable items, including episodes, not show subjects; retain that behavior. Do not introduce series search grouping as an incidental change.
+
+### Remote, Back And Responsive Contract
+
+- Series initial focus: first season button after local seasons load; Back remains reachable if there are none. Metadata arrival never moves focus.
+- OK/Enter/Select activates a season; focus stays on that season, visibly selected. Down reaches the first loaded episode (or its loading/error/retry region), and Up at the episode-region boundary returns to the selected season. Left/Right moves within the season strip; Tab can traverse all controls without a nested-scope trap.
+- Back from the overview returns to its originating series tile; season changes do not create Back-stack entries. Back from episode Details/player restores the overview's selected season, episode focus and scroll.
+- Movies keep Play as the initial action and keep its position stable during enrichment. Decorative backdrop/poster images do not become focus targets.
+- Compose the series page as one bounded, lazy scroll surface, preferably a `CustomScrollView` with header/season sections and paged episode slivers. Extract the smallest reusable paging/prefetch part of [PagedGridView](../lib/ui/widgets/paged_grid_view.dart) if needed; do not wrap a shrink-wrapped full episode grid in another scrolling view.
+- Wide layouts can place poster/information beside each other and show a season strip; compact/short layouts stack and scroll, with wrapped or horizontally reachable season controls. Select layouts from constraints/input, never OS names.
+- Preserve card/list preferences for applicable episode rows/cards and the completed top-level sorting behavior. Seasons/episodes remain numerically ordered, not alphabetically or by the global catalog toggle.
+- Reuse bounded artwork and theme/focus tokens from DE-02/DE-03. Cap image decoding to display needs, reserve image geometry and provide contrast overlays, missing-image and failed-image fallbacks. No new image-cache package.
+- Validate 360x800, 390x844, 800x360, 1440x900 and 1920x1080 at normal and 2x text scale. No overflow; Play, every season, episodes and retry/Back must remain reachable.
+
+### Recommended Delivery Order
+
+| Step | Work Package | User-Visible Result |
+|---|---|---|
+| 1 | XM-12 | Live activation plays directly on every entry surface. No API dependency. |
+| 2 | XM-08a | Local-only series overview with inline seasons/episodes and fallback artwork. Plain M3U already works. |
+| 3 | XM-04 | Validated, account-scoped provider identity for selected local items; no catalog identity churn. |
+| 4 | XM-05, then XM-07 | Xtream-first movie enrichment with immediate local fallback and richer adaptive Details. |
+| 5 | XM-06, then XM-08b | Confident series mapping, provider backdrop/information on the already usable overview. |
+| 6 | XM-10, only after its decisions | Optional external metadata provider (TMDB is the candidate), also useful for plain M3U. |
+| 7 | XM-11 | Combined navigation, compatibility, cache/privacy, migration and device checkpoint. |
+
+XM-12, XM-08a and XM-04 are independent starting points. Implement one bounded package at a time; API-native import (XM-09) is not on the critical path. These are planning steps, not authorization to implement in this request.
+
+External-provider choice, credentials/distribution, opt-in/data-sharing and current licensing/attribution terms remain open. The proposed UI defaults above are explicit planning recommendations; record any changed focus or episode-activation policy before code. No trailers, EPG, API-only catalog replacement or full branding redesign is included.
 
 ## 10. Work Packages
 
-READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. XM-01 through XM-03 are complete; XM-04 is the next unblocked package. Other implementation remains pending.
+READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. The selected-movie slice is implemented; XM-04's broader mappings, XM-08a and XM-12 remain next starting points.
 
 | ID | Deliverable | Depends On | Status |
 |---|---|---|---|
 | XM-01 | Source/capability contracts and detection parser | None | DONE (2026-10-15): Local-only contracts/parser, exact password preservation; 29 focused cases and all 315 tests pass. |
 | XM-02 | Safe Xtream authentication client and fixture contract tests | XM-01 | DONE (2026-10-15): Injected credentials/transport, sanitized typed results, bounded cancellable HTTP; 59 authentication cases and all 374 tests pass. |
 | XM-03 | Source persistence/editor verification and URL promotion | XM-02 | DONE (2026-10-15): Revision-safe persistence/recovery and integrated Add/Edit verification, retry/cancellation and URL-only fallback; all 469 tests pass. Native checks pending. |
-| XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | READY |
-| XM-05 | Metadata repository/cache and first Xtream provider | XM-04 | PENDING |
+| XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | PARTIAL (2026-11-25): Verified selected-movie path bindings implemented by WP-XM-movie. Bare-URL catalog membership, broader provider identity and series mappings remain pending. |
+| XM-05 | Metadata repository/cache and first Xtream provider | Movie-scoped XM-04 | IMPLEMENTED (2026-11-25): Account/revision/locale-scoped movie cache, Xtream provider, safe bounded requests, deduplication/cancellation and fake second-provider merge covered by focused tests. Native/provider validation pending. |
 | XM-06 | On-demand series mappings and episode relationships | XM-05 | PENDING |
-| XM-07 | Enhanced movie details | XM-05 | PENDING |
-| XM-08 | Series overview route and metadata UI | XM-06, explicit navigation approval | GATED |
+| XM-07 | Enhanced movie details | XM-05 | IMPLEMENTED (2026-11-25): Immediate local Details/Play, async enrichment, responsive artwork/facts, safe retry and focus/Back tests pass. Deterministic artwork snapshots and native checks pending; not completion of DE-02/03. |
+| XM-08a | Local series overview with inline seasons/episodes | Existing typed navigation and catalog queries | READY (2026-11-25): Requested navigation scope recorded; interaction recommendations in section 9. |
+| XM-08b | Provider metadata and backdrop on series overview | XM-06, XM-08a | PENDING |
 | XM-09 | Later category-batched Xtream catalog sync and identity bridge | XM-04, XM-06, import/search policy approval | GATED |
 | XM-10 | TMDB integration decision, matching and provider | XM-05, privacy/token/terms approval | GATED |
-| XM-11 | Cross-device, security and performance checkpoint | XM-07; optional branches if selected | PENDING |
+| XM-11 | Cross-device, security and performance checkpoint | XM-12, XM-07, XM-08a, XM-08b; XM-10 if selected | PENDING |
+| XM-12 | Direct Live TV playback on activation | Existing catalog lookup, typed navigation and player | READY (2026-11-25): Requested scope; no metadata dependency. |
 
 ### XM-01: Source Contracts And Detection
 
@@ -285,11 +387,19 @@ Owners: Details screen, proposed feature-local controller/view model, shared art
 
 Done: real optional metadata is visible, loading/offline/failure cannot block Play, stale responses cannot update a different item, focus remains stable, and 360x800/390x844/800x360/1440x900 plus 2x text layouts pass. Capture deterministic local-artwork screenshots, not provider-dependent images.
 
-### XM-08: Series Overview Decision And UI
+### XM-08a: Local Series Overview And Inline Browsing
 
-Before code, record approval in decisions.md for Series -> Overview -> Seasons -> Episodes and the initial focus/Back contract. Then add a typed series subject/route with the same repository, keeping series metadata distinct from episode metadata. Do not repurpose `DetailsRoute(ContentItem)` with a fabricated playable show.
+Owners: [typed routes](../lib/app/navigation/app_route.dart), [route rendering](../lib/app.dart), [navigation controller](../lib/app/navigation/navigation_controller.dart), [activation facade](../lib/state/app_controller.dart), catalog/Home screens, a proposed `lib/features/details/series_details_screen.dart` and route-owned controller, shared paging/artwork and widget tests.
 
-Done: Home/cards/list/Search entry paths use the approved route consistently; Browse seasons remains reachable on metadata failure; Back restores the prior tile/row and paged state. Movie/live activation behavior is unchanged.
+Implement section 9's single overview and local queries first, without waiting for metadata. Replace normal series entry and season-selection route pushes; preserve or deliberately retire legacy route cases only after tracing all callers/tests. Keep movie and episode activation unchanged. Required skills: `flutter-build-responsive-layout`, `dart-add-unit-test`, `dart-run-static-analysis`.
+
+Done: series catalog/Home cards and lists open the same overview; selecting a season shows paged episodes below without a route push. Rapid season/show changes discard stale results. Back restores origin or selected season/episode as appropriate. Missing metadata/artwork, empty seasons, season/episode-query failure/retry, long text and the viewport/input matrix all pass. Large synthetic seasons prove the UI queries only the selected season and bounded page sizes, not all episodes.
+
+### XM-08b: Series Provider Metadata And Backdrop
+
+Owners: XM-08a's controller/view, metadata repository, Xtream series mapper and fake-provider/widget tests. Attach a typed series metadata subject to the existing overview; preserve immediate local browsing and keep show/episode metadata separate.
+
+Done: a mapped series displays real provider backdrop/synopsis/facts; unmapped, ambiguous, unsupported, offline and failed-image cases remain usable. Late enrichment cannot alter another series or steal season/episode focus. Only one selected show detail is fetched, metadata does not create playable records, and cache/locale/revision behavior is covered.
 
 ### XM-09: API-Native Catalog Sync
 
@@ -311,12 +421,18 @@ Run focused tests after each meaningful edit, then `flutter analyze` and `flutte
 
 Done: migration/recovery tests, fake-provider contract tests, Details accessibility/focus/Back tests, performance measurements and deterministic screenshots are recorded. Separately list Android phone, Android TV, Windows and LG webOS as verified or pending with actual viewport/input/network conditions. A unit test does not certify native HTTP/TLS or provider compatibility. Authorized provider smoke tests must record only safe action/status/timing evidence, never raw URLs/account payloads.
 
+### XM-12: Direct Live Playback
+
+Owners: [AppController](../lib/state/app_controller.dart), [AppDependencies](../lib/app/app_dependencies.dart), [PlayerController](../lib/features/player/player_controller.dart), Home/catalog/Search activation callers and navigation/playback tests. Inject the shared playback command into the activation owner; no HTTP, platform selection or native backend dependency in catalog widgets. Required skills: `dart-add-unit-test`, `dart-run-static-analysis`.
+
+Done: pointer/Enter/Select activation of a live result opens exactly one Player route with no Details route; opening the Live section alone does not play. Movies/episodes still open Details. Slow lookup, double activation, Back during lookup, playlist change, deleted item and playback failure are tested. Player exit stops playback and restores originating group/sort/page/scroll/focus for catalog, Home and Search.
+
 ## 11. Recovery, Decisions And Handoff
 
 - Implement one package at a time with its fakes, tests and usable fallback. Do not commit or create branches unless asked. New schema changes are append-only; rollback disables a feature/provider rather than downgrading or deleting unrelated catalog/user data.
 - Stop and ask if a provider requires cross-origin credential forwarding, insecure TLS workarounds, opaque authentication, unsupported DRM, or a change to approved playback/navigation semantics. Never bypass provider access restrictions.
-- Keep XM-08/09/10 gated until their choices are approved. Their absence does not block hybrid movie metadata.
+- XM-08a's requested inline navigation is now planned; retain section 9's explicit interaction contract. Keep XM-09/10 gated until their remaining choices are approved. Their absence does not block hybrid metadata or local series browsing.
 - Track package status here with date, concrete test evidence, migration names, screenshots and remaining device checks. Update the architecture status table only for work actually completed; this planning document does not complete an implementation package.
 - Each handoff states supported source inputs, verified capabilities, unmapped/ambiguous content limitations, cache/privacy behavior and exact next unblocked package.
 
-First useful milestone: explicit/detected Xtream verification plus safe movie enrichment over existing M3U catalogs (XM-01 through XM-05 and XM-07). Then deliver series mapping/overview with its route decision. API-native import and TMDB can follow independently; neither is a prerequisite for useful provider metadata.
+First visible milestone: XM-12 and XM-08a deliver direct live playback and inline local series browsing. Then XM-04/XM-05/XM-07 deliver provider-first movie information; XM-06/XM-08b add series enrichment. API-native import and TMDB can follow independently; neither is a prerequisite for the requested navigation or useful Xtream metadata.

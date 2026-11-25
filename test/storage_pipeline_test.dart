@@ -34,7 +34,7 @@ void main() {
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '13');
+    expect(rows.first['value'], '14');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(
@@ -80,6 +80,8 @@ void main() {
     expect(tableNames, contains('watch_history_v8'));
     expect(tableNames, contains('hidden_groups_v8'));
     expect(tableNames, contains('items_fts_queue'));
+    expect(tableNames, contains('movie_provider_bindings'));
+    expect(tableNames, contains('movie_metadata_cache'));
 
     for (final expectedColumn in const [
       'source_etag',

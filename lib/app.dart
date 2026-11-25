@@ -149,6 +149,8 @@ class _IptvAppState extends State<IptvApp> {
         child: AppEnvironment(
           capabilities: widget.dependencies.capabilities,
           child: AppScope(
+            movieMetadataRepository:
+                widget.dependencies.movieMetadataRepository,
             appController: controller,
             playerController: widget.dependencies.playerController,
             playlistsController: widget.dependencies.playlistsController,

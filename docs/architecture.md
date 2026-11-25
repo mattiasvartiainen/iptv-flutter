@@ -106,6 +106,25 @@ Minimum state areas:
 
 Flutter widgets should be repeatable from state. A screen may own ephemeral widget state, but it should not own the application source of truth.
 
+### Planned content-selection flows (2026-11-25)
+
+The [Xtream and metadata plan](xtream-and-metadata-implementation-plan.md#9-details-and-interaction)
+defines the requested flows. The movie slice is implemented; Live/Series
+navigation changes remain planned:
+
+- Live channel activation opens the existing player directly, without Details.
+- Movies retain Details and Play, with immediate local data and on-demand,
+  provider-first metadata through an injected provider-neutral repository.
+  The selected-movie Xtream provider and scoped v14 metadata cache are implemented.
+- Series open one overview with artwork/information and seasons. Selecting a
+  season loads paged episodes below on the same screen, without another route.
+- Plain M3U/M3U8 remains supported. API/external metadata is optional; unavailable
+  enrichment never blocks local browsing or playback.
+
+Use the existing typed navigation, constructor injection and `ChangeNotifier`
+patterns. Keep episode availability and playback identity in the catalog, not
+in descriptive metadata. No additional state-management framework is required.
+
 ## 7. Persistence
 
 Use a small persistence adapter backed by the verified webOS plugins for MVP local persistence. Store only what is needed, and split by sensitivity:
@@ -169,6 +188,4 @@ Represent errors with user-safe categories rather than raw exceptions:
 - storage unavailable.
 
 Detailed diagnostics may be available in developer logs, but user-facing messages should not echo credentials or provider URLs unnecessarily.
-
-
 

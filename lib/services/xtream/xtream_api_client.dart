@@ -2,9 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../logging/app_logger.dart';
+import '../metadata/movie_metadata.dart';
 import '../sources/source_contracts.dart';
 import 'xtream_authentication.dart';
+import 'xtream_vod_metadata.dart';
 
 class XtreamApiClient {
   XtreamApiClient({
@@ -32,11 +36,76 @@ class XtreamApiClient {
     required int connectionRevision,
     XtreamCancellation? cancellation,
   }) async {
+    final response = await _request(
+      playlistId: playlistId,
+      connectionRevision: connectionRevision,
+      cancellation: cancellation,
+      byteLimit: maxResponseBytes,
+      decode: (bytes, _) => _decodeAuthentication(bytes),
+    );
+    final result =
+        response.value ??
+        _failure(
+          response.failure!,
+          status: response.status,
+          retryAfter: response.retryAfter,
+        );
+    _logger.info(
+      'xtream_authentication_completed',
+      context: {
+        'verification': result.verification.name,
+        if (result.failure != null) 'failure': result.failure!.name,
+        if (result.statusCode != null) 'statusCode': result.statusCode,
+      },
+    );
+    return result;
+  }
+
+  Future<MovieMetadataResult> getVodInfo({
+    required String playlistId,
+    required int connectionRevision,
+    required String movieId,
+    required XtreamCancellation cancellation,
+    int byteLimit = 10 * 1024 * 1024,
+  }) async {
+    if (positiveProviderId(movieId) == null || byteLimit < 1) {
+      throw ArgumentError('Invalid movie detail request.');
+    }
+    final response = await _request(
+      playlistId: playlistId,
+      connectionRevision: connectionRevision,
+      cancellation: cancellation,
+      byteLimit: byteLimit,
+      parameters: {'action': 'get_vod_info', 'vod_id': movieId},
+      decode: (bytes, credentials) =>
+          compute(decodeXtreamVodBytes, (bytes, movieId, credentials)),
+    );
+    final result =
+        response.value ??
+        MovieMetadataResult(
+          failure: _metadataFailure(response.failure!),
+          retryAfter: response.retryAfter,
+        );
+    _logger.info(
+      'xtream_movie_metadata_completed',
+      context: {if (result.failure != null) 'failure': result.failure!.name},
+    );
+    return result;
+  }
+
+  Future<_RequestResult<T>> _request<T>({
+    required String playlistId,
+    required int connectionRevision,
+    required int byteLimit,
+    required FutureOr<T> Function(List<int>, XtreamCredentials) decode,
+    Map<String, String> parameters = const {},
+    XtreamCancellation? cancellation,
+  }) async {
     if (connectionRevision < 0) throw ArgumentError('Invalid revision.');
     final operation = cancellation ?? XtreamCancellation();
     XtreamAuthTransport? transport;
     var finished = false;
-    Future<XtreamAuthResult> perform() async {
+    Future<_RequestResult<T>> perform() async {
       if (operation.isCancelled) throw XtreamAuthFailure.cancelled;
       final credentials = await _resolveCredentials(
         playlistId,
@@ -65,6 +134,7 @@ class XtreamApiClient {
           queryParameters: {
             'username': credentials.username,
             'password': credentials.password,
+            ...parameters,
           },
         ),
       );
@@ -80,13 +150,13 @@ class XtreamApiClient {
           >= 500 => XtreamAuthFailure.serverUnavailable,
           _ => XtreamAuthFailure.network,
         };
-        return _failure(
-          failure,
+        return _RequestResult(
+          failure: failure,
           status: status,
           retryAfter: _retryAfter(response.retryAfter),
         );
       }
-      if ((response.contentLength ?? 0) > maxResponseBytes) {
+      if ((response.contentLength ?? 0) > byteLimit) {
         throw XtreamAuthFailure.responseTooLarge;
       }
       final bytes = <int>[];
@@ -94,84 +164,105 @@ class XtreamApiClient {
         if (finished || operation.isCancelled) {
           throw XtreamAuthFailure.cancelled;
         }
-        if (bytes.length + chunk.length > maxResponseBytes) {
+        if (bytes.length + chunk.length > byteLimit) {
           throw XtreamAuthFailure.responseTooLarge;
         }
         bytes.addAll(chunk);
       }
-      final decoded = jsonDecode(utf8.decode(bytes));
-      if (decoded is! Map<String, dynamic> ||
-          decoded['user_info'] is! Map<String, dynamic>) {
-        throw XtreamAuthFailure.malformedResponse;
-      }
-      final user = decoded['user_info'] as Map<String, dynamic>;
-      final auth = user['auth'];
-      if ((auth is int && auth == 0) || auth == '0') {
-        return _failure(XtreamAuthFailure.denied);
-      }
-      if (!(auth is int && auth == 1) && auth != '1') {
-        throw XtreamAuthFailure.malformedResponse;
-      }
-      final expires = _nonNegativeInt(user['exp_date']);
-      final formats = user['allowed_output_formats'];
-      return XtreamAuthResult(
-        verification: SourceVerificationState.verified,
-        accountState: switch (user['status']) {
-          final String status => switch (status.toLowerCase()) {
-            'active' => SourceAccountState.active,
-            'expired' => SourceAccountState.expired,
-            'disabled' => SourceAccountState.disabled,
-            'banned' => SourceAccountState.banned,
-            _ => SourceAccountState.unknown,
-          },
-          _ => SourceAccountState.unknown,
-        },
-        expiresAt: expires != null && expires > 0 && expires <= 8640000000000
-            ? DateTime.fromMillisecondsSinceEpoch(expires * 1000, isUtc: true)
-            : null,
-        activeConnections: _nonNegativeInt(user['active_cons']),
-        maxConnections: _nonNegativeInt(user['max_connections']),
-        allowedOutputFormats: List.unmodifiable(
-          formats is List
-              ? formats
-                    .whereType<String>()
-                    .where(const {'ts', 'm3u8', 'rtmp'}.contains)
-                    .toSet()
-              : <String>[],
-        ),
-      );
+      return _RequestResult(value: await decode(bytes, credentials));
     }
 
-    XtreamAuthResult result;
     try {
-      result = await Future.any<XtreamAuthResult>([
+      return await Future.any<_RequestResult<T>>([
         perform(),
         operation.whenCancelled.then((_) => throw XtreamAuthFailure.cancelled),
       ]).timeout(deadline);
     } on XtreamAuthFailure catch (failure) {
-      result = _failure(failure);
+      return _RequestResult(failure: failure);
     } on TimeoutException {
-      result = _failure(XtreamAuthFailure.timeout);
+      return const _RequestResult(failure: XtreamAuthFailure.timeout);
     } on HandshakeException {
-      result = _failure(XtreamAuthFailure.tls);
+      return const _RequestResult(failure: XtreamAuthFailure.tls);
     } on FormatException {
-      result = _failure(XtreamAuthFailure.malformedResponse);
-    } on Exception {
-      result = _failure(XtreamAuthFailure.network);
+      return const _RequestResult(failure: XtreamAuthFailure.malformedResponse);
+    } on IOException {
+      return const _RequestResult(failure: XtreamAuthFailure.network);
     } finally {
       finished = true;
       transport?.close();
     }
-    _logger.info(
-      'xtream_authentication_completed',
-      context: {
-        'verification': result.verification.name,
-        if (result.failure != null) 'failure': result.failure!.name,
-        if (result.statusCode != null) 'statusCode': result.statusCode,
-      },
-    );
-    return result;
   }
+}
+
+class _RequestResult<T> {
+  const _RequestResult({
+    this.value,
+    this.failure,
+    this.status,
+    this.retryAfter,
+  });
+  final T? value;
+  final XtreamAuthFailure? failure;
+  final int? status;
+  final Duration? retryAfter;
+}
+
+MetadataFailure _metadataFailure(XtreamAuthFailure failure) =>
+    switch (failure) {
+      XtreamAuthFailure.denied => MetadataFailure.denied,
+      XtreamAuthFailure.unsupported => MetadataFailure.unsupported,
+      XtreamAuthFailure.malformedResponse => MetadataFailure.malformed,
+      XtreamAuthFailure.rateLimited => MetadataFailure.rateLimited,
+      XtreamAuthFailure.timeout => MetadataFailure.timeout,
+      XtreamAuthFailure.cancelled => MetadataFailure.cancelled,
+      XtreamAuthFailure.responseTooLarge => MetadataFailure.tooLarge,
+      XtreamAuthFailure.missingCredentials ||
+      XtreamAuthFailure.confirmationRequired => MetadataFailure.unverified,
+      _ => MetadataFailure.network,
+    };
+
+XtreamAuthResult _decodeAuthentication(List<int> bytes) {
+  final decoded = jsonDecode(utf8.decode(bytes));
+  if (decoded is! Map<String, dynamic> ||
+      decoded['user_info'] is! Map<String, dynamic>) {
+    throw XtreamAuthFailure.malformedResponse;
+  }
+  final user = decoded['user_info'] as Map<String, dynamic>;
+  final auth = user['auth'];
+  if ((auth is int && auth == 0) || auth == '0') {
+    return _failure(XtreamAuthFailure.denied);
+  }
+  if (!(auth is int && auth == 1) && auth != '1') {
+    throw XtreamAuthFailure.malformedResponse;
+  }
+  final expires = _nonNegativeInt(user['exp_date']);
+  final formats = user['allowed_output_formats'];
+  return XtreamAuthResult(
+    verification: SourceVerificationState.verified,
+    accountState: switch (user['status']) {
+      final String status => switch (status.toLowerCase()) {
+        'active' => SourceAccountState.active,
+        'expired' => SourceAccountState.expired,
+        'disabled' => SourceAccountState.disabled,
+        'banned' => SourceAccountState.banned,
+        _ => SourceAccountState.unknown,
+      },
+      _ => SourceAccountState.unknown,
+    },
+    expiresAt: expires != null && expires > 0 && expires <= 8640000000000
+        ? DateTime.fromMillisecondsSinceEpoch(expires * 1000, isUtc: true)
+        : null,
+    activeConnections: _nonNegativeInt(user['active_cons']),
+    maxConnections: _nonNegativeInt(user['max_connections']),
+    allowedOutputFormats: List.unmodifiable(
+      formats is List
+          ? formats
+                .whereType<String>()
+                .where(const {'ts', 'm3u8', 'rtmp'}.contains)
+                .toSet()
+          : <String>[],
+    ),
+  );
 }
 
 int? _nonNegativeInt(Object? value) {

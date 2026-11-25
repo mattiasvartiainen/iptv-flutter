@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../app/navigation/navigation_controller.dart';
 import '../../features/player/player_controller.dart';
+import '../../services/metadata/movie_metadata.dart';
 import '../../state/app_controller.dart';
 import '../../state/app_preferences_controller.dart';
 import '../../state/playlists_controller.dart';
@@ -16,6 +17,7 @@ class AppScope extends InheritedWidget {
     required this.preferencesController,
     required this.navigationController,
     this.telemetryController,
+    this.movieMetadataRepository,
     required super.child,
   });
 
@@ -25,6 +27,11 @@ class AppScope extends InheritedWidget {
   final AppPreferencesController preferencesController;
   final NavigationController navigationController;
   final TelemetryController? telemetryController;
+  final MovieMetadataRepository? movieMetadataRepository;
+
+  static MovieMetadataRepository? movieMetadataRepositoryOf(
+    BuildContext context,
+  ) => _scopeOf(context).movieMetadataRepository;
 
   static TelemetryController? telemetryControllerOf(BuildContext context) =>
       _scopeOf(context).telemetryController;
@@ -61,5 +68,6 @@ class AppScope extends InheritedWidget {
       playlistsController != oldWidget.playlistsController ||
       preferencesController != oldWidget.preferencesController ||
       navigationController != oldWidget.navigationController ||
+      movieMetadataRepository != oldWidget.movieMetadataRepository ||
       telemetryController != oldWidget.telemetryController;
 }

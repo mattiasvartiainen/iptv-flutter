@@ -73,8 +73,8 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 | ID | Step | Depends On | Status | Suggested Commit |
 |----|------|------------|--------|------------------|
 | DE-01 | Deterministic visual baseline | None | READY | `test(ui): capture design evolution baseline` |
-| DE-02 | Reusable bounded artwork | DE-01 | READY | `refactor(ui): share bounded media artwork rendering` |
-| DE-03 | Adaptive visual Details | DE-02 | READY | `feat(details): add adaptive artwork and content hierarchy` |
+| DE-02 | Reusable bounded artwork | DE-01 | PARTIAL (2026-11-25): WP-XM-movie extracted MediaArtwork for tiles/Details; bounded decode/failure regressions pass. DE-01 visual comparisons and complete artwork-fit checks remain pending. | `refactor(ui): share bounded media artwork rendering` |
+| DE-03 | Adaptive visual Details | DE-02 | PARTIAL (2026-11-25): WP-XM-movie adds scrollable adaptive Details/Play with local fallback and 1x/2x viewport coverage. Deterministic artwork comparisons remain pending. | `feat(details): add adaptive artwork and content hierarchy` |
 | DE-04 | Channel row component | DE-02 | READY | `feat(live): add accessible channel row presentation` |
 | DE-05 | Paged Live TV list | DE-04 | READY | `feat(live): use paged channel browsing layouts` |
 | DE-06 | Poster-oriented catalog tiles | DE-02 | READY | `feat(catalog): add poster presentation for movies and series` |
