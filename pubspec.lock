@@ -823,6 +823,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.12.0"
+  video_player_drm:
+    dependency: "direct main"
+    description:
+      path: "packages/video_player_drm"
+      ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      resolved-ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
+      url: "https://github.com/lg-flutter-webos/plugins.git"
+    source: git
+    version: "1.0.0"
   video_player_platform_interface:
     dependency: "direct dev"
     description:
@@ -839,15 +848,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.0"
-  video_player_webos:
-    dependency: "direct main"
-    description:
-      path: "packages/video_player"
-      ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
-      resolved-ref: "3a742bb86b04e261044f0864f9b1f71acf0bbad3"
-      url: "https://github.com/lg-flutter-webos/plugins.git"
-    source: git
-    version: "1.0.0"
   vm_service:
     dependency: transitive
     description:

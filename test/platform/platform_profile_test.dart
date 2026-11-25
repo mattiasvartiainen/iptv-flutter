@@ -80,7 +80,7 @@ void main() {
     );
     expect(
       resolvePlaybackBackend(AppPlatform.webos, desktopBackend: desktopBackend),
-      PlaybackBackend.videoPlayer,
+      PlaybackBackend.webOs,
     );
     expect(
       resolvePlaybackBackend(

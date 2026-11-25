@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_hash.dart';
 import 'package:iptv_flutter/services/catalog/catalog_importer.dart';
+import 'package:iptv_flutter/services/catalog/catalog_search_indexer.dart';
+import 'package:iptv_flutter/services/catalog/sqlite_catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/user_library_repository.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 
@@ -49,6 +51,24 @@ void main() {
   });
 
   test('favorites are idempotent, per profile, and removable', () async {
+    final query = SqliteCatalogQueryService(
+      databaseAdapter: adapter,
+      searchIndexer: SqliteCatalogSearchIndexer(databaseAdapter: adapter),
+    );
+    final db = await adapter.database;
+    final rows = await db.query(
+      'items',
+      columns: ['id'],
+      where: 'item_key = ?',
+      whereArgs: [alphaKey],
+    );
+    final item = await query.itemById(rows.single['id'].toString());
+    expect(item?.catalogPlaylistId, 'library');
+    expect(item?.catalogItemKey, alphaKey);
+    expect(
+      await library.isFavorite(playlistId: 'library', itemKey: alphaKey),
+      isFalse,
+    );
     await library.setFavorite(
       playlistId: 'library',
       itemKey: alphaKey,
@@ -68,6 +88,27 @@ void main() {
       await library.favoriteItems(playlistId: 'library', profileId: 'other'),
       isEmpty,
     );
+    expect(
+      await library.isFavorite(playlistId: 'library', itemKey: alphaKey),
+      isTrue,
+    );
+    expect(
+      await library.isFavorite(playlistId: 'other', itemKey: alphaKey),
+      isFalse,
+    );
+    expect(
+      await library.isFavorite(
+        playlistId: 'library',
+        itemKey: alphaKey,
+        profileId: 'other',
+      ),
+      isFalse,
+    );
+    await adapter.close();
+    expect(
+      await library.isFavorite(playlistId: 'library', itemKey: alphaKey),
+      isTrue,
+    );
 
     await library.setFavorite(
       playlistId: 'library',
@@ -75,6 +116,10 @@ void main() {
       favorite: false,
     );
     expect(await library.favoriteItems(playlistId: 'library'), isEmpty);
+    expect(
+      await library.isFavorite(playlistId: 'library', itemKey: alphaKey),
+      isFalse,
+    );
   });
 
   test('playback progress is replaced per item', () async {

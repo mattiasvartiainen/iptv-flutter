@@ -33,6 +33,38 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-player-overlay is the approved combined player slice: app-owned fullscreen
+controls, stream diagnostics, embedded audio/subtitle selection, persisted
+favourites and LG video_player_drm integration. Dependencies: WP-XM-medium.
+Touches: playback contracts/adapters, platform profile/pubspec/webOS manifest,
+PlayerController/PlayerScreen, selected-item identity/user-library composition,
+related tests and docs. Skills: dart-add-unit-test, dart-run-static-analysis,
+flutter-build-responsive-layout. Preserve Escape/media keys and local playback;
+capability-gate unavailable features, never guess stream facts, no import work.
+
+The pinned LG plugin logs complete stream URLs and native media events.
+The supported `tool/build-webos.sh` wrapper now restores into an isolated
+`.dart_tool/webos-pub-cache`, verifies the complete pinned plugin tree and
+disables its native logging sink before building with the safe-build marker.
+It does not modify a shared package cache. Direct builds without this verified
+step refuse playback with a setup error. The conflicting legacy LG plugin
+dependency was removed; Dart-side safe error/status reporting remains enabled.
+Keep the pin and patch verification in sync when upgrading the LG dependency.
+
+Player verification covers pointer reveal, remote OK/D-pad, Space/media keys,
+Escape/system Back, chooser focus/selection/cancellation, one seek per scrub,
+stable persisted favourites and nonfatal errors. Twenty position updates retain
+one video view without rebuilding its widget. Compact/portrait/TV controls
+fit at 2x text scale without overlapping the seek control or technical labels.
+Windows debug build passes. The full suite still has the two known Settings
+focus failures and the reproduced telemetry-endpoint stall; LG hardware and a
+real supported-toolchain webOS package remain pending.
+
+Final evidence: 63 focused Flutter tests pass; the pinned-source Node test and
+Bash wrapper checks pass. `flutter analyze` reports only the two existing
+unawaited-future infos. Final regression: 784 passes, two baseline Settings
+focus failures, excluding only the reproduced stalled telemetry test file.
+
 WP-DB-migration-tests validates real persisted upgrades from every historical
 schema through the production adapter, including schema parity, preserved
 settings/catalog/metadata, SQLite integrity and failed-upgrade rollback/retry.
@@ -81,6 +113,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-overlay | Shared player controls, tracks and favourites | Player | WP-XM-medium | M | DONE (2026-11-25; desktop/unit/build-helper verified, LG package/hardware pending) |
 | WP-DB-migration-tests | Persisted SQL migration regression matrix | Storage | WP-XM-medium | S | DONE (2026-11-25): 18 real persisted-upgrade/rollback tests cover v1-v17, seeded data, schema/ledger parity, SQLite/FTS/FK integrity and reopen/retry; 25 focused storage tests pass. Broad regression: 755 passes with two existing Settings/editor focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos. |
 | WP-XM-medium | Efficient membership, recoverable movie cache and bounded decoding | Metadata | WP-XM-hardening | M | DONE (2026-11-25): Atomic 100-row keyset membership with partial v17 index, scoped corrupt-cache recovery and typed/transferable response buffers with pre-allocation JSON budgets. 119 focused tests pass; final broad regression has 737 passes and the two existing Settings/editor focus failures, excluding only the reproduced telemetry stall. Analyzer retains two baseline infos. Isolated 20k-item cold/identical/churn/reorder benchmark passes (refreshes 1,147/1,416/1,266 ms). TV memory/provider validation remains pending. |
 | WP-XM-hardening | Import-safe metadata invalidation and guarded activation | Metadata | WP-XM-series, WP-3.1 | S | DONE (2026-11-25): Indexed/scoped v16 invalidation and guarded/deduplicated activation; 88 focused tests pass, final broad regression has 714 passes with the two existing Settings/editor focus failures. Full run reproduced the existing telemetry-section stall; completed regression excludes only that file. Analyzer retains its two baseline infos. A 30k-episode/3k-cache SQLite probe improved 4,428 ms to 96 ms; the 20k-item cold/identical/churn/reorder import benchmark passes. |

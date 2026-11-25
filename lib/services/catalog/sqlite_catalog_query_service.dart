@@ -271,7 +271,7 @@ ORDER BY g.ord, g.sort_title, g.id
         final db = await _databaseAdapter.database;
         final rows = await db.rawQuery(
           '''
-SELECT m.id, m.title, m.kind, m.stream_url, g.title AS group_title,
+SELECT m.id, m.playlist_id, m.item_key, m.title, m.kind, m.stream_url, g.title AS group_title,
        m.logo_url, m.tvg_id, m.tvg_name, m.tvg_chno, m.xui_id, m.ord
 FROM items m JOIN groups g ON g.id = m.group_id
 WHERE m.id = ? LIMIT 1
@@ -490,6 +490,8 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
       if (row['xui_id'] is String) 'xui-id': row['xui_id']! as String,
     },
     sourceIndex: row['ord']! as int,
+    catalogPlaylistId: row['playlist_id']! as String,
+    catalogItemKey: row['item_key']! as int,
   );
 
   Future<int> _countRows(

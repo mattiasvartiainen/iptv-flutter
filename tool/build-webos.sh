@@ -7,10 +7,22 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+if [[ -L .dart_tool || -L .dart_tool/webos-pub-cache ]]; then
+  echo "[build-webos] ERROR: isolated pub cache must not be a symlink" >&2
+  exit 1
+fi
+mkdir -p .dart_tool
+if ! mkdir .dart_tool/webos-build.lock 2>/dev/null; then
+  echo "[build-webos] ERROR: another webOS build is running or its lock is stale" >&2
+  exit 1
+fi
+trap 'rmdir .dart_tool/webos-build.lock' EXIT
+
 if [[ -f /etc/profile.d/flutter-webos.sh ]]; then
   # shellcheck disable=SC1091
   source /etc/profile.d/flutter-webos.sh
 fi
+export PUB_CACHE="$PWD/.dart_tool/webos-pub-cache"
 
 if ! command -v flutter-webos >/dev/null 2>&1; then
   echo "[build-webos] ERROR: flutter-webos not found in PATH"
@@ -38,21 +50,27 @@ if [[ "$node_found" != true ]]; then
   exit 1
 fi
 
-echo "[build-webos] Running dependency sync..."
-flutter-webos pub get >/dev/null
-
-echo "[build-webos] Building webOS package..."
-
 define_present=false
 for arg in "$@"; do
+  if [[ "$arg" == --dart-define=IPTV_WEBOS_SAFE_NATIVE_LOGS=* || "$arg" == --pub ]]; then
+    echo "[build-webos] ERROR: native logging marker and pub mode are managed by this script" >&2
+    exit 1
+  fi
   if [[ "$arg" == --dart-define=IPTV_WEBOS=* ]]; then
     define_present=true
-    break
   fi
 done
 
-if [[ "$define_present" == true ]]; then
-  exec flutter-webos build webos "$@"
-fi
+echo "[build-webos] Running dependency sync..."
+flutter-webos pub get >/dev/null
 
-exec flutter-webos build webos --dart-define=IPTV_WEBOS=true "$@"
+echo "[build-webos] Verifying and securing isolated native plugin..."
+node tool/patch-webos-playback-logging.cjs
+
+echo "[build-webos] Building webOS package..."
+
+if [[ "$define_present" == true ]]; then
+  flutter-webos build webos "$@" --no-pub --dart-define=IPTV_WEBOS_SAFE_NATIVE_LOGS=true
+else
+  flutter-webos build webos "$@" --no-pub --dart-define=IPTV_WEBOS=true --dart-define=IPTV_WEBOS_SAFE_NATIVE_LOGS=true
+fi

@@ -169,9 +169,28 @@ back()
 onStateChange(listener)
 ```
 
-The webOS adapter wraps the `video_player` API with the `video_player_webos` implementation for supported HLS streams; use `video_player_drm` only if a target provider requires DRM. Playback rides the webOS media pipeline, so codec/variant support must be validated on hardware early (see [`decisions.md`](decisions.md)). Because `video_player_webos` does not run on the Linux desktop target, desktop development uses the shared `media_kit` adapter or the fake/fixture adapter. Keep the interface so a future desktop backend, including VLC/libVLC, can be added without changing screens or application state.
+The dedicated webOS adapter wraps LG's separate `video_player_drm` API for ordinary streams and embedded audio/subtitle selection. Android retains standard `video_player`; desktop uses `media_kit` or the fake/fixture adapter. Playback rides the webOS media pipeline, so codec/variant support and transparent native-plane compositing must be validated on hardware (see [`decisions.md`](decisions.md)). Keep backend selection in `lib/platform` and expose unsupported LG volume/custom headers honestly.
 
 Flutter webOS reports a Linux-like target platform, so platform selection must not rely on `defaultTargetPlatform` alone. Desktop runs use `media_kit`; webOS builds pass `--dart-define=IPTV_WEBOS=true` and use the webOS adapter. Desktop backend selection remains behind `IPTV_DESKTOP_BACKEND`, with `fake` and `media_kit` supported today; `vlc` is reserved for a future adapter and is not implemented yet.
+
+`PlayerScreen` owns the only control overlay; MediaKit's default controls are
+disabled. Tap/hover reveal controls without pausing; centre Play/Pause and Space
+toggle playback. Remote OK reveals/focuses the centre control before activating
+it. Playing controls hide after four idle seconds, but remain visible while
+paused, focused, scrubbing or choosing a track. Hidden controls are excluded from
+focus, semantics and pointer input. Visible Back exits immediately; Escape/system
+Back close a chooser first, otherwise hide controls before exiting.
+
+Playback state carries backend-neutral technical facts and track lists. Unknown
+facts remain absent; source FPS is not a rendered-FPS counter, and audio sample
+format/channel count are not guessed into codec or 5.1 labels. Absolute seek
+commits once per pointer scrub; native video widgets retain identity across
+position updates. Track/favourite failures are reported without stopping video.
+
+Selected database items carry their stable playlist/item key into playback.
+Favourites use the existing user-library table and injected interface, with
+indexed single-item reads and captured write identity. No full favourite list,
+new migration, metadata fetch or import-time work is introduced.
 
 ## 9. Remote and focus behavior
 

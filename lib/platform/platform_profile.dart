@@ -14,6 +14,7 @@ import '../services/storage/secure_storage_service.dart';
 import 'app_platform.dart';
 import 'build_flags.dart' as build_flags;
 import 'platform_capabilities.dart';
+import 'webos_playback_adapter.dart';
 import 'windows_playlist_secret_store.dart';
 
 abstract interface class PlatformProfile {
@@ -32,14 +33,15 @@ abstract interface class PlatformProfile {
   PlaylistSecretStore createSecretStore();
 }
 
-enum PlaybackBackend { videoPlayer, mediaKit, fake }
+enum PlaybackBackend { videoPlayer, webOs, mediaKit, fake }
 
 @visibleForTesting
 PlaybackBackend resolvePlaybackBackend(
   AppPlatform platform, {
   required String desktopBackend,
 }) => switch (platform) {
-  AppPlatform.android || AppPlatform.webos => PlaybackBackend.videoPlayer,
+  AppPlatform.android => PlaybackBackend.videoPlayer,
+  AppPlatform.webos => PlaybackBackend.webOs,
   AppPlatform.linux || AppPlatform.windows when desktopBackend == 'media_kit' =>
     PlaybackBackend.mediaKit,
   AppPlatform.linux ||
@@ -110,6 +112,7 @@ abstract base class _PlatformProfile implements PlatformProfile {
     desktopBackend: build_flags.desktopPlaybackBackend,
   )) {
     PlaybackBackend.videoPlayer => VideoPlayerPlaybackAdapter(),
+    PlaybackBackend.webOs => WebOsPlaybackAdapter(),
     PlaybackBackend.mediaKit => DesktopMediaKitPlaybackAdapter(
       disableVideoOutput: build_flags.disableDesktopVideoOutput,
       enableHardwareAcceleration:

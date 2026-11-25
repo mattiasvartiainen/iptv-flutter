@@ -6,9 +6,11 @@ import 'package:flutter/widgets.dart';
 import '../../app/navigation/app_route.dart';
 import '../../app/navigation/navigation_controller.dart';
 import '../../models/content_item.dart';
+import '../../services/catalog/favorite_repository.dart';
 import '../../services/logging/app_logger.dart';
 import '../../services/playback/playback_adapter.dart';
 import '../../services/playback/playback_contract.dart';
+import '../../services/playback/playback_labels.dart';
 import '../../services/security/url_redaction.dart';
 
 class PlayerController extends ChangeNotifier {
@@ -16,6 +18,7 @@ class PlayerController extends ChangeNotifier {
     required this.playbackAdapter,
     required this.navigationController,
     AppLogger logger = const DebugAppLogger(),
+    this.favorites,
   }) : _logger = logger,
        _playbackState = ValueNotifier<PlaybackState>(playbackAdapter.state) {
     _observedRoute = navigationController.currentRoute;
@@ -39,6 +42,20 @@ class PlayerController extends ChangeNotifier {
   final PlaybackAdapter playbackAdapter;
   final NavigationController navigationController;
   final AppLogger _logger;
+  final FavoriteRepository? favorites;
+  bool? _favorite;
+  bool _favoriteBusy = false;
+  bool _favoriteLoading = false;
+  String? _controlError;
+  Widget? _videoView;
+  bool get canFavorite =>
+      favorites != null &&
+      _playbackState.value.item?.catalogPlaylistId != null &&
+      _playbackState.value.item?.catalogItemKey != null;
+  bool? get favorite => _favorite;
+  bool get favoriteBusy => _favoriteBusy || _favoriteLoading;
+  String? get controlError => _controlError;
+  int get playbackSession => _playbackLoadGeneration;
   final ValueNotifier<PlaybackState> _playbackState;
   late final AppLifecycleListener _lifecycleListener;
   late AppRoute _observedRoute;
@@ -56,7 +73,7 @@ class PlayerController extends ChangeNotifier {
 
   PlaybackCapabilities get capabilities => playbackAdapter.capabilities;
 
-  Widget? get videoView => playbackAdapter.buildVideoView();
+  Widget? get videoView => _videoView ??= playbackAdapter.buildVideoView();
 
   void registerBackRequestHandler(Object owner, bool Function() handler) {
     _backHandlerOwner = owner;
@@ -80,6 +97,13 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> open(ContentItem item) async {
     final generation = ++_playbackLoadGeneration;
+    _videoView = null;
+    _favorite = null;
+    _favoriteBusy = false;
+    _favoriteLoading = false;
+    _controlError = null;
+    notifyListeners();
+    unawaited(_loadFavorite(item, generation));
     try {
       await playbackAdapter.load(item);
       _handlePlaybackState(playbackAdapter.state);
@@ -125,6 +149,136 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
+  Future<void> seekTo(Duration target) async {
+    if (!capabilities.supportsSeek) return;
+    final duration = _playbackState.value.duration;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration != null && target > duration) target = duration;
+    await _runCommand(
+      'playback_seek_failed',
+      () => playbackAdapter.seek(target),
+    );
+  }
+
+  Future<void> _loadFavorite(ContentItem item, int generation) async {
+    final repository = favorites;
+    final playlist = item.catalogPlaylistId;
+    final key = item.catalogItemKey;
+    if (repository == null || playlist == null || key == null) return;
+    _favoriteLoading = true;
+    notifyListeners();
+    try {
+      final value = await repository.isFavorite(
+        playlistId: playlist,
+        itemKey: key,
+      );
+      if (_disposed || generation != _playbackLoadGeneration) return;
+      _favorite = value;
+      notifyListeners();
+    } catch (error, stack) {
+      if (_disposed || generation != _playbackLoadGeneration) return;
+      _controlFailure(
+        'player_favorite_load_failed',
+        'Could not load favourite status.',
+        error,
+        stack,
+      );
+    } finally {
+      if (!_disposed && generation == _playbackLoadGeneration) {
+        _favoriteLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> toggleFavorite() async {
+    if (_disposed || !canFavorite || favoriteBusy) return;
+    final item = _playbackState.value.item!;
+    final generation = _playbackLoadGeneration;
+    _favoriteBusy = true;
+    _controlError = null;
+    notifyListeners();
+    try {
+      final current =
+          _favorite ??
+          await favorites!.isFavorite(
+            playlistId: item.catalogPlaylistId!,
+            itemKey: item.catalogItemKey!,
+          );
+      await favorites!.setFavorite(
+        playlistId: item.catalogPlaylistId!,
+        itemKey: item.catalogItemKey!,
+        favorite: !current,
+      );
+      if (!_disposed && generation == _playbackLoadGeneration) {
+        _favorite = !current;
+      }
+    } catch (error, stack) {
+      if (!_disposed && generation == _playbackLoadGeneration) {
+        _controlFailure(
+          'player_favorite_save_failed',
+          'Could not update favourites. Please try again.',
+          error,
+          stack,
+        );
+      }
+    } finally {
+      if (!_disposed && generation == _playbackLoadGeneration) {
+        _favoriteBusy = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> selectTrack(String id, {required bool subtitle}) async {
+    if (_disposed) return false;
+    final adapter = playbackAdapter;
+    if (adapter is! PlaybackTrackAdapter ||
+        !(subtitle
+            ? capabilities.supportsSubtitleTracks
+            : capabilities.supportsAudioTracks)) {
+      return false;
+    }
+    final generation = _playbackLoadGeneration;
+    _controlError = null;
+    final tracks = adapter as PlaybackTrackAdapter;
+    try {
+      if (subtitle) {
+        await tracks.selectSubtitleTrack(id);
+      } else {
+        await tracks.selectAudioTrack(id);
+      }
+      if (_disposed || generation != _playbackLoadGeneration) return false;
+      _handlePlaybackState(adapter.state);
+      return true;
+    } catch (error, stack) {
+      if (!_disposed && generation == _playbackLoadGeneration) {
+        _controlFailure(
+          'player_track_selection_failed',
+          'Could not change track. Please try again.',
+          error,
+          stack,
+        );
+      }
+      return false;
+    }
+  }
+
+  void _controlFailure(
+    String event,
+    String message,
+    Object error,
+    StackTrace stack,
+  ) {
+    _logger.error(
+      event,
+      error: safePlaybackLabel(error.toString()),
+      stackTrace: StackTrace.fromString(redactSensitiveText(stack.toString())),
+    );
+    _controlError = message;
+    notifyListeners();
+  }
+
   Future<void> setVolume(double volume) async {
     if (!capabilities.supportsVolume) return;
     await _runCommand(
@@ -158,7 +312,7 @@ class PlayerController extends ChangeNotifier {
   void _recordFailure(String event, Object error, StackTrace stackTrace) {
     _logger.error(
       event,
-      error: redactSensitiveText(error.toString()),
+      error: safePlaybackLabel(error.toString()),
       stackTrace: StackTrace.fromString(
         redactSensitiveText(stackTrace.toString()),
       ),
@@ -166,7 +320,9 @@ class PlayerController extends ChangeNotifier {
     if (!_disposed) {
       _playbackState.value = _playbackState.value.copyWith(
         status: PlaybackStatus.error,
-        errorKind: classifyPlaybackError(error.toString()),
+        errorKind: error is PlaybackConfigurationError
+            ? PlaybackErrorKind.configuration
+            : classifyPlaybackError(error.toString()),
         clearMessage: true,
       );
     }

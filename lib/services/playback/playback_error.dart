@@ -4,7 +4,13 @@ enum PlaybackErrorKind {
   timeout,
   unsupportedFormat,
   network,
+  configuration,
   unknown,
+}
+
+class PlaybackConfigurationError extends StateError {
+  PlaybackConfigurationError()
+    : super('Playback requires a securely built webOS package.');
 }
 
 PlaybackErrorKind classifyPlaybackError(String raw) {

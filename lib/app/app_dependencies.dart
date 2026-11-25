@@ -7,6 +7,7 @@ import '../platform/platform_capabilities.dart';
 import '../platform/platform_profile.dart';
 import '../platform/telemetry_settings_store.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
+import '../services/catalog/user_library_repository.dart';
 import '../services/diagnostics/startup_preflight.dart';
 import '../services/logging/app_logger.dart';
 import '../services/metadata/movie_metadata.dart';
@@ -135,6 +136,7 @@ class AppDependencies {
       navigationController: navigationController,
     );
     final playerController = PlayerController(
+      favorites: SqliteUserLibraryRepository(databaseAdapter: databaseAdapter),
       playbackAdapter: playbackAdapter,
       navigationController: navigationController,
       logger: logger,

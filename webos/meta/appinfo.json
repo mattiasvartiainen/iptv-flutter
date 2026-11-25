@@ -15,7 +15,7 @@
     "locationHint":"none",
     "noSplashOnLaunch":true,
     "spinnerOnLaunch": false,
-    "transparent":false,
+    "transparent":true,
     "uiRevision":2,
     "requiredACG": [
         "securitykey.operation"

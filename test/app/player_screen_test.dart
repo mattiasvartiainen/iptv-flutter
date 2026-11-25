@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
+import 'package:iptv_flutter/services/catalog/favorite_repository.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 import 'package:iptv_flutter/state/app_preferences_controller.dart';
@@ -37,6 +39,8 @@ Future<_PlayerHarness> _pumpPlayerApp(
   Size size = const Size(1280, 720),
   double textScale = 1,
   PlaybackAdapter? playbackAdapter,
+  ContentItem? item,
+  FavoriteRepository? favorites,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -61,6 +65,7 @@ Future<_PlayerHarness> _pumpPlayerApp(
     navigationController: navigation,
   );
   final player = PlayerController(
+    favorites: favorites,
     playbackAdapter:
         playbackAdapter ??
         FakePlaybackAdapter(transitionDelay: const Duration(milliseconds: 1)),
@@ -77,7 +82,10 @@ Future<_PlayerHarness> _pumpPlayerApp(
 
   await tester.pumpWidget(
     MediaQuery(
-      data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+      data: MediaQueryData(
+        size: size,
+        textScaler: TextScaler.linear(textScale),
+      ),
       child: IptvApp(
         dependencies: AppDependencies.forTesting(
           appController: app,
@@ -88,7 +96,7 @@ Future<_PlayerHarness> _pumpPlayerApp(
       ),
     ),
   );
-  final opening = player.openPlayer(fixtureCatalog.first);
+  final opening = player.openPlayer(item ?? fixtureCatalog.first);
   await tester.pump(const Duration(milliseconds: 1));
   await opening;
   await tester.pumpAndSettle();
@@ -102,6 +110,260 @@ bool _controlsAreIgnoringInput(WidgetTester tester) => tester
     .ignoring;
 
 void main() {
+  testWidgets(
+    'unsafe webOS build reports a setup error and visible Back exits',
+    (tester) async {
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: _ConfigurationPlaybackAdapter(),
+      );
+      expect(
+        find.text(
+          'This webOS package must be rebuilt using the supported build script.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Back'));
+      await tester.pumpAndSettle();
+      expect(harness.navigation.currentRoute, isA<HomeRoute>());
+    },
+  );
+  testWidgets(
+    'an obsolete track chooser cannot change a newer playback session',
+    (tester) async {
+      final adapter = _TrackingPlaybackAdapter();
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: adapter,
+        item: _movie,
+      );
+      await tester.tap(find.byTooltip('Subtitles'));
+      await tester.pumpAndSettle();
+      final opening = harness.player.open(_movie);
+      await tester.pump(const Duration(milliseconds: 1));
+      await opening;
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('English'));
+      await tester.pumpAndSettle();
+      expect(
+        harness.player.playbackState.value.mediaInfo.selectedSubtitleId,
+        'no',
+      );
+      expect(harness.navigation.currentRoute, isA<PlayerRoute>());
+    },
+  );
+  testWidgets(
+    'position updates retain the video surface without rebuilding it',
+    (tester) async {
+      final adapter = _CountingVideoAdapter();
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: adapter,
+        item: _movie,
+      );
+      final initialBuilds = adapter.builds;
+      for (var i = 1; i <= 20; i++) {
+        await harness.player.seekTo(Duration(seconds: i));
+        await tester.pump();
+      }
+      expect(adapter.viewsCreated, 1);
+      expect(adapter.builds, initialBuilds);
+      expect(initialBuilds, greaterThan(0));
+    },
+  );
+  testWidgets('tap reveals without pausing, centre pauses and Space resumes', (
+    tester,
+  ) async {
+    final harness = await _pumpPlayerApp(tester);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tapAt(const Offset(400, 250));
+    await tester.pumpAndSettle();
+    expect(_controlsAreIgnoringInput(tester), isFalse);
+    expect(harness.player.playbackState.value.status, PlaybackStatus.playing);
+    await tester.tap(find.byKey(const ValueKey('player-central-play')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 5));
+    expect(_controlsAreIgnoringInput(tester), isFalse);
+    expect(harness.player.playbackState.value.status, PlaybackStatus.paused);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(harness.player.playbackState.value.status, PlaybackStatus.playing);
+  });
+
+  testWidgets(
+    'hidden controls exclude focus and remote OK reveals then activates',
+    (tester) async {
+      final harness = await _pumpPlayerApp(tester);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(milliseconds: 200));
+      final exclude = tester.widget<ExcludeFocus>(
+        find.descendant(
+          of: find.byKey(const ValueKey('player-controls')),
+          matching: find.byType(ExcludeFocus),
+        ),
+      );
+      expect(exclude.excluding, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      expect(harness.player.playbackState.value.status, PlaybackStatus.playing);
+      expect(
+        FocusManager.instance.primaryFocus?.debugLabel,
+        'Player play pause',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      expect(harness.player.playbackState.value.status, PlaybackStatus.paused);
+    },
+  );
+
+  testWidgets('visible Back exits immediately', (tester) async {
+    final harness = await _pumpPlayerApp(tester);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(harness.navigation.currentRoute, isA<HomeRoute>());
+    expect(harness.player.playbackState.value.status, PlaybackStatus.stopped);
+  });
+
+  testWidgets(
+    'movie slider commits one seek, reports facts and tracks preserve Back',
+    (tester) async {
+      final adapter = _TrackingPlaybackAdapter();
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: adapter,
+        item: _movie,
+      );
+      expect(find.text('1920 x 1080'), findsOneWidget);
+      expect(find.text('23.976 fps'), findsOneWidget);
+      expect(find.text('h264'), findsOneWidget);
+      expect(find.text('aac'), findsOneWidget);
+      expect(find.text('5.1'), findsOneWidget);
+      final slider = tester.widget<Slider>(
+        find.byKey(const ValueKey('player-seek')),
+      );
+      slider.onChangeStart!(1000);
+      slider.onChanged!(2000);
+      slider.onChanged!(3000);
+      expect(adapter.seeks, isEmpty);
+      slider.onChangeEnd!(3000);
+      await tester.pumpAndSettle();
+      expect(adapter.seeks, [const Duration(seconds: 3)]);
+      expect(
+        harness.player.playbackState.value.position,
+        const Duration(seconds: 3),
+      );
+      expect(_controlsAreIgnoringInput(tester), isFalse);
+      await tester.tap(find.byTooltip('Subtitles'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('English'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(_controlsAreIgnoringInput(tester), isFalse);
+      expect(harness.navigation.currentRoute, isA<PlayerRoute>());
+      await tester.tap(find.byTooltip('Subtitles'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('English'));
+      await tester.pumpAndSettle();
+      expect(
+        harness.player.playbackState.value.mediaInfo.selectedSubtitleId,
+        '1',
+      );
+      await tester.tap(find.byTooltip('Subtitles'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Off'));
+      await tester.pumpAndSettle();
+      expect(
+        harness.player.playbackState.value.mediaInfo.selectedSubtitleId,
+        'no',
+      );
+      await tester.tap(find.byTooltip('Audio tracks'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      expect(harness.player.playbackState.value.mediaInfo.selectedAudioId, '2');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'hover reveals and favourite toggles persist through repository',
+    (tester) async {
+      final library = _Favorites();
+      await _pumpPlayerApp(tester, item: _movie, favorites: library);
+      await tester.tap(find.byTooltip('Add to favourites'));
+      await tester.pumpAndSettle();
+      expect(library.value, isTrue);
+      expect(find.byTooltip('Remove from favourites'), findsOneWidget);
+      await tester.tap(find.byTooltip('Remove from favourites'));
+      await tester.pumpAndSettle();
+      expect(library.value, isFalse);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(milliseconds: 200));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(10, 10));
+      await mouse.moveTo(const Offset(30, 30));
+      await tester.pumpAndSettle();
+      expect(_controlsAreIgnoringInput(tester), isFalse);
+      await mouse.removePointer();
+    },
+  );
+
+  for (final size in [
+    const Size(640, 360),
+    const Size(390, 844),
+    const Size(1920, 1080),
+  ]) {
+    testWidgets('movie controls fit $size at large text scale', (tester) async {
+      await _pumpPlayerApp(
+        tester,
+        size: size,
+        textScale: 2,
+        item: _movie,
+        playbackAdapter: _TrackingPlaybackAdapter(),
+      );
+      expect(tester.takeException(), isNull);
+      final centre = tester.getRect(
+        find.byKey(const ValueKey('player-central-play')),
+      );
+      expect(
+        centre.overlaps(
+          tester.getRect(find.byKey(const ValueKey('player-seek'))),
+        ),
+        isFalse,
+      );
+      for (final label in ['1920 x 1080', '23.976 fps', 'h264', 'aac', '5.1']) {
+        expect(centre.overlaps(tester.getRect(find.text(label))), isFalse);
+      }
+    });
+
+    testWidgets(
+      'remote reaches the movie seek slider and arrows seek at $size',
+      (tester) async {
+        final adapter = _TrackingPlaybackAdapter();
+        await _pumpPlayerApp(
+          tester,
+          size: size,
+          playbackAdapter: adapter,
+          item: _movie,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'Player seek');
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(adapter.seeks, isNotEmpty);
+        expect(adapter.state.position, greaterThan(Duration.zero));
+      },
+    );
+  }
   testWidgets('player renders fullscreen video surface and readable overlay', (
     tester,
   ) async {
@@ -197,6 +459,91 @@ void main() {
     expect(harness.navigation.currentRoute, isA<PlayerRoute>());
     expect(tester.takeException(), isNull);
   });
+}
+
+const _movie = ContentItem(
+  group: 'Movies',
+  id: 'movie',
+  title: 'Movie',
+  type: ContentType.vod,
+  streamUrl: 'https://example.invalid/movie.mp4',
+  catalogPlaylistId: 'playlist',
+  catalogItemKey: 42,
+);
+
+class _TrackingPlaybackAdapter extends FakePlaybackAdapter {
+  _TrackingPlaybackAdapter()
+    : super(
+        transitionDelay: const Duration(milliseconds: 1),
+        duration: const Duration(minutes: 90),
+        mediaInfo: const PlaybackMediaInfo(
+          width: 1920,
+          height: 1080,
+          fps: 23.976,
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          channelLayout: '5.1',
+          audioTracks: [
+            PlaybackTrack(id: 'auto', label: 'Auto'),
+            PlaybackTrack(id: '2', label: 'Swedish'),
+          ],
+          subtitleTracks: [
+            PlaybackTrack(id: 'no', label: 'Off'),
+            PlaybackTrack(id: '1', label: 'English'),
+          ],
+          selectedAudioId: 'auto',
+          selectedSubtitleId: 'no',
+        ),
+      );
+  final seeks = <Duration>[];
+  @override
+  Future<void> seek(Duration position) async {
+    seeks.add(position);
+    await super.seek(position);
+  }
+}
+
+class _Favorites implements FavoriteRepository {
+  bool value = false;
+  @override
+  Future<bool> isFavorite({
+    required String playlistId,
+    required int itemKey,
+    String profileId = 'default',
+  }) async => value;
+  @override
+  Future<void> setFavorite({
+    required String playlistId,
+    required int itemKey,
+    required bool favorite,
+    String profileId = 'default',
+  }) async => value = favorite;
+}
+
+class _CountingVideoAdapter extends _TrackingPlaybackAdapter {
+  int viewsCreated = 0;
+  int builds = 0;
+  @override
+  Widget buildVideoView() {
+    viewsCreated++;
+    return _CountingVideoView(onBuild: () => builds++);
+  }
+}
+
+class _CountingVideoView extends StatelessWidget {
+  const _CountingVideoView({required this.onBuild});
+  final VoidCallback onBuild;
+  @override
+  Widget build(BuildContext context) {
+    onBuild();
+    return const SizedBox.expand();
+  }
+}
+
+class _ConfigurationPlaybackAdapter extends FakePlaybackAdapter {
+  @override
+  Future<void> load(ContentItem item) async =>
+      throw PlaybackConfigurationError();
 }
 
 class _RecoveringPlaybackAdapter extends FakePlaybackAdapter {

@@ -5,22 +5,30 @@ import 'package:flutter/widgets.dart';
 import '../../models/content_item.dart';
 import 'playback_contract.dart';
 
-class FakePlaybackAdapter implements PlaybackAdapter {
+class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   FakePlaybackAdapter({
     Duration transitionDelay = const Duration(milliseconds: 450),
-  }) : _transitionDelay = transitionDelay;
+    PlaybackMediaInfo mediaInfo = const PlaybackMediaInfo(),
+    Duration? duration,
+  }) : _transitionDelay = transitionDelay,
+       _mediaInfo = mediaInfo,
+       _duration = duration;
 
   final Duration _transitionDelay;
+  final PlaybackMediaInfo _mediaInfo;
+  final Duration? _duration;
   final _stateController = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
 
   @override
-  PlaybackCapabilities get capabilities => const PlaybackCapabilities(
+  PlaybackCapabilities get capabilities => PlaybackCapabilities(
     supportsSeek: true,
     supportsPause: true,
     supportsVolume: true,
     supportsDrm: false,
     supportsLiveStreams: true,
+    supportsAudioTracks: _mediaInfo.audioTracks.isNotEmpty,
+    supportsSubtitleTracks: _mediaInfo.subtitleTracks.isNotEmpty,
   );
 
   @override
@@ -49,6 +57,8 @@ class FakePlaybackAdapter implements PlaybackAdapter {
         item: item,
         loadStartedAt: loadStartedAt,
         playbackStartedAt: DateTime.now(),
+        duration: _duration,
+        mediaInfo: _mediaInfo,
       ),
     );
   }
@@ -79,7 +89,28 @@ class FakePlaybackAdapter implements PlaybackAdapter {
 
   @override
   Future<void> setVolume(double volume) async {
-    // No-op for fake playback.
+    _publish(_state.copyWith(volume: volume.clamp(0, 100)));
+  }
+
+  @override
+  Future<void> selectAudioTrack(String id) => _selectTrack(id, subtitle: false);
+
+  @override
+  Future<void> selectSubtitleTrack(String id) =>
+      _selectTrack(id, subtitle: true);
+
+  Future<void> _selectTrack(String id, {required bool subtitle}) async {
+    final tracks = subtitle
+        ? _state.mediaInfo.subtitleTracks
+        : _state.mediaInfo.audioTracks;
+    if (!tracks.any((track) => track.id == id)) {
+      throw StateError('Track unavailable.');
+    }
+    _publish(
+      _state.copyWith(
+        mediaInfo: _state.mediaInfo.withSelectedTrack(id, subtitle: subtitle),
+      ),
+    );
   }
 
   void _publish(PlaybackState nextState) {

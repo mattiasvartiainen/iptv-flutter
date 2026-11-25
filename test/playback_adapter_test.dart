@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/platform/app_platform.dart';
 import 'package:iptv_flutter/platform/platform_profile.dart';
+import 'package:iptv_flutter/platform/webos_playback_adapter.dart';
 import 'package:iptv_flutter/services/playback/fake_playback.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
 import 'package:iptv_flutter/services/playback/video_player_playback.dart';
@@ -47,13 +48,13 @@ void main() {
     expect(adapter.state.position, const Duration(minutes: 2));
   });
 
-  test('webOS profile selects the video_player adapter', () {
+  test('webOS profile selects the dedicated playback adapter', () {
     final adapter = platformProfileFor(
       AppPlatform.webos,
     ).createPlaybackAdapter();
     addTearDown(adapter.dispose);
 
-    expect(adapter, isA<VideoPlayerPlaybackAdapter>());
+    expect(adapter, isA<WebOsPlaybackAdapter>());
   });
 
   test('Android profile selects the video_player adapter', () {

@@ -15,6 +15,8 @@ class ContentItem {
     this.posterUrl,
     this.metadata = const <String, String>{},
     this.sourceIndex = 0,
+    this.catalogPlaylistId,
+    this.catalogItemKey,
   });
 
   final String id;
@@ -27,4 +29,6 @@ class ContentItem {
   final String? posterUrl;
   final Map<String, String> metadata;
   final int sourceIndex;
+  final String? catalogPlaylistId;
+  final int? catalogItemKey;
 }

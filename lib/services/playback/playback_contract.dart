@@ -14,6 +14,9 @@ class PlaybackCapabilities {
     required this.supportsVolume,
     required this.supportsDrm,
     required this.supportsLiveStreams,
+    this.supportsAudioTracks = false,
+    this.supportsSubtitleTracks = false,
+    this.usesPlatformVideoPlane = false,
   });
 
   final bool supportsSeek;
@@ -21,6 +24,61 @@ class PlaybackCapabilities {
   final bool supportsVolume;
   final bool supportsDrm;
   final bool supportsLiveStreams;
+  final bool supportsAudioTracks;
+  final bool supportsSubtitleTracks;
+  final bool usesPlatformVideoPlane;
+}
+
+@immutable
+class PlaybackTrack {
+  const PlaybackTrack({required this.id, required this.label});
+  final String id;
+  final String label;
+}
+
+@immutable
+class PlaybackMediaInfo {
+  const PlaybackMediaInfo({
+    this.width,
+    this.height,
+    this.fps,
+    this.videoCodec,
+    this.audioCodec,
+    this.channelLayout,
+    this.audioTracks = const [],
+    this.subtitleTracks = const [],
+    this.selectedAudioId,
+    this.selectedSubtitleId,
+  });
+  final int? width;
+  final int? height;
+  final double? fps;
+  final String? videoCodec;
+  final String? audioCodec;
+  final String? channelLayout;
+  final List<PlaybackTrack> audioTracks;
+  final List<PlaybackTrack> subtitleTracks;
+  final String? selectedAudioId;
+  final String? selectedSubtitleId;
+
+  PlaybackMediaInfo withSelectedTrack(String id, {required bool subtitle}) =>
+      PlaybackMediaInfo(
+        width: width,
+        height: height,
+        fps: fps,
+        videoCodec: videoCodec,
+        audioCodec: audioCodec,
+        channelLayout: channelLayout,
+        audioTracks: audioTracks,
+        subtitleTracks: subtitleTracks,
+        selectedAudioId: subtitle ? selectedAudioId : id,
+        selectedSubtitleId: subtitle ? id : selectedSubtitleId,
+      );
+}
+
+abstract interface class PlaybackTrackAdapter {
+  Future<void> selectAudioTrack(String id);
+  Future<void> selectSubtitleTrack(String id);
 }
 
 class PlaybackState {
@@ -34,6 +92,8 @@ class PlaybackState {
     this.isBuffering = false,
     this.loadStartedAt,
     this.playbackStartedAt,
+    this.mediaInfo = const PlaybackMediaInfo(),
+    this.volume = 100,
   });
 
   const PlaybackState.idle() : this(status: PlaybackStatus.idle);
@@ -47,6 +107,8 @@ class PlaybackState {
   final bool isBuffering;
   final DateTime? loadStartedAt;
   final DateTime? playbackStartedAt;
+  final PlaybackMediaInfo mediaInfo;
+  final double volume;
 
   Duration? get startupLatency =>
       loadStartedAt == null || playbackStartedAt == null
@@ -67,6 +129,8 @@ class PlaybackState {
     DateTime? loadStartedAt,
     DateTime? playbackStartedAt,
     bool clearPlaybackStartedAt = false,
+    PlaybackMediaInfo? mediaInfo,
+    double? volume,
   }) {
     return PlaybackState(
       status: status ?? this.status,
@@ -80,6 +144,8 @@ class PlaybackState {
       playbackStartedAt: clearPlaybackStartedAt
           ? null
           : (playbackStartedAt ?? this.playbackStartedAt),
+      mediaInfo: mediaInfo ?? this.mediaInfo,
+      volume: volume ?? this.volume,
     );
   }
 }

@@ -3,12 +3,14 @@ import 'package:sqflite_common/sqlite_api.dart';
 import '../storage/storage_contracts.dart';
 import 'catalog_item_sql.dart';
 import 'catalog_query.dart';
+import 'favorite_repository.dart';
 
 /// Per-profile favorites, playback progress and watch history.
 ///
 /// Rows are keyed by `(playlist_id, item_key)` rather than item row ids, so
 /// they survive catalog refreshes that renumber or temporarily remove items.
-abstract interface class UserLibraryRepository {
+abstract interface class UserLibraryRepository implements FavoriteRepository {
+  @override
   Future<void> setFavorite({
     required String playlistId,
     required int itemKey,
@@ -57,6 +59,23 @@ class SqliteUserLibraryRepository implements UserLibraryRepository {
     : _databaseAdapter = databaseAdapter;
 
   final DatabaseAdapter _databaseAdapter;
+
+  @override
+  Future<bool> isFavorite({
+    required String playlistId,
+    required int itemKey,
+    String profileId = 'default',
+  }) async {
+    final db = await _databaseAdapter.database;
+    final rows = await db.query(
+      'favorites_v8',
+      columns: ['item_key'],
+      where: 'profile_id = ? AND playlist_id = ? AND item_key = ?',
+      whereArgs: [profileId, playlistId, itemKey],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
 
   @override
   Future<void> setFavorite({

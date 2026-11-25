@@ -8,9 +8,11 @@ import '../../models/content_item.dart';
 import '../logging/app_logger.dart';
 import 'playback_contract.dart';
 import 'playback_http_headers.dart';
+import 'playback_labels.dart';
 import 'playback_logging.dart';
 
-class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
+class DesktopMediaKitPlaybackAdapter
+    implements PlaybackAdapter, PlaybackTrackAdapter {
   DesktopMediaKitPlaybackAdapter({
     bool disableVideoOutput = false,
     bool enableHardwareAcceleration = true,
@@ -58,6 +60,15 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
         ),
       );
     });
+    _infoSubscriptions.addAll([
+      _player.stream.tracks.listen((_) => _publishMediaInfo()),
+      _player.stream.track.listen((_) => _publishMediaInfo()),
+      _player.stream.videoParams.listen((_) => _publishMediaInfo()),
+      _player.stream.audioParams.listen((_) => _publishMediaInfo()),
+      _player.stream.volume.listen(
+        (volume) => _publish(_state.copyWith(volume: volume)),
+      ),
+    ]);
   }
 
   final bool _disableVideoOutput;
@@ -75,6 +86,8 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
   StreamSubscription<bool>? _bufferingSubscription;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration>? _durationSubscription;
+  final _infoSubscriptions = <StreamSubscription<dynamic>>[];
+  Widget? _videoView;
 
   @override
   PlaybackCapabilities get capabilities => const PlaybackCapabilities(
@@ -83,6 +96,8 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
     supportsVolume: true,
     supportsDrm: false,
     supportsLiveStreams: true,
+    supportsAudioTracks: true,
+    supportsSubtitleTracks: true,
   );
 
   @override
@@ -95,9 +110,9 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
   Widget? buildVideoView() {
     final controller = _videoController;
     if (_disableVideoOutput || controller == null) return null;
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: Video(controller: controller),
+    return _videoView ??= Video(
+      controller: controller,
+      controls: NoVideoControls,
     );
   }
 
@@ -181,6 +196,35 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
     await _player.setVolume(clamped);
   }
 
+  @override
+  Future<void> selectAudioTrack(String id) async {
+    final track = _player.state.tracks.audio
+        .where((track) => track.id == id)
+        .firstOrNull;
+    if (track == null) throw StateError('Audio track is no longer available.');
+    await _player.setAudioTrack(track);
+    _publishMediaInfo();
+  }
+
+  @override
+  Future<void> selectSubtitleTrack(String id) async {
+    final track = _player.state.tracks.subtitle
+        .where((track) => track.id == id)
+        .firstOrNull;
+    if (track == null) {
+      throw StateError('Subtitle track is no longer available.');
+    }
+    await _player.setSubtitleTrack(track);
+    _publishMediaInfo();
+  }
+
+  void _publishMediaInfo() {
+    if (_state.item == null) return;
+    _publish(
+      _state.copyWith(mediaInfo: desktopPlaybackMediaInfo(_player.state)),
+    );
+  }
+
   void _publish(PlaybackState nextState) {
     if (nextState.status == PlaybackStatus.playing &&
         nextState.playbackStartedAt == null &&
@@ -205,6 +249,9 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
 
   @override
   void dispose() {
+    for (final subscription in _infoSubscriptions) {
+      unawaited(subscription.cancel());
+    }
     _playingSubscription?.cancel();
     _errorSubscription?.cancel();
     _completedSubscription?.cancel();
@@ -214,4 +261,65 @@ class DesktopMediaKitPlaybackAdapter implements PlaybackAdapter {
     _player.dispose();
     _stateController.close();
   }
+}
+
+PlaybackMediaInfo desktopPlaybackMediaInfo(PlayerState state) {
+  final videos = state.tracks.video.where(
+    (track) => state.track.video.id == 'auto'
+        ? track.id != 'auto' &&
+              track.id != 'no' &&
+              track.image != true &&
+              track.albumart != true
+        : track.id == state.track.video.id,
+  );
+  final audios = state.tracks.audio.where(
+    (track) => state.track.audio.id == 'auto'
+        ? track.id != 'auto' && track.id != 'no'
+        : track.id == state.track.audio.id,
+  );
+  T? common<T>(Iterable<T?> values) {
+    final unique = values.toSet();
+    return unique.length == 1 ? unique.single : null;
+  }
+
+  String label(String id, String? title, String? language, String? codec) {
+    if (id == 'auto') return 'Auto';
+    if (id == 'no') return 'Off';
+    final parts = [language, title, codec]
+        .map((value) => safePlaybackLabel(value))
+        .where((value) => value.isNotEmpty)
+        .toList();
+    return parts.isEmpty ? 'Track $id' : parts.join(' - ');
+  }
+
+  return PlaybackMediaInfo(
+    width: state.videoParams.w,
+    height: state.videoParams.h,
+    fps: common(videos.map((track) => track.fps)),
+    videoCodec: safePlaybackLabel(common(videos.map((track) => track.codec))),
+    audioCodec: safePlaybackLabel(common(audios.map((track) => track.codec))),
+    channelLayout: safePlaybackLabel(state.audioParams.channels),
+    selectedAudioId: state.track.audio.id,
+    selectedSubtitleId: state.track.subtitle.id,
+    audioTracks: List.unmodifiable(
+      state.tracks.audio
+          .where((track) => !track.uri && track.id != 'no')
+          .map(
+            (track) => PlaybackTrack(
+              id: track.id,
+              label: label(track.id, track.title, track.language, track.codec),
+            ),
+          ),
+    ),
+    subtitleTracks: List.unmodifiable(
+      state.tracks.subtitle
+          .where((track) => !track.uri)
+          .map(
+            (track) => PlaybackTrack(
+              id: track.id,
+              label: label(track.id, track.title, track.language, track.codec),
+            ),
+          ),
+    ),
+  );
 }

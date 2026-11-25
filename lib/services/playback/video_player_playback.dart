@@ -159,6 +159,11 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         duration: value.duration == Duration.zero ? null : value.duration,
         clearDuration: value.duration == Duration.zero,
         isBuffering: value.isBuffering,
+        mediaInfo: PlaybackMediaInfo(
+          width: value.size.width > 0 ? value.size.width.round() : null,
+          height: value.size.height > 0 ? value.size.height.round() : null,
+        ),
+        volume: value.volume * 100,
         playbackStartedAt: value.isPlaying
             ? (_state.playbackStartedAt ?? DateTime.now())
             : null,

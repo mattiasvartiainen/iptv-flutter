@@ -11,7 +11,7 @@ Legend: ✅ resolved · 🔶 open · 🔬 needs a hardware/tooling spike
 - **Target baseline:** webOS 26 "Re:New" or newer. ✅
 - **Build host:** Ubuntu 22.04 / 24.04 / 26.04 only; Windows host must use WSL2 or a Docker DevContainer. ✅
 - **Toolchain:** `flutter-webos` SDK (Flutter 3.38.10 / Dart 3.10.9), webOS NDK, `ares` CLI ≥ 3.2.4. ✅
-- **Playback plugins:** `video_player_webos` (inline HLS via the webOS media pipeline), `video_player_drm` (DRM). No custom HLS engine. ✅
+- **Playback plugins:** `video_player_webos` (standard `video_player` API), `video_player_drm` (separate API with embedded track selection and optional DRM). The approved player slice selects the latter on LG, without a custom HLS engine. ✅
 - **Persistence plugins:** `shared_preferences_webos`, `flutter_secure_storage_webos`, `sqflite_webos`, `path_provider_webos`. ✅
 - **Network/system plugins:** `connectivity_plus_webos`, `webos_service_bridge` (Luna Service, ACG-gated). ✅
 - **Remote input:** no dedicated remote-key plugin; handled via Flutter focus + hardware key events. ✅
@@ -21,9 +21,23 @@ Legend: ✅ resolved · 🔶 open · 🔬 needs a hardware/tooling spike
 ### D1 — HLS playback validation 🔬 (highest risk)
 Keep the app-level playback interface stable and run Phase 0 validation in two steps:
 1) Linux/desktop spike with the current `media_kit` adapter to validate UI states and telemetry.
-2) webOS hardware spike with the `video_player_webos` adapter for real compatibility.
+2) webOS hardware spike with the dedicated `video_player_drm` adapter for real compatibility.
 Run 3–4 representative streams (different codecs, live vs VOD), record startup latency/buffering
-behavior/outcome, and decide whether `video_player_drm` is required.
+behavior/outcome. The user approved `video_player_drm` for embedded audio/subtitle
+selection in WP-player-overlay (2026-11-25), including ordinary non-DRM streams.
+It is a separate adapter, not a replacement import for standard `video_player`.
+Per-stream volume and custom HTTP headers are unsupported on LG and must not be
+advertised. Native-plane rendering requires a transparent manifest/player
+surface. Codec/FPS values unavailable from LG remain absent. DRM licence flows
+are not added by this slice; representative playback, track switching and
+native-plane compositing still require the supported Linux/webOS toolchain and TV.
+The pinned LG sources emit stream URLs through their native logger. The
+supported build wrapper therefore verifies and patches that sink in a private
+build cache, and only then enables the adapter's safe-build marker. Bypassing
+the wrapper intentionally disables playback rather than exposing credentials.
+Do not manually set `IPTV_WEBOS_SAFE_NATIVE_LOGS`; use `tool/build-webos.sh`.
+The old `video_player_webos` dependency is removed to avoid competing native
+registrations. Safe Dart-side status/error reporting is retained.
 - Affects: [architecture.md](architecture.md) §8, [implementation-plan.md](implementation-plan.md) Phase 0/6.
 
 ### D2 — Desktop playback adapter ✅
