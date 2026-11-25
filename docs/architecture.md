@@ -206,6 +206,15 @@ paused, focused, scrubbing or choosing a track. Hidden controls are excluded fro
 focus, semantics and pointer input. Visible Back exits immediately; Escape/system
 Back close a chooser first, otherwise hide controls before exiting.
 
+Player presentation lives in `lib/features/player/widgets/`: `PlayerControls`
+composes the responsive overlay and controller command bindings; `PlayerHeader`
+renders safe title/status/facts and favourite state; `PlayerSeekBar` renders the
+owner-provided preview; `PlayerTrackDialog` and `PlayerErrorPanel` receive data
+and callbacks without navigation or service dependencies. `PlayerScreen` retains
+focus-node lifetime, auto-hide timers, input/Back policy, seek-preview state and
+chooser session/focus restoration. Presentation widgets do not own playback
+sessions, introduce new subscriptions or change native surface caching.
+
 Playback state carries backend-neutral technical facts and track lists. Unknown
 facts remain absent; source FPS is not a rendered-FPS counter, and audio sample
 format/channel count are not guessed into codec or 5.1 labels. Absolute seek

@@ -33,6 +33,24 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-player-widgets extracts focused player presentation without behavior changes.
+Dependencies: WP-player-session. Touches: PlayerScreen, player controls/header,
+seek bar, track dialog/error panel, their widget tests and architecture docs.
+Skills: flutter-apply-architecture-best-practices, dart-add-unit-test,
+dart-run-static-analysis. Keep focus nodes, timers, seek preview, chooser/session
+guards and input/navigation policy in PlayerScreen. Preserve widget keys,
+layout constraints, labels, capability gates and controller commands. No backend,
+import, device-policy or state-management changes.
+
+PlayerScreen is reduced from 815 to 380 lines; extracted stateless widgets are
+60-243 lines each. Existing pointer/remote/Back, scrubbing, chooser/retry,
+favourite, large-text layout and video-surface identity tests remain unchanged.
+Isolated widget tests cover callback delegation, controlled seek preview,
+technical/status labels, capability gating, diagnostics and remote selection.
+Verification: 69 focused tests pass; Windows debug build passes; analyzer
+retains only the two baseline infos. Broad regression: 840 passes and the two
+known Settings focus failures, excluding the previously stalled telemetry file.
+
 WP-player-session defines and verifies latest-request-wins playback ownership.
 Dependencies: WP-player-overlay. Touches: playback contract/session boundary,
 native and fake adapters, PlayerController, owned-resource teardown and their
@@ -138,6 +156,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-widgets | Focused player presentation widgets | Player | WP-player-session | M | DONE (2026-11-25): Stateless controls/header, seek bar, track dialog and error panel; 69 focused tests and Windows debug build pass. |
 | WP-player-session | Playback session and lifecycle guarantees | Player | WP-player-overlay | M | DONE (2026-11-25): Latest-wins ownership, cancellable loads/restarts, awaited cleanup; 103 focused tests and Windows debug build pass. Regression caveats documented above. |
 | WP-player-overlay | Shared player controls, tracks and favourites | Player | WP-XM-medium | M | DONE (2026-11-25; desktop/unit/build-helper verified, LG package/hardware pending) |
 | WP-DB-migration-tests | Persisted SQL migration regression matrix | Storage | WP-XM-medium | S | DONE (2026-11-25): 18 real persisted-upgrade/rollback tests cover v1-v17, seeded data, schema/ledger parity, SQLite/FTS/FK integrity and reopen/retry; 25 focused storage tests pass. Broad regression: 755 passes with two existing Settings/editor focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos. |
