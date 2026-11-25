@@ -48,6 +48,43 @@ void main() {
     expect(adapter.state.position, const Duration(minutes: 2));
   });
 
+  test('fake initialization cancellation prevents late autoplay', () async {
+    final adapter = FakePlaybackAdapter(
+      transitionDelay: const Duration(milliseconds: 20),
+    );
+    addTearDown(adapter.dispose);
+    final loading = adapter.load(item);
+    await adapter.stop();
+    await loading;
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+    expect(adapter.state.status, PlaybackStatus.stopped);
+    await adapter.play();
+    expect(adapter.state.status, PlaybackStatus.playing);
+  });
+
+  test(
+    'fake disposal cancels initialization and closes its stream once',
+    () async {
+      final adapter = FakePlaybackAdapter(
+        transitionDelay: const Duration(milliseconds: 20),
+      );
+      final loading = adapter.load(item);
+      final observed = <PlaybackState>[];
+      final subscription = adapter.states.listen(observed.add);
+      await Future<void>.delayed(Duration.zero);
+      observed.clear();
+      final disposal = adapter.dispose();
+      expect(adapter.dispose(), same(disposal));
+      await loading;
+      await disposal;
+      await adapter.play();
+      await adapter.load(item);
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+      expect(observed, isEmpty);
+      await subscription.cancel();
+    },
+  );
+
   test('webOS profile selects the dedicated playback adapter', () {
     final adapter = platformProfileFor(
       AppPlatform.webos,

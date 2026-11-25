@@ -10,12 +10,13 @@ import 'package:iptv_flutter/services/logging/app_logger.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 
 import '../support/catalog_fixtures.dart';
+import '../support/controlled_playback.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late NavigationController navigation;
-  late FakePlaybackAdapter adapter;
+  late PlaybackAdapter adapter;
   late PlayerController player;
 
   setUp(() {
@@ -28,8 +29,9 @@ void main() {
     );
   });
 
-  tearDown(() {
+  tearDown(() async {
     player.dispose();
+    await player.disposalComplete;
     navigation.dispose();
     _foregroundApp();
   });
@@ -102,6 +104,8 @@ void main() {
     navigation.pop();
 
     expect(navigation.currentRoute, isA<DetailsRoute>());
+    expect(player.playbackState.value.status, PlaybackStatus.stopped);
+    await Future<void>.delayed(Duration.zero);
     expect(adapter.state.status, PlaybackStatus.stopped);
   });
 
@@ -110,6 +114,8 @@ void main() {
 
     navigation.resetTo(const HomeRoute());
 
+    expect(player.playbackState.value.status, PlaybackStatus.stopped);
+    await Future<void>.delayed(Duration.zero);
     expect(adapter.state.status, PlaybackStatus.stopped);
   });
 
@@ -156,27 +162,181 @@ void main() {
     expect(adapter.state.status, PlaybackStatus.stopped);
   });
 
-  test('a late load completion after exit is stopped again', () async {
+  test('Back cancels initialization and prevents a late autoplay', () async {
     player.dispose();
-    final delayedAdapter = _DelayedPlaybackAdapter();
+    await player.disposalComplete;
+    final delayedAdapter = ControlledPlayback();
+    final initialization = delayedAdapter.loadGate = Completer<void>();
     adapter = delayedAdapter;
     player = PlayerController(
       playbackAdapter: adapter,
       navigationController: navigation,
     );
     final opening = player.openPlayer(fixtureCatalog.first);
+    await Future<void>.delayed(Duration.zero);
 
     navigation.pop();
-    expect(adapter.state.status, PlaybackStatus.stopped);
-    expect(delayedAdapter.stopCount, 1);
-
-    delayedAdapter.completeLoad.complete();
+    expect(player.playbackState.value.status, PlaybackStatus.stopped);
     await opening;
+    await Future<void>.delayed(Duration.zero);
+    expect(initialization.isCompleted, isFalse);
+
+    initialization.complete();
+    await Future<void>.delayed(Duration.zero);
 
     expect(navigation.currentRoute, isA<HomeRoute>());
     expect(adapter.state.status, PlaybackStatus.stopped);
-    expect(delayedAdapter.stopCount, 2);
+    expect(delayedAdapter.calls, isNot(contains('play')));
   });
+
+  test('replacement and same-item retry reject obsolete load errors', () async {
+    player.dispose();
+    await player.disposalComplete;
+    final controlled = ControlledPlayback()..cancelLoads = false;
+    adapter = controlled;
+    player = PlayerController(
+      playbackAdapter: adapter,
+      navigationController: navigation,
+    );
+    final item = fixtureCatalog.first;
+    final initialization = controlled.loadGate = Completer<void>();
+    final opening = player.openPlayer(item);
+    await Future<void>.delayed(Duration.zero);
+    final retry = player.openPlayer(item);
+    initialization.completeError(StateError('Obsolete load failure'));
+    await Future.wait([opening, retry]);
+    expect(player.playbackState.value.item, item);
+    expect(player.playbackState.value.status, PlaybackStatus.playing);
+    expect(controlled.calls.last, 'load:${item.id}');
+  });
+
+  for (final type in [ContentType.live, ContentType.vod]) {
+    test(
+      'backgrounding cancels a pending $type load without later autoplay',
+      () async {
+        player.dispose();
+        await player.disposalComplete;
+        final controlled = ControlledPlayback();
+        adapter = controlled;
+        player = PlayerController(
+          playbackAdapter: adapter,
+          navigationController: navigation,
+        );
+        final item = fixtureCatalog.firstWhere((item) => item.type == type);
+        final initialization = controlled.loadGate = Completer<void>();
+        final opening = player.openPlayer(item);
+        await Future<void>.delayed(Duration.zero);
+        _backgroundApp();
+        await opening;
+        await Future<void>.delayed(Duration.zero);
+        expect(player.playbackState.value.status, PlaybackStatus.stopped);
+        _foregroundApp();
+        initialization.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(player.playbackState.value.status, PlaybackStatus.stopped);
+        await player.play();
+        expect(player.playbackState.value.status, PlaybackStatus.playing);
+      },
+    );
+  }
+
+  test('opening while backgrounded does not start native playback', () async {
+    _backgroundApp();
+    await player.openPlayer(fixtureCatalog.first);
+    expect(player.playbackState.value.status, PlaybackStatus.stopped);
+    _foregroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(player.playbackState.value.status, PlaybackStatus.stopped);
+  });
+
+  test(
+    'rapid background and foreground serialize VOD pause and resume',
+    () async {
+      final vod = fixtureCatalog.firstWhere(
+        (item) => item.type == ContentType.vod,
+      );
+      await player.openPlayer(vod);
+      _backgroundApp();
+      _foregroundApp();
+      await Future<void>.delayed(Duration.zero);
+      expect(player.playbackState.value.status, PlaybackStatus.playing);
+    },
+  );
+
+  test('foreground never resumes a replaced VOD session', () async {
+    final vod = fixtureCatalog.firstWhere(
+      (item) => item.type == ContentType.vod,
+    );
+    await player.openPlayer(vod);
+    _backgroundApp();
+    await Future<void>.delayed(Duration.zero);
+    await player.openPlayer(fixtureCatalog.first);
+    _foregroundApp();
+    await Future<void>.delayed(Duration.zero);
+    expect(player.playbackState.value.status, PlaybackStatus.stopped);
+    expect(player.playbackState.value.item, fixtureCatalog.first);
+  });
+
+  test(
+    'disposal prevents navigation, commands and registered Back callbacks',
+    () async {
+      await player.openPlayer(fixtureCatalog.first);
+      var backCalled = false;
+      player.registerBackRequestHandler(Object(), () => backCalled = true);
+      final route = navigation.currentRoute;
+      player.dispose();
+      final cleanup = player.disposalComplete;
+      player.dispose();
+      expect(player.disposalComplete, same(cleanup));
+      await player.openPlayer(fixtureCatalog.last);
+      await player.play();
+      await player.pause();
+      await player.seekTo(Duration.zero);
+      expect(navigation.currentRoute, same(route));
+      expect(player.handleBackRequest(), isFalse);
+      expect(backCalled, isFalse);
+      await cleanup;
+    },
+  );
+  test('controller disposal completion waits for native cleanup', () async {
+    player.dispose();
+    await player.disposalComplete;
+    final controlled = ControlledPlayback();
+    final cleanup = controlled.disposalGate = Completer<void>();
+    adapter = controlled;
+    player = PlayerController(
+      playbackAdapter: adapter,
+      navigationController: navigation,
+    );
+    await player.openPlayer(fixtureCatalog.first);
+    var done = false;
+    player.dispose();
+    final completion = player.disposalComplete.then((_) => done = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(done, isFalse);
+    expect(player.videoView, isNull);
+    cleanup.complete();
+    await completion;
+    expect(controlled.calls.where((call) => call == 'dispose'), hasLength(1));
+  });
+
+  test(
+    'controller disposal failures remain observable and are logged',
+    () async {
+      final controlled = ControlledPlayback()
+        ..disposalError = StateError('Cleanup failed');
+      final logger = _RecordingLogger();
+      final controller = PlayerController(
+        playbackAdapter: controlled,
+        navigationController: navigation,
+        logger: logger,
+      );
+      controller.dispose();
+      await expectLater(controller.disposalComplete, throwsStateError);
+      expect(logger.errorEvents, ['playback_dispose_failed']);
+      expect(controlled.calls, ['dispose']);
+    },
+  );
 }
 
 void _sendLifecycleState(AppLifecycleState state) {
@@ -202,25 +362,6 @@ void _foregroundApp() {
   }
   if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
     _sendLifecycleState(AppLifecycleState.resumed);
-  }
-}
-
-class _DelayedPlaybackAdapter extends FakePlaybackAdapter {
-  _DelayedPlaybackAdapter() : super(transitionDelay: Duration.zero);
-
-  final completeLoad = Completer<void>();
-  int stopCount = 0;
-
-  @override
-  Future<void> load(ContentItem item) async {
-    await completeLoad.future;
-    await super.load(item);
-  }
-
-  @override
-  Future<void> stop() {
-    stopCount++;
-    return super.stop();
   }
 }
 

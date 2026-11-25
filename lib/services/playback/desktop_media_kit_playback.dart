@@ -9,6 +9,7 @@ import '../logging/app_logger.dart';
 import 'playback_contract.dart';
 import 'playback_http_headers.dart';
 import 'playback_labels.dart';
+import 'playback_load.dart';
 import 'playback_logging.dart';
 
 class DesktopMediaKitPlaybackAdapter
@@ -17,6 +18,27 @@ class DesktopMediaKitPlaybackAdapter
     bool disableVideoOutput = false,
     bool enableHardwareAcceleration = true,
     AppLogger logger = const DebugAppLogger(),
+  }) : this._(
+         Player(),
+         disableVideoOutput: disableVideoOutput,
+         enableHardwareAcceleration: enableHardwareAcceleration,
+         logger: logger,
+       );
+
+  @visibleForTesting
+  DesktopMediaKitPlaybackAdapter.forTesting(Player player)
+    : this._(
+        player,
+        disableVideoOutput: true,
+        enableHardwareAcceleration: false,
+        logger: const DebugAppLogger(),
+      );
+
+  DesktopMediaKitPlaybackAdapter._(
+    this._player, {
+    required bool disableVideoOutput,
+    required bool enableHardwareAcceleration,
+    required AppLogger logger,
   }) : _disableVideoOutput = disableVideoOutput,
        _enableHardwareAcceleration = enableHardwareAcceleration,
        _logger = logger {
@@ -75,7 +97,7 @@ class DesktopMediaKitPlaybackAdapter
   final bool _enableHardwareAcceleration;
   final AppLogger _logger;
 
-  final _player = Player();
+  final Player _player;
   final _stateController = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
 
@@ -88,6 +110,9 @@ class DesktopMediaKitPlaybackAdapter
   StreamSubscription<Duration>? _durationSubscription;
   final _infoSubscriptions = <StreamSubscription<dynamic>>[];
   Widget? _videoView;
+  PlaybackLoad? _load;
+  bool _disposed = false;
+  Future<void>? _disposeFuture;
 
   @override
   PlaybackCapabilities get capabilities => const PlaybackCapabilities(
@@ -109,7 +134,7 @@ class DesktopMediaKitPlaybackAdapter
   @override
   Widget? buildVideoView() {
     final controller = _videoController;
-    if (_disableVideoOutput || controller == null) return null;
+    if (_disposed || _disableVideoOutput || controller == null) return null;
     return _videoView ??= Video(
       controller: controller,
       controls: NoVideoControls,
@@ -118,6 +143,9 @@ class DesktopMediaKitPlaybackAdapter
 
   @override
   Future<void> load(ContentItem item) async {
+    if (_disposed) return;
+    _load?.cancel();
+    final load = _load = PlaybackLoad();
     if (!_disableVideoOutput) {
       _videoController ??= VideoController(
         _player,
@@ -138,10 +166,16 @@ class DesktopMediaKitPlaybackAdapter
     );
 
     try {
-      await _player.open(
-        Media(item.streamUrl, httpHeaders: playbackHttpHeaders),
+      await load.waitFor(
+        _player.open(
+          Media(item.streamUrl, httpHeaders: playbackHttpHeaders),
+          play: false,
+        ),
       );
+      if (_disposed || load.isCancelled) return;
+      await _player.play();
     } catch (error) {
+      if (_disposed || load.isCancelled) return;
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
@@ -156,6 +190,10 @@ class DesktopMediaKitPlaybackAdapter
   @override
   Future<void> play() async {
     if (_state.item == null) return;
+    if (_state.status == PlaybackStatus.stopped) {
+      await load(_state.item!);
+      return;
+    }
     await _player.play();
     _publish(
       _state.copyWith(
@@ -174,6 +212,7 @@ class DesktopMediaKitPlaybackAdapter
 
   @override
   Future<void> stop() async {
+    _load?.cancel();
     await _player.stop();
     _publish(
       _state.copyWith(
@@ -226,6 +265,11 @@ class DesktopMediaKitPlaybackAdapter
   }
 
   void _publish(PlaybackState nextState) {
+    if (_disposed) return;
+    if (_load?.isCancelled == true &&
+        nextState.status != PlaybackStatus.stopped) {
+      return;
+    }
     if (nextState.status == PlaybackStatus.playing &&
         nextState.playbackStartedAt == null &&
         nextState.loadStartedAt != null) {
@@ -248,18 +292,31 @@ class DesktopMediaKitPlaybackAdapter
   }
 
   @override
-  void dispose() {
-    for (final subscription in _infoSubscriptions) {
-      unawaited(subscription.cancel());
+  Future<void> dispose() {
+    if (_disposeFuture != null) return _disposeFuture!;
+    _disposed = true;
+    _load?.cancel();
+    return _disposeFuture = _dispose();
+  }
+
+  Future<void> _dispose() async {
+    try {
+      await Future.wait([
+        ..._infoSubscriptions.map((subscription) => subscription.cancel()),
+        if (_playingSubscription != null) _playingSubscription!.cancel(),
+        if (_errorSubscription != null) _errorSubscription!.cancel(),
+        if (_completedSubscription != null) _completedSubscription!.cancel(),
+        if (_bufferingSubscription != null) _bufferingSubscription!.cancel(),
+        if (_positionSubscription != null) _positionSubscription!.cancel(),
+        if (_durationSubscription != null) _durationSubscription!.cancel(),
+      ]);
+    } finally {
+      try {
+        await _player.dispose();
+      } finally {
+        await _stateController.close();
+      }
     }
-    _playingSubscription?.cancel();
-    _errorSubscription?.cancel();
-    _completedSubscription?.cancel();
-    _bufferingSubscription?.cancel();
-    _positionSubscription?.cancel();
-    _durationSubscription?.cancel();
-    _player.dispose();
-    _stateController.close();
   }
 }
 

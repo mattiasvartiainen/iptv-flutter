@@ -23,6 +23,8 @@ class FakeLgPlatform extends lg.VideoPlayerPlatform {
   final calls = <String>[];
   lg.DataSource? source;
   var nextId = 0;
+  Completer<void>? disposalGate;
+  Object? disposalError;
 
   @override
   Future<void> init() async {}
@@ -44,7 +46,10 @@ class FakeLgPlatform extends lg.VideoPlayerPlatform {
   @override
   Future<void> dispose(int playerId) async {
     calls.add('dispose:$playerId');
-    await events[playerId]?.close();
+    final gate = disposalGate;
+    if (gate != null) await gate.future;
+    final error = disposalError;
+    if (error != null) throw error;
   }
 
   @override
@@ -95,17 +100,26 @@ void main() {
   late FakeLgPlatform platform;
   late lg.VideoPlayerPlatform original;
   late WebOsPlaybackAdapter adapter;
+  late bool disposalFailureExpected;
 
   setUp(() {
     original = lg.VideoPlayerPlatform.instance;
     platform = FakeLgPlatform();
     lg.VideoPlayerPlatform.instance = platform;
     adapter = WebOsPlaybackAdapter.forTesting();
+    disposalFailureExpected = false;
   });
 
   tearDown(() async {
-    adapter.dispose();
+    if (disposalFailureExpected) {
+      await expectLater(adapter.dispose(), throwsStateError);
+    } else {
+      await adapter.dispose();
+    }
     await Future<void>.delayed(Duration.zero);
+    for (final event in platform.events.values) {
+      await event.close();
+    }
     await platform.created.close();
     lg.VideoPlayerPlatform.instance = original;
   });
@@ -126,7 +140,7 @@ void main() {
     expect(selected.capabilities.supportsSubtitleTracks, isTrue);
     expect(selected.capabilities.supportsVolume, isFalse);
     expect(selected.capabilities.supportsDrm, isFalse);
-    selected.dispose();
+    addTearDown(selected.dispose);
   });
 
   test('production adapter requires the verified build marker', () async {
@@ -142,7 +156,7 @@ void main() {
       expect(platform.source, isNull);
       expect(selected.state.status, PlaybackStatus.error);
     }
-    selected.dispose();
+    await selected.dispose();
   });
 
   test(
@@ -193,8 +207,12 @@ void main() {
   );
 
   test('stop during initialization suppresses stale playback', () async {
-    final id = await beginLoad();
+    final createdLoad = platform.created.stream.first;
+    final loading = adapter.load(item);
+    final id = await createdLoad;
     await adapter.stop();
+    await loading;
+    expect(platform.events[id]!.hasListener, isFalse);
     platform.initialize(id);
     await Future<void>.delayed(Duration.zero);
     expect(adapter.state.status, PlaybackStatus.stopped);
@@ -207,6 +225,51 @@ void main() {
     await resuming;
     expect(adapter.state.status, PlaybackStatus.playing);
   });
+
+  test(
+    'disposal cancels initialization, is idempotent and awaits native release',
+    () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      final id = await created;
+      final cleanup = platform.disposalGate = Completer<void>();
+      var done = false;
+      final disposal = adapter.dispose();
+      final completion = disposal.then((_) => done = true);
+      expect(adapter.dispose(), same(disposal));
+      await loading;
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isFalse);
+      expect(platform.events[id]!.hasListener, isFalse);
+      platform.initialize(id);
+      cleanup.complete();
+      await completion;
+      expect(
+        platform.calls.where((call) => call == 'dispose:$id'),
+        hasLength(1),
+      );
+      expect(platform.calls, isNot(contains('play:$id')));
+    },
+  );
+
+  test(
+    'native disposal failures are observable and release is not repeated',
+    () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      final id = await created;
+      platform.disposalError = StateError('Native disposal failed');
+      disposalFailureExpected = true;
+      final disposal = adapter.dispose();
+      await expectLater(disposal, throwsStateError);
+      await loading;
+      expect(adapter.dispose(), same(disposal));
+      expect(
+        platform.calls.where((call) => call == 'dispose:$id'),
+        hasLength(1),
+      );
+    },
+  );
 
   test('a new load clears the old native surface until initialized', () async {
     final first = await beginLoad();

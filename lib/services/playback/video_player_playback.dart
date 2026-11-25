@@ -6,12 +6,16 @@ import 'package:video_player/video_player.dart';
 import '../../models/content_item.dart';
 import 'playback_contract.dart';
 import 'playback_http_headers.dart';
+import 'playback_load.dart';
 
 class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   final _stateController = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
   VideoPlayerController? _controller;
   bool _disposed = false;
+  PlaybackLoad? _load;
+  Future<void>? _disposeFuture;
+  Future<void> _controllerDisposal = Future<void>.value();
 
   @override
   PlaybackCapabilities get capabilities => const PlaybackCapabilities(
@@ -42,7 +46,11 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
 
   @override
   Future<void> load(ContentItem item) async {
-    _disposeController();
+    if (_disposed) return;
+    _load?.cancel();
+    final load = _load = PlaybackLoad();
+    await _disposeController();
+    if (_disposed || load.isCancelled) return;
     final loadStartedAt = DateTime.now();
     _publish(
       PlaybackState(
@@ -60,12 +68,25 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
     controller.addListener(_handleControllerUpdate);
 
     try {
-      await controller.initialize();
-      if (_disposed || !identical(_controller, controller)) return;
+      await load.waitFor(controller.initialize());
+      if (_disposed ||
+          load.isCancelled ||
+          !identical(_controller, controller)) {
+        return;
+      }
       await controller.play();
-      if (_disposed || !identical(_controller, controller)) return;
+      if (_disposed ||
+          load.isCancelled ||
+          !identical(_controller, controller)) {
+        return;
+      }
       _handleControllerUpdate();
     } catch (error) {
+      if (_disposed ||
+          load.isCancelled ||
+          !identical(_controller, controller)) {
+        return;
+      }
       if (identical(_controller, controller)) {
         _publish(
           _state.copyWith(
@@ -81,6 +102,13 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
 
   @override
   Future<void> play() async {
+    if (_controller == null && _state.status == PlaybackStatus.stopped) {
+      final item = _state.item;
+      if (item != null) {
+        await load(item);
+        return;
+      }
+    }
     final controller = _requireController();
     await controller.play();
     _handleControllerUpdate();
@@ -95,13 +123,22 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
 
   @override
   Future<void> stop() async {
+    final load = _load;
+    load?.cancel();
     final controller = _controller;
+    if (controller != null && !controller.value.isInitialized) {
+      await _disposeController();
+      _publish(_state.copyWith(status: PlaybackStatus.stopped));
+      return;
+    }
     if (controller == null) {
       _publish(_state.copyWith(status: PlaybackStatus.stopped));
       return;
     }
     await controller.pause();
+    if (_disposed || !identical(_controller, controller)) return;
     await controller.seekTo(Duration.zero);
+    if (_disposed || !identical(_controller, controller)) return;
     _publish(
       _state.copyWith(
         status: PlaybackStatus.stopped,
@@ -177,17 +214,36 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
     _stateController.add(nextState);
   }
 
-  void _disposeController() {
+  Future<void> _disposeController() {
     final controller = _controller;
     _controller = null;
     controller?.removeListener(_handleControllerUpdate);
-    controller?.dispose();
+    if (controller != null) {
+      final previous = _controllerDisposal;
+      _controllerDisposal = () async {
+        try {
+          await previous;
+        } finally {
+          await controller.dispose();
+        }
+      }();
+    }
+    return _controllerDisposal;
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() {
+    if (_disposeFuture != null) return _disposeFuture!;
     _disposed = true;
-    _disposeController();
-    _stateController.close();
+    _load?.cancel();
+    return _disposeFuture = _dispose();
+  }
+
+  Future<void> _dispose() async {
+    try {
+      await _disposeController();
+    } finally {
+      await _stateController.close();
+    }
   }
 }

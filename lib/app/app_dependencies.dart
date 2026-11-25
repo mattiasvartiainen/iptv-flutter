@@ -14,6 +14,7 @@ import '../services/metadata/movie_metadata.dart';
 import '../services/metadata/series_metadata.dart';
 import '../services/metadata/sqlite_movie_metadata_repository.dart';
 import '../services/metadata/sqlite_series_metadata_repository.dart';
+import '../services/security/url_redaction.dart';
 import '../services/settings/app_preferences.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
@@ -231,17 +232,43 @@ class AppDependencies {
 
   Future<void> dispose() {
     if (!_ownsResources) return Future<void>.value();
-    return _disposeFuture ??= _disposeOwnedResources();
+    if (_disposeFuture != null) return _disposeFuture!;
+    final disposal = _disposeFuture = _disposeOwnedResources();
+    unawaited(
+      disposal.then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          logger.error(
+            'app_dispose_failed',
+            error: redactSensitiveText(error.toString()),
+            stackTrace: StackTrace.fromString(
+              redactSensitiveText(stack.toString()),
+            ),
+          );
+        },
+      ),
+    );
+    return disposal;
   }
 
   Future<void> _disposeOwnedResources() async {
     playerController.dispose();
-    playlistsController.dispose();
-    preferencesController.dispose();
-    appController.catalogView.dispose();
-    appController.navigationController.dispose();
-    await _databaseAdapter!.close();
-    await telemetryController?.telemetry.close();
-    telemetryController?.dispose();
+    try {
+      await playerController.disposalComplete;
+    } finally {
+      playlistsController.dispose();
+      preferencesController.dispose();
+      appController.catalogView.dispose();
+      appController.navigationController.dispose();
+      try {
+        await _databaseAdapter!.close();
+      } finally {
+        try {
+          await telemetryController?.telemetry.close();
+        } finally {
+          telemetryController?.dispose();
+        }
+      }
+    }
   }
 }

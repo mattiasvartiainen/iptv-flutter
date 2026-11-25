@@ -33,6 +33,31 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-player-session defines and verifies latest-request-wins playback ownership.
+Dependencies: WP-player-overlay. Touches: playback contract/session boundary,
+native and fake adapters, PlayerController, owned-resource teardown and their
+tests. Skills: dart-add-unit-test, dart-write-documentation,
+dart-run-static-analysis. Serialize ordinary native commands, interrupt pending
+loads on replacement/Back, discard stale state/errors and await native disposal.
+Preserve Live stop/manual restart, VOD pause/conditional resume, UI controls and
+import isolation. No layout decomposition or new packages in this slice.
+
+Implemented one shared latest-request-wins command boundary with interruptible
+native initialization/restart and awaitable, idempotent disposal. Back and
+background cancellation cannot later autoplay; obsolete loads/commands cannot
+overwrite or stop their replacements. A cancelled queued load retains the
+requested item for explicit restart, not the previous native item/surface.
+Owned teardown awaits native cleanup, still releases other resources on failure,
+and logs errors even when Flutter cannot await disposal.
+
+Verification: 103 focused tests pass, including mocked MediaKit, Android and LG
+native interfaces, controller lifecycle, ownership teardown and existing player
+UI/remote controls. Windows debug build passes; analyzer retains only the two
+existing infos. Broad regression: 824 passes, the two known Settings focus
+failures and one timing-sensitive Series fetch-sharing failure; all 18 Series
+repository tests pass in isolation. The previously reproduced stalled telemetry
+test file remains excluded. Native hardware validation remains pending.
+
 WP-player-overlay is the approved combined player slice: app-owned fullscreen
 controls, stream diagnostics, embedded audio/subtitle selection, persisted
 favourites and LG video_player_drm integration. Dependencies: WP-XM-medium.
@@ -113,6 +138,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-session | Playback session and lifecycle guarantees | Player | WP-player-overlay | M | DONE (2026-11-25): Latest-wins ownership, cancellable loads/restarts, awaited cleanup; 103 focused tests and Windows debug build pass. Regression caveats documented above. |
 | WP-player-overlay | Shared player controls, tracks and favourites | Player | WP-XM-medium | M | DONE (2026-11-25; desktop/unit/build-helper verified, LG package/hardware pending) |
 | WP-DB-migration-tests | Persisted SQL migration regression matrix | Storage | WP-XM-medium | S | DONE (2026-11-25): 18 real persisted-upgrade/rollback tests cover v1-v17, seeded data, schema/ledger parity, SQLite/FTS/FK integrity and reopen/retry; 25 focused storage tests pass. Broad regression: 755 passes with two existing Settings/editor focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos. |
 | WP-XM-medium | Efficient membership, recoverable movie cache and bounded decoding | Metadata | WP-XM-hardening | M | DONE (2026-11-25): Atomic 100-row keyset membership with partial v17 index, scoped corrupt-cache recovery and typed/transferable response buffers with pre-allocation JSON budgets. 119 focused tests pass; final broad regression has 737 passes and the two existing Settings/editor focus failures, excluding only the reproduced telemetry stall. Analyzer retains two baseline infos. Isolated 20k-item cold/identical/churn/reorder benchmark passes (refreshes 1,147/1,416/1,266 ms). TV memory/provider validation remains pending. |

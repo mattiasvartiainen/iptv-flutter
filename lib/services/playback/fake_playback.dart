@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../models/content_item.dart';
 import 'playback_contract.dart';
+import 'playback_load.dart';
 
 class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   FakePlaybackAdapter({
@@ -19,6 +20,8 @@ class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   final Duration? _duration;
   final _stateController = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
+  PlaybackLoad? _load;
+  Future<void>? _disposeFuture;
 
   @override
   PlaybackCapabilities get capabilities => PlaybackCapabilities(
@@ -42,6 +45,9 @@ class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
 
   @override
   Future<void> load(ContentItem item) async {
+    if (_disposeFuture != null) return;
+    _load?.cancel();
+    final load = _load = PlaybackLoad();
     final loadStartedAt = DateTime.now();
     _publish(
       PlaybackState(
@@ -50,7 +56,8 @@ class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
         loadStartedAt: loadStartedAt,
       ),
     );
-    await Future<void>.delayed(_transitionDelay);
+    await load.waitFor(Future<void>.delayed(_transitionDelay));
+    if (load.isCancelled) return;
     _publish(
       PlaybackState(
         status: PlaybackStatus.playing,
@@ -79,6 +86,7 @@ class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
 
   @override
   Future<void> stop() async {
+    _load?.cancel();
     _publish(_state.copyWith(status: PlaybackStatus.stopped));
   }
 
@@ -114,12 +122,14 @@ class FakePlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   }
 
   void _publish(PlaybackState nextState) {
+    if (_disposeFuture != null) return;
     _state = nextState;
     _stateController.add(nextState);
   }
 
   @override
-  void dispose() {
-    _stateController.close();
+  Future<void> dispose() {
+    _load?.cancel();
+    return _disposeFuture ??= _stateController.close();
   }
 }

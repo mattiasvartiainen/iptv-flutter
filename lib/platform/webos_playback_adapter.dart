@@ -6,6 +6,7 @@ import 'package:video_player_drm/video_player.dart' as lg;
 import '../models/content_item.dart';
 import '../services/playback/playback_contract.dart';
 import '../services/playback/playback_labels.dart';
+import '../services/playback/playback_load.dart';
 
 class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   WebOsPlaybackAdapter()
@@ -22,6 +23,9 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   lg.VideoPlayerController? _controller;
   bool _disposed = false;
   int _loadGeneration = 0;
+  PlaybackLoad? _load;
+  Future<void>? _disposeFuture;
+  Future<void> _controllerDisposal = Future<void>.value();
 
   @override
   PlaybackCapabilities get capabilities => const PlaybackCapabilities(
@@ -53,8 +57,12 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
 
   @override
   Future<void> load(ContentItem item) async {
+    if (_disposed) return;
     final generation = ++_loadGeneration;
-    _disposeController();
+    _load?.cancel();
+    final load = _load = PlaybackLoad();
+    await _disposeController();
+    if (_disposed || load.isCancelled) return;
     _publish(
       PlaybackState(
         status: PlaybackStatus.loading,
@@ -78,7 +86,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
     _controller = controller;
     controller.addListener(_handleUpdate);
     try {
-      await controller.initialize();
+      await load.waitFor(controller.initialize());
       if (!_isCurrent(controller) || generation != _loadGeneration) return;
       await controller.play();
       if (_isCurrent(controller) && generation == _loadGeneration) {
@@ -121,6 +129,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   @override
   Future<void> stop() async {
     ++_loadGeneration;
+    _load?.cancel();
     final controller = _controller;
     if (controller != null && controller.value.isInitialized) {
       await controller.pause();
@@ -128,7 +137,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
       await controller.seekTo(Duration.zero);
       if (!_isCurrent(controller)) return;
     } else {
-      _disposeController();
+      await _disposeController();
     }
     _publish(
       _state.copyWith(
@@ -289,21 +298,37 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
     _states.add(state);
   }
 
-  void _disposeController() {
+  Future<void> _disposeController() {
     final controller = _controller;
     _controller = null;
     if (controller != null) {
       controller.removeListener(_handleUpdate);
-      unawaited(controller.dispose());
+      final previous = _controllerDisposal;
+      _controllerDisposal = () async {
+        try {
+          await previous;
+        } finally {
+          await controller.dispose();
+        }
+      }();
     }
+    return _controllerDisposal;
   }
 
   @override
-  void dispose() {
-    if (_disposed) return;
+  Future<void> dispose() {
+    if (_disposeFuture != null) return _disposeFuture!;
     _disposed = true;
     ++_loadGeneration;
-    _disposeController();
-    unawaited(_states.close());
+    _load?.cancel();
+    return _disposeFuture = _dispose();
+  }
+
+  Future<void> _dispose() async {
+    try {
+      await _disposeController();
+    } finally {
+      await _states.close();
+    }
   }
 }

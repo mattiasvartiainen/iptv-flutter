@@ -315,5 +315,5 @@ class _PlaybackAdapterWithoutMediaControls implements PlaybackAdapter {
   Future<void> setVolume(double volume) => _delegate.setVolume(volume);
 
   @override
-  void dispose() => _delegate.dispose();
+  Future<void> dispose() => _delegate.dispose();
 }

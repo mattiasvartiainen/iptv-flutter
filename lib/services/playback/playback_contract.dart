@@ -150,16 +150,44 @@ class PlaybackState {
   }
 }
 
+/// A single native playback resource owned by a playback session.
+///
+/// Owners serialize ordinary commands. Only [stop] may interrupt [load].
+/// Events retain the supplied [ContentItem] and describe the current resource,
+/// never a detached controller. Failed
+/// commands throw; track selection completion means request acceptance, not
+/// native confirmation. Unsupported operations are gated by [capabilities].
 abstract interface class PlaybackAdapter {
   PlaybackCapabilities get capabilities;
   PlaybackState get state;
   Stream<PlaybackState> get states;
   Widget? buildVideoView();
+
+  /// Replaces the resource and starts playback once initialization completes.
+  ///
+  /// [stop] or [dispose] cancels pending initialization without an error.
+  /// Cancellation prevents subsequent autoplay and stale state publication.
   Future<void> load(ContentItem item);
+
+  /// Resumes playback, recreating the retained item's resource when necessary.
+  ///
+  /// A restart has the same cancellation guarantees as [load].
   Future<void> play();
   Future<void> pause();
+
+  /// Stops output and cancels a pending load without retaining its callbacks.
+  ///
+  /// Repeated calls are safe. The loaded item may remain available for a later
+  /// explicit [play].
+  /// Live playback never restarts automatically on foreground return.
   Future<void> stop();
   Future<void> seek(Duration position);
   Future<void> setVolume(double volume);
-  void dispose();
+
+  /// Releases native resources and subscriptions exactly once.
+  ///
+  /// Disposal starts synchronously, suppressing subsequent events. The returned
+  /// future completes when cleanup finishes and reports cleanup failures.
+  /// Repeated calls return the same completion. No commands follow disposal.
+  Future<void> dispose();
 }

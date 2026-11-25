@@ -158,16 +158,41 @@ Treat stored data as untrusted and version the storage schema. Never assume a st
 
 ## 8. Playback abstraction
 
-Define a small interface before building the player UI:
+`PlayerController` owns a `PlaybackSession`, which wraps the injected
+`PlaybackAdapter`. The contract exposes state/events, load/play/pause/stop,
+seek/volume, capabilities, a video surface and awaitable disposal. Optional
+track commands use `PlaybackTrackAdapter`; navigation Back belongs to the
+controller, not the native backend.
 
-```dart
-load(item)
-play()
-pause()
-stop()
-back()
-onStateChange(listener)
-```
+Session guarantees:
+
+- Each load, including a retry of the same item, replaces the logical session
+  immediately. Obsolete completions, errors and detached-resource events cannot
+  replace the latest state or stop its playback.
+- Ordinary commands run serially. Replacement skips obsolete queued commands
+  and drains commands already in flight before allocating the next resource.
+  Stop may interrupt initialization, including an explicit stopped-item restart.
+- Back/stop cancels initialization without waiting for an initialized event and
+  prevents subsequent autoplay. Native cancellation must finish before a new
+  resource loads. MediaKit opens without autoplay, then plays only if still
+  current; video_player adapters detach and dispose cancelled controllers.
+- Background Live stops and requires explicit restart. Playing VOD pauses and
+  resumes only for the same session/item; already-paused VOD stays paused.
+  Pending loads are cancelled. Opening while backgrounded stays stopped and
+  requires explicit restart after foreground return.
+- Disposal suppresses events synchronously and returns the same cleanup future
+  on every call. `PlayerController.dispose()` remains synchronous for Flutter;
+  `disposalComplete` exposes native cleanup to the composition root. Cleanup
+  failures remain observable/logged, and other owned resources still release.
+  No hard timeout is promised for an unresponsive native plugin.
+- Current command failures reach the owner; obsolete failures are safely logged
+  without changing the replacement session. Track completion means native
+  request acceptance, not confirmation of the selected track.
+
+Deterministic tests cover replacement/retry, command serialization, cancellation,
+late errors, background/foreground, requested-item retention and disposal.
+Mocked native interfaces cover MediaKit, Android video_player and LG
+video_player_drm; they do not replace device/native-engine validation.
 
 The dedicated webOS adapter wraps LG's separate `video_player_drm` API for ordinary streams and embedded audio/subtitle selection. Android retains standard `video_player`; desktop uses `media_kit` or the fake/fixture adapter. Playback rides the webOS media pipeline, so codec/variant support and transparent native-plane compositing must be validated on hardware (see [`decisions.md`](decisions.md)). Keep backend selection in `lib/platform` and expose unsupported LG volume/custom headers honestly.
 

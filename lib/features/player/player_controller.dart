@@ -8,22 +8,25 @@ import '../../app/navigation/navigation_controller.dart';
 import '../../models/content_item.dart';
 import '../../services/catalog/favorite_repository.dart';
 import '../../services/logging/app_logger.dart';
-import '../../services/playback/playback_adapter.dart';
 import '../../services/playback/playback_contract.dart';
 import '../../services/playback/playback_labels.dart';
+import '../../services/playback/playback_session.dart';
 import '../../services/security/url_redaction.dart';
 
 class PlayerController extends ChangeNotifier {
   PlayerController({
-    required this.playbackAdapter,
+    required PlaybackAdapter playbackAdapter,
     required this.navigationController,
     AppLogger logger = const DebugAppLogger(),
     this.favorites,
-  }) : _logger = logger,
+  }) : playbackAdapter = PlaybackSession(playbackAdapter, logger: logger),
+       _logger = logger,
        _playbackState = ValueNotifier<PlaybackState>(playbackAdapter.state) {
     _observedRoute = navigationController.currentRoute;
     navigationController.addListener(_handleNavigationChanged);
-    _statesSubscription = playbackAdapter.states.listen(_handlePlaybackState);
+    _statesSubscription = this.playbackAdapter.states.listen(
+      _handlePlaybackState,
+    );
     _lifecycleListener = AppLifecycleListener(
       onStateChange: _handleLifecycleStateChanged,
     );
@@ -66,14 +69,19 @@ class PlayerController extends ChangeNotifier {
   bool _isBackgrounded = false;
   bool _resumeVodOnForeground = false;
   bool _disposed = false;
+  Future<void>? _disposeFuture;
   Object? _backHandlerOwner;
   bool Function()? _backRequestHandler;
 
   ValueListenable<PlaybackState> get playbackState => _playbackState;
 
+  /// The completion of native cleanup after synchronous controller disposal.
+  Future<void> get disposalComplete => _disposeFuture ?? Future<void>.value();
+
   PlaybackCapabilities get capabilities => playbackAdapter.capabilities;
 
-  Widget? get videoView => _videoView ??= playbackAdapter.buildVideoView();
+  Widget? get videoView =>
+      _disposed ? null : _videoView ??= playbackAdapter.buildVideoView();
 
   void registerBackRequestHandler(Object owner, bool Function() handler) {
     _backHandlerOwner = owner;
@@ -89,6 +97,7 @@ class PlayerController extends ChangeNotifier {
   bool handleBackRequest() => _backRequestHandler?.call() ?? false;
 
   Future<void> openPlayer(ContentItem item) {
+    if (_disposed) return Future<void>.value();
     navigationController.push(PlayerRoute(item));
     return open(item);
   }
@@ -96,6 +105,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> openPlaybackSpike() => openPlayer(playbackSpikeItem);
 
   Future<void> open(ContentItem item) async {
+    if (_disposed) return;
     final generation = ++_playbackLoadGeneration;
     _videoView = null;
     _favorite = null;
@@ -105,15 +115,24 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
     unawaited(_loadFavorite(item, generation));
     try {
-      await playbackAdapter.load(item);
+      final loading = playbackAdapter.load(item);
+      if (_isBackgrounded) await _stopPlayback();
+      await loading;
+      if (_disposed || generation != _playbackLoadGeneration) return;
       _handlePlaybackState(playbackAdapter.state);
       final currentRoute = navigationController.currentRoute;
-      if (generation != _playbackLoadGeneration ||
-          currentRoute is! PlayerRoute ||
-          currentRoute.item.id != item.id) {
+      if (currentRoute is! PlayerRoute || currentRoute.item.id != item.id) {
         await _stopPlayback();
+      } else if (_isBackgrounded &&
+          playbackAdapter.state.status == PlaybackStatus.playing) {
+        if (item.type == ContentType.live) {
+          await _stopPlayback();
+        } else {
+          await pause();
+        }
       }
     } catch (error, stackTrace) {
+      if (_disposed || generation != _playbackLoadGeneration) return;
       _recordFailure('playback_load_failed', error, stackTrace);
     }
   }
@@ -288,6 +307,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> close() async {
+    if (_disposed) return;
     _playbackLoadGeneration++;
     await _stopPlayback();
   }
@@ -301,10 +321,13 @@ class PlayerController extends ChangeNotifier {
     Future<void> Function() command,
   ) async {
     if (_disposed) return;
+    final generation = _playbackLoadGeneration;
     try {
       await command();
+      if (_disposed || generation != _playbackLoadGeneration) return;
       _handlePlaybackState(playbackAdapter.state);
     } catch (error, stackTrace) {
+      if (_disposed || generation != _playbackLoadGeneration) return;
       _recordFailure(event, error, stackTrace);
     }
   }
@@ -348,7 +371,12 @@ class PlayerController extends ChangeNotifier {
           playback.status == PlaybackStatus.playing;
       _backgroundedItemId = item?.id;
       _backgroundedLoadGeneration = _playbackLoadGeneration;
-      if (item == null || playback.status != PlaybackStatus.playing) return;
+      if (item == null) return;
+      if (playback.status == PlaybackStatus.loading) {
+        unawaited(_stopPlayback());
+        return;
+      }
+      if (playback.status != PlaybackStatus.playing) return;
 
       if (item.type == ContentType.live) {
         unawaited(_stopPlayback());
@@ -379,22 +407,52 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> _stopPlayback() async {
+    final generation = _playbackLoadGeneration;
     try {
       await playbackAdapter.stop();
+      if (_disposed || generation != _playbackLoadGeneration) return;
       _handlePlaybackState(playbackAdapter.state);
     } catch (error, stackTrace) {
+      if (_disposed || generation != _playbackLoadGeneration) return;
       _recordFailure('playback_stop_failed', error, stackTrace);
     }
   }
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
+    ++_playbackLoadGeneration;
     _lifecycleListener.dispose();
     navigationController.removeListener(_handleNavigationChanged);
-    unawaited(_statesSubscription.cancel());
-    playbackAdapter.dispose();
+    _backHandlerOwner = null;
+    _backRequestHandler = null;
+    _disposeFuture = _disposePlayback();
+    _videoView = null;
+    unawaited(
+      _disposeFuture!.then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          _logger.error(
+            'playback_dispose_failed',
+            error: safePlaybackLabel(error.toString()),
+            stackTrace: StackTrace.fromString(
+              redactSensitiveText(stack.toString()),
+            ),
+          );
+        },
+      ),
+    );
     _playbackState.dispose();
     super.dispose();
+  }
+
+  Future<void> _disposePlayback() async {
+    final disposal = playbackAdapter.dispose();
+    try {
+      await _statesSubscription.cancel();
+    } finally {
+      await disposal;
+    }
   }
 }
