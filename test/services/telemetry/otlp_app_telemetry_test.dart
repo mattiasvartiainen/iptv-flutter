@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
 import 'package:iptv_flutter/services/telemetry/otlp_app_telemetry.dart';
 import 'package:iptv_flutter/services/telemetry/telemetry_config.dart';
 
@@ -287,55 +288,170 @@ void main() {
     expect(telemetry.activeOperations, 0);
   });
 
-  test('retains known import attributes and omits nonverbose stacks', () async {
+  test(
+    'retains known import attributes and includes nonverbose stacks',
+    () async {
+      final collector = await _Collector.start();
+      final telemetry = OtlpAppTelemetry();
+      addTearDown(() async {
+        await telemetry.close();
+        await collector.close();
+      });
+      await telemetry.configure(collector.config());
+      const attributes = <String, Object>{
+        'currentOperation': 'parse',
+        'parsed': 1,
+        'staged': 2,
+        'accepted': 3,
+        'rejected': 4,
+        'indexed': 5,
+        'parsingCpuUs': 6,
+        'acknowledgementWaitUs': 7,
+        'selectionWaitUs': 8,
+        'bytes': 9,
+        'batchRows': 10,
+        'db.system': 'sqlite',
+        'http.request.method': 'GET',
+        'http.response.status_code': 200,
+        'import.kind': 'm3u',
+        'new': 11,
+        'changed': 12,
+        'moved': 13,
+        'removed': 14,
+        'elapsedMs': 15,
+      };
+      await telemetry.measure('import.attributes', () async {
+        telemetry.event(
+          'import.progress',
+          attributes: {
+            ...attributes,
+            'sql.parameters': 'sql-secret',
+            'http.url': 'https://credential@host.test/private',
+          },
+        );
+        telemetry.failure(
+          'import',
+          StateError('sql-secret'),
+          StackTrace.current,
+        );
+      }, attributes: attributes);
+      expect(await telemetry.flush(), isTrue);
+      final payload = jsonEncode(collector.received);
+      for (final name in attributes.keys) {
+        expect(payload, contains('"key":"$name"'));
+      }
+      expect(payload, isNot(contains('sql-secret')));
+      expect(payload, isNot(contains('credential')));
+      expect(payload, contains('exception.stacktrace'));
+    },
+  );
+
+  test(
+    'exports underlying worker error and original stack without verbose mode',
+    () async {
+      final collector = await _Collector.start();
+      final telemetry = OtlpAppTelemetry();
+      addTearDown(() async {
+        await telemetry.close();
+        await collector.close();
+      });
+      await telemetry.configure(collector.config());
+      const workerStack =
+          '#0      _catalogImportWorkerEntry (package:iptv_flutter/services/catalog/catalog_import_worker.dart:500:3)\n'
+          'SQL parameters: [secret]\n'
+          '#1      main (file:///private/secret.dart:1:2)';
+      telemetry.failure(
+        'http.playlist.headers',
+        const CatalogImportWorkerException(
+          errorType: 'HandshakeException',
+          message: 'secret raw message',
+          workerStackTrace: workerStack,
+          diagnostics: {
+            'exception.message': 'TLS negotiation failed.',
+            'failure.phase': 'connect',
+            'tls.failure_reason': 'CERTIFICATE_VERIFY_FAILED',
+            'exception.os_error_code': -1,
+            'sql.parameters': 'secret',
+          },
+        ),
+        StackTrace.current,
+      );
+      expect(await telemetry.flush(), isTrue);
+      final payload = jsonEncode(collector.received);
+      expect(payload, contains('HandshakeException'));
+      expect(payload, contains('TLS negotiation failed.'));
+      expect(payload, contains('CERTIFICATE_VERIFY_FAILED'));
+      expect(payload, contains('failure.phase'));
+      expect(payload, contains('_catalogImportWorkerEntry'));
+      expect(payload, isNot(contains('secret')));
+      expect(payload, isNot(contains('SQL')));
+    },
+  );
+
+  test('retains safe release AOT frames and bounds nonverbose stacks', () {
+    final stack = StackTrace.fromString(
+      'sensitive header\n'
+      '    #00 abs 000000123abc virt 000000123abc _kDartIsolateSnapshotInstructions+0x123\n'
+      '#1      main (file:///private/secret.dart:1:2)\n'
+      '#2      worker (package:iptv_flutter/services/worker.dart:12:3)',
+    );
+    final filtered = OtlpAppTelemetry.safeStack(stack, maxFrames: 1);
+    expect(filtered, contains('_kDartIsolateSnapshotInstructions'));
+    expect(filtered.split('\n'), hasLength(1));
+    expect(filtered, isNot(contains('sensitive')));
+    expect(filtered, isNot(contains('secret')));
+  });
+
+  test('exports actionable HTTP errors from the real worker isolate', () async {
     final collector = await _Collector.start();
+    final playlistServer = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final subscription = playlistServer.listen((request) async {
+      request.response.statusCode = HttpStatus.forbidden;
+      request.response.write('secret response body');
+      await request.response.close();
+    });
     final telemetry = OtlpAppTelemetry();
     addTearDown(() async {
       await telemetry.close();
+      await subscription.cancel();
+      await playlistServer.close(force: true);
       await collector.close();
     });
     await telemetry.configure(collector.config());
-    const attributes = <String, Object>{
-      'currentOperation': 'parse',
-      'parsed': 1,
-      'staged': 2,
-      'accepted': 3,
-      'rejected': 4,
-      'indexed': 5,
-      'parsingCpuUs': 6,
-      'acknowledgementWaitUs': 7,
-      'selectionWaitUs': 8,
-      'bytes': 9,
-      'batchRows': 10,
-      'db.system': 'sqlite',
-      'http.request.method': 'GET',
-      'http.response.status_code': 200,
-      'import.kind': 'm3u',
-      'new': 11,
-      'changed': 12,
-      'moved': 13,
-      'removed': 14,
-      'elapsedMs': 15,
-    };
-    await telemetry.measure('import.attributes', () async {
-      telemetry.event(
-        'import.progress',
-        attributes: {
-          ...attributes,
-          'sql.parameters': 'sql-secret',
-          'http.url': 'https://credential@host.test/private',
-        },
-      );
-      telemetry.failure('import', StateError('sql-secret'), StackTrace.current);
-    }, attributes: attributes);
+    final handle = await CatalogImportWorker.start(
+      playlistId: 'http-error',
+      playlistUrl:
+          'http://127.0.0.1:${playlistServer.port}/get.php?username=private-user&password=private-pass',
+      selectRows: (_) async => [],
+      onRows: (_, _) async {},
+      telemetry: telemetry,
+    );
+    await expectLater(
+      handle.done,
+      throwsA(isA<CatalogImportWorkerException>()),
+    );
     expect(await telemetry.flush(), isTrue);
     final payload = jsonEncode(collector.received);
-    for (final name in attributes.keys) {
-      expect(payload, contains('"key":"$name"'));
+    expect(
+      payload,
+      contains(
+        'http.playlist.headers failed: Playlist server returned HTTP 403.',
+      ),
+    );
+    expect(payload, contains('"stringValue":"HttpException"'));
+    expect(payload, contains('exception.stacktrace'));
+    expect(payload, contains('_catalogImportWorkerEntry'));
+    expect(payload, contains('failure.phase'));
+    for (final secret in [
+      'private-user',
+      'private-pass',
+      'secret response body',
+    ]) {
+      expect(payload, isNot(contains(secret)));
     }
-    expect(payload, isNot(contains('sql-secret')));
-    expect(payload, isNot(contains('credential')));
-    expect(payload, isNot(contains('exception.stacktrace')));
   });
 
   test('rejects unsafe endpoints and keeps keys out of persisted settings', () {

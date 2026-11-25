@@ -186,6 +186,16 @@ http://[
               .having((error) => error.errorType, 'errorType', 'HttpException')
               .having((error) => error.message, 'message', contains('500'))
               .having(
+                (error) => error.diagnostics,
+                'structured diagnostics',
+                containsPair('http.response.status_code', 500),
+              )
+              .having(
+                (error) => error.diagnostics,
+                'request stage',
+                containsPair('failure.phase', 'response_headers'),
+              )
+              .having(
                 (error) => error.message,
                 'message does not expose playlist credentials',
                 allOf(
@@ -195,6 +205,69 @@ http://[
               ),
         ),
       );
+    });
+
+    test('preserves the original worker stack across the isolate', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      unawaited(() async {
+        final request = await server.first;
+        request.response.statusCode = HttpStatus.forbidden;
+        await request.response.close();
+      }());
+      final handle = await CatalogImportWorker.start(
+        playlistId: 'original-stack',
+        playlistUrl: 'http://127.0.0.1:${server.port}/get.php?password=secret',
+        selectRows: (_) async => [],
+        onRows: (_, _) async {},
+      );
+      Object? failure;
+      StackTrace? originalStack;
+      try {
+        await handle.done;
+      } catch (error, stack) {
+        failure = error;
+        originalStack = stack;
+      }
+
+      expect(failure, isA<CatalogImportWorkerException>());
+      final workerError = failure! as CatalogImportWorkerException;
+      expect(originalStack.toString(), workerError.workerStackTrace);
+      expect(originalStack.toString(), contains('_catalogImportWorkerEntry'));
+      expect(originalStack.toString(), isNot(contains('_consumeMessages')));
+      expect(
+        workerError.diagnostics['exception.message'],
+        'Playlist server returned HTTP 403.',
+      );
+      expect(workerError.toString(), isNot(contains('password=secret')));
+    });
+
+    test('preserves FormatException behavior and the decoder stack', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      unawaited(() async {
+        final request = await server.first;
+        request.response.add([0xff]);
+        await request.response.close();
+      }());
+      final handle = await CatalogImportWorker.start(
+        playlistId: 'invalid-utf8',
+        playlistUrl: 'http://127.0.0.1:${server.port}/playlist.m3u',
+        selectRows: (_) async => [],
+        onRows: (_, _) async {},
+      );
+      Object? failure;
+      StackTrace? originalStack;
+      try {
+        await handle.done;
+      } catch (error, stack) {
+        failure = error;
+        originalStack = stack;
+      }
+
+      expect(failure, isA<FormatException>());
+      expect(originalStack.toString(), contains('dart:convert'));
+      expect(originalStack.toString(), isNot(contains('_consumeMessages')));
     });
   });
 }

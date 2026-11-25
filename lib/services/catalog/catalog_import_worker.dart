@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import '../../models/content_item.dart';
+import '../errors/network_failure_diagnostics.dart';
 import '../security/url_redaction.dart';
 import '../telemetry/app_telemetry.dart';
 import 'catalog_classifier.dart';
@@ -46,11 +47,13 @@ class CatalogImportWorkerException implements Exception {
     required this.errorType,
     required this.message,
     required this.workerStackTrace,
+    this.diagnostics = const {},
   });
 
   final String errorType;
   final String message;
   final String workerStackTrace;
+  final Map<String, Object> diagnostics;
 
   @override
   String toString() => '$errorType: $message';
@@ -294,13 +297,22 @@ class CatalogImportWorker {
             final errorMessage =
                 message['error']?.toString() ??
                 'Playlist import worker failed.';
-            if (errorType == 'FormatException') {
-              throw FormatException(errorMessage);
-            }
-            throw CatalogImportWorkerException(
-              errorType: errorType,
-              message: errorMessage,
-              workerStackTrace: message['stackTrace']?.toString() ?? '',
+            final workerStack = message['stackTrace']?.toString() ?? '';
+            final error = errorType == 'FormatException'
+                ? FormatException(errorMessage)
+                : CatalogImportWorkerException(
+                    errorType: errorType,
+                    message: errorMessage,
+                    workerStackTrace: workerStack,
+                    diagnostics: Map<String, Object>.from(
+                      message['diagnostics']! as Map<Object?, Object?>,
+                    ),
+                  );
+            Error.throwWithStackTrace(
+              error,
+              workerStack.isEmpty
+                  ? StackTrace.current
+                  : StackTrace.fromString(workerStack),
             );
           default:
             throw StateError(
@@ -364,6 +376,8 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
   final selectionWait = Stopwatch();
   final acknowledgementWait = Stopwatch();
   final diagnosticInterval = Stopwatch()..start();
+  var phase = 'connect';
+  int? statusCode;
 
   void reportDiagnostics({bool force = false}) {
     if (!diagnostics ||
@@ -523,7 +537,9 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
         HttpHeaders.userAgentHeader,
         catalogHttpUserAgent,
       );
+      phase = 'response_headers';
       final response = await httpRequest.close().timeout(timeout);
+      statusCode = response.statusCode;
       replyTo.send({'type': 'status', 'statusCode': response.statusCode});
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
@@ -544,6 +560,7 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
         'lastModified': response.headers.value(HttpHeaders.lastModifiedHeader),
       });
 
+      phase = 'response_body';
       await for (final text
           in response.transform(utf8.decoder).timeout(timeout)) {
         if (cancelled) throw const CatalogImportCancelledException();
@@ -560,14 +577,17 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
             text.length,
           );
           if (diagnostics) parsingCpu.start();
+          phase = 'parse';
           try {
             parser.addChunk(text.substring(offset, end), collectItem);
           } finally {
             parsingCpu.stop();
           }
           while (batch.length >= batchSize) {
+            phase = 'batch_acknowledgement';
             await sendBatch(limit: batchSize);
           }
+          phase = 'response_body';
         }
         replyTo.send({
           'type': 'progress',
@@ -577,12 +597,14 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
         });
       }
       if (diagnostics) parsingCpu.start();
+      phase = 'parse';
       try {
         parser.finish(collectItem);
       } finally {
         parsingCpu.stop();
       }
       itemsRejected += parser.rejectedRecordCount;
+      phase = 'batch_acknowledgement';
       await sendBatch();
       reportDiagnostics(force: true);
       replyTo.send({
@@ -605,6 +627,15 @@ void _catalogImportWorkerEntry(Map<String, Object?> request) async {
       'errorType': error.runtimeType.toString(),
       'error': redactSensitiveText(error.toString()),
       'stackTrace': redactSensitiveText(stackTrace.toString()),
+      'diagnostics': {
+        ...networkFailureDiagnostics(error),
+        'failure.phase': phase,
+        'http.response.status_code': ?statusCode,
+        if (error is HttpException &&
+            statusCode != null &&
+            (statusCode < 200 || statusCode >= 300))
+          'exception.message': 'Playlist server returned HTTP $statusCode.',
+      },
     });
   } finally {
     selectionWait.stop();

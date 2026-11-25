@@ -41,8 +41,9 @@ For startup diagnostics before Settings can be opened:
 flutter run -d windows --dart-define=IPTV_TELEMETRY_ENABLED=true --dart-define=OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:24318 --dart-define=OTEL_SERVICE_NAME=iptv-app --dart-define=IPTV_DEVICE_ALIAS=windows-dev
 ```
 
-Other build defaults: `IPTV_TELEMETRY_VERBOSE=true` includes filtered Dart stack
-frames; `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` is the default transport
+Failures include up to eight filtered stack frames by default.
+`IPTV_TELEMETRY_VERBOSE=true` increases this to 32 frames;
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` is the default transport
 (`http/json` is also supported). The app explicitly reads these defines; it does
 not promise automatic handling of all OTEL environment variables.
 
@@ -110,6 +111,15 @@ rejected while instrumented operations are active; retry once they finish.
 
 - `playlist.import`: one root per actual job; concurrent subscribers share it.
 - `http.playlist.headers`: time to headers; status logs include non-2xx responses.
+- Worker failures report the original exception type (for example
+  `HandshakeException`, not just `CatalogImportWorkerException`) and the original
+  worker stack. `failure.phase` distinguishes connection, response headers, body,
+  parsing, and batch acknowledgement. Network failures include a fixed safe
+  explanation, HTTP status, OS error code, timeout duration, or a recognized TLS
+  failure reason when available. Raw provider error messages are not exported.
+- The same exception can fail the header span, cold/warm import span, root import
+  span, and controller operation. These are propagation records, not four separate
+  requests. Use their trace context to follow the first failure.
 - `playlist.import.worker`: cumulative synchronous parsing time, selection wait,
   acknowledgement wait, parsed count, and bytes. Parsing time is not profiler CPU
   usage. Download/parsing/database work overlap; do not sum overlapping durations.
@@ -134,9 +144,11 @@ database/import operation. The Settings test explicitly checks delivery failure.
 
 Export attributes are allowlisted. Raw URLs are removed entirely; playlist bodies,
 SQL statements/arguments/results, headers, keys, file paths, and raw exception
-messages are not exported. Filesystem failures include a fixed operation summary
-and OS error code when available. Failures also contain exception type and
-optionally filtered package/Dart stack frames. Local debug output continues using
+messages are not exported. Filesystem and network failures include fixed safe
+summaries and OS error codes when available. Failures contain the underlying
+exception type and filtered package/Dart or release-AOT stack frames (up to eight
+normally, 32 in verbose mode). AOT address-only frames may need symbolization
+against the exact matching build. Local debug output continues using
 the existing redaction policy.
 Native plugin output is not automatically intercepted or shipped.
 
@@ -167,3 +179,20 @@ development diagnostic path, not a native crash reporter or retention service.
 
 References: https://aspire.dev/dashboard/standalone/ and
 https://aspire.dev/dashboard/configuration/.
+
+### Playlist Failure Diagnostics (2026-11-25)
+
+- 55 focused network-diagnostic, worker, OTLP export, import, and controller tests
+  passed, including a real worker-isolate HTTP 403 exported to a loopback OTLP
+  receiver. Credential/body/SQL exclusion, original worker stacks, TLS reasons,
+  release-AOT frame filtering and nonverbose stack export are covered.
+- Analyzer retains only the two pre-existing informational findings above.
+- Full suite reached 559 passes and the same two modal-focus failures, then
+  stalled without further progress and was stopped. No focus code was changed.
+- A new webOS build and TV reproduction are required to diagnose the
+  Xtream-specific failure. In the first `http.playlist.headers` failure, capture
+  `exception.type`, `exception.message`, `failure.phase`,
+  `http.response.status_code`, `exception.os_error_code`, `tls.failure_reason`,
+  and `exception.stacktrace` (some fields apply only to certain failures).
+  No provider credentials or playlist URLs are needed. Do not disable TLS
+  validation or change database behavior without evidence.

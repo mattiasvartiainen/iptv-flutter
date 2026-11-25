@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart' as otel;
 
+import '../catalog/catalog_import_worker.dart';
+import '../errors/network_failure_diagnostics.dart';
 import 'app_telemetry.dart';
 import 'telemetry_config.dart';
 import 'tracked_otlp_exporters.dart';
@@ -232,7 +234,9 @@ class OtlpAppTelemetry extends AppTelemetry {
       try {
         span?.setStatus(
           otel.SpanStatusCode.Error,
-          error.runtimeType.toString(),
+          error is CatalogImportWorkerException
+              ? error.errorType
+              : error.runtimeType.toString(),
         );
       } catch (_) {}
       try {
@@ -279,13 +283,42 @@ class OtlpAppTelemetry extends AppTelemetry {
   void failure(String name, Object error, StackTrace stackTrace) {
     if (!config.enabled || _logs == null) return;
     try {
+      final workerError = error is CatalogImportWorkerException ? error : null;
+      final diagnostics =
+          workerError?.diagnostics ?? networkFailureDiagnostics(error);
+      final stack =
+          workerError != null && workerError.workerStackTrace.isNotEmpty
+          ? StackTrace.fromString(workerError.workerStackTrace)
+          : stackTrace;
+      final filteredStack = safeStack(
+        stack,
+        maxFrames: config.verbose ? 32 : 8,
+      );
+      final summary = diagnostics['exception.message'];
       _logs!
           .getLogger('iptv.diagnostics')
           .emit(
-            body: '${safeText(name)} failed',
+            body:
+                '${safeText(name)} failed'
+                '${summary == null ? '' : ': ${safeText(summary.toString())}'}',
             severityNumber: otel.Severity.ERROR,
             attributes: otel.OTel.attributesFromMap({
-              'exception.type': error.runtimeType.toString(),
+              'exception.type':
+                  workerError?.errorType ?? error.runtimeType.toString(),
+              if (workerError != null)
+                'exception.wrapper_type': 'CatalogImportWorkerException',
+              for (final entry in diagnostics.entries)
+                if (const {
+                  'exception.message',
+                  'exception.os_error_code',
+                  'exception.timeout_ms',
+                  'tls.failure_reason',
+                  'failure.phase',
+                  'http.response.status_code',
+                }.contains(entry.key))
+                  entry.key: entry.value is num
+                      ? entry.value
+                      : safeText(entry.value.toString()),
               if (error is FileSystemException) ...{
                 'exception.message': switch (error.message) {
                   'Creation failed' => 'Could not create a filesystem entry.',
@@ -298,7 +331,8 @@ class OtlpAppTelemetry extends AppTelemetry {
                 if (error.osError != null)
                   'exception.os_error_code': error.osError!.errorCode,
               },
-              if (config.verbose) 'exception.stacktrace': safeStack(stackTrace),
+              if (filteredStack.isNotEmpty)
+                'exception.stacktrace': filteredStack,
             }),
             context: otel.Context.current,
           );
@@ -342,12 +376,19 @@ class OtlpAppTelemetry extends AppTelemetry {
     }
   }
 
-  static String safeStack(StackTrace stack) {
-    final frames = RegExp(
+  static String safeStack(StackTrace stack, {int maxFrames = 32}) {
+    final dartFrame = RegExp(
       r'^#\d+\s+([A-Za-z0-9_.$<> ]+)\s+\((?:package:([A-Za-z0-9_./]+\.dart)|dart:([A-Za-z0-9_./]+)):(\d+):(\d+)\)$',
-      multiLine: true,
-    ).allMatches(stack.toString());
-    return frames.take(32).map((frame) => frame.group(0)!).join('\n');
+    );
+    final aotFrame = RegExp(
+      r'^\s*#\d+\s+abs\s+[0-9a-fA-F]+\s+virt\s+[0-9a-fA-F]+(?:\s+[A-Za-z0-9_.$<>+ -]+)?$',
+    );
+    return stack
+        .toString()
+        .split('\n')
+        .where((line) => dartFrame.hasMatch(line) || aotFrame.hasMatch(line))
+        .take(maxFrames)
+        .join('\n');
   }
 
   Future<void> close() async {

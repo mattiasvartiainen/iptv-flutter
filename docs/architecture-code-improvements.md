@@ -92,6 +92,7 @@ Size guide: XS < 30 min of agent work, S = one focused change, M = several files
 | WP | Title | Depends on | Status |
 |----|-------|------------|--------|
 | WP-9.3 | Configurable Aspire OTLP diagnostics for playlist/database troubleshooting | WP-9.1, WP-9.2a | IMPLEMENTED (2026-11-01), Windows export verified; LG hardware export observed, settings persistence and large-playlist overhead pending. Filesystem failures now report a safe summary and OS error code. Full suite has two independently reproducible baseline modal-focus failures. See [telemetry.md](telemetry.md) for scope, verification, configuration, and remaining gates. |
+| WP-9.3a | Actionable playlist worker failure diagnostics | WP-9.1, WP-9.2a | DONE (2026-11-25): Preserved worker stacks across isolates; export underlying network exception types, safe summaries, request stage, HTTP status, OS/TLS details and filtered stacks without verbose mode. All 55 focused regressions pass; analyzer has only the two existing infos. Full suite reached 559 passes and the two documented modal-focus failures, then stalled and was stopped. LG Xtream root-cause diagnosis requires a reproduction with the new diagnostics. |
 
 ---
 
