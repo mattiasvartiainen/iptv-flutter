@@ -241,6 +241,24 @@ focus-node lifetime, auto-hide timers, input/Back policy, seek-preview state and
 chooser session/focus restoration. Presentation widgets do not own playback
 sessions, introduce new subscriptions or change native surface caching.
 
+`PlayerLayout` owns the overlay breakpoint and compact/regular geometry.
+`PlayerControls` resolves it from `LayoutBuilder` constraints; dialogs use their
+available window height and text scaler for bounded lazy track lists. The
+existing short-window breakpoint remains 500 logical pixels, independent of OS
+and primary input. Layout policy has no playback/controller dependencies.
+
+`PlayerTheme` is a `ThemeExtension` installed by `AppTheme.dark()`. It centralizes
+video background, overlay foreground/secondary/warning colors, directional
+scrims and the controls fade duration. Customize these with
+`ThemeData.copyWith(extensions: [PlayerTheme(...)])` at the composition boundary
+or an inherited `Theme`; keep other extensions when present. Material controls,
+typography and focus rings still inherit the shared app theme, whose injected
+input capabilities select 48/56-pixel command targets. Reduced motion disables
+the fade, not the four-second auto-hide behavior; accessible navigation keeps
+controls visible. Native-plane backends always retain a transparent video
+background. Presentation updates do not load, stop or replace playback resources.
+Android TV detection and new device-specific layouts remain separate work.
+
 Playback state carries backend-neutral technical facts and track lists. Unknown
 facts remain absent; source FPS is not a rendered-FPS counter, and audio sample
 format/channel count are not guessed into codec or 5.1 labels. Absolute seek

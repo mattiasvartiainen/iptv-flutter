@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../services/playback/playback_contract.dart';
+import '../player_layout.dart';
 
 class PlayerTrackDialog extends StatelessWidget {
   const PlayerTrackDialog({
@@ -22,19 +23,21 @@ class PlayerTrackDialog extends StatelessWidget {
     final selected = subtitle
         ? mediaInfo.selectedSubtitleId
         : mediaInfo.selectedAudioId;
+    final availableHeight = MediaQuery.sizeOf(context).height;
     return AlertDialog(
       title: Text(subtitle ? 'Subtitles' : 'Audio tracks'),
       content: SizedBox(
-        width: 440,
-        height: tracks.isEmpty
-            ? null
-            : (tracks.length * 72.0 * MediaQuery.textScalerOf(context).scale(1))
-                  .clamp(0, MediaQuery.sizeOf(context).height * .45),
+        width: PlayerLayout.trackDialogWidth,
+        height: PlayerLayout.trackListHeight(
+          trackCount: tracks.length,
+          textScaler: MediaQuery.textScalerOf(context),
+          availableHeight: availableHeight,
+        ),
         child: tracks.isEmpty
             ? const Text('No tracks available.')
             : ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * .5,
+                  maxHeight: PlayerLayout.trackListMaxHeight(availableHeight),
                 ),
                 child: ListView.builder(
                   itemCount: tracks.length,

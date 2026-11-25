@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../ui/formatting.dart';
+import '../../../ui/theme/player_theme.dart';
 
 class PlayerSeekBar extends StatelessWidget {
   const PlayerSeekBar({
@@ -50,11 +51,11 @@ class PlayerSeekBar extends StatelessWidget {
                   ? position
                   : Duration(milliseconds: preview!.round()),
             ),
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: PlayerTheme.of(context).foreground),
           ),
           Text(
             formatDuration(duration),
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: PlayerTheme.of(context).foreground),
           ),
         ],
       ),

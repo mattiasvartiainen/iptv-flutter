@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../../services/playback/playback_contract.dart';
 import '../../../services/playback/playback_labels.dart';
+import '../../../ui/theme/player_theme.dart';
+import '../player_layout.dart';
 
 class PlayerHeader extends StatelessWidget {
   const PlayerHeader({
     super.key,
     required this.title,
     required this.playback,
-    required this.compact,
+    required this.layout,
     required this.canFavorite,
     required this.favorite,
     required this.favoriteBusy,
@@ -19,7 +21,7 @@ class PlayerHeader extends StatelessWidget {
 
   final String title;
   final PlaybackState playback;
-  final bool compact;
+  final PlayerLayout layout;
   final bool canFavorite;
   final bool? favorite;
   final bool favoriteBusy;
@@ -28,102 +30,99 @@ class PlayerHeader extends StatelessWidget {
   final VoidCallback onToggleFavorite;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Colors.black87, Colors.transparent],
-      ),
-    ),
-    child: SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: compact ? 4 : 8,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Back',
-                  onPressed: onBack,
-                  color: Colors.white,
-                  icon: const Icon(Icons.arrow_back),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    safePlaybackLabel(title),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(color: Colors.white),
-                  ),
-                ),
-                IconButton(
-                  tooltip: canFavorite
-                      ? (favorite == true
-                            ? 'Remove from favourites'
-                            : 'Add to favourites')
-                      : 'Favourites unavailable for this item',
-                  onPressed: canFavorite && !favoriteBusy
-                      ? onToggleFavorite
-                      : null,
-                  color: Colors.white,
-                  icon: favoriteBusy
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Icon(
-                          favorite == true
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                        ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 4,
+  Widget build(BuildContext context) {
+    final playerTheme = PlayerTheme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(gradient: playerTheme.headerGradient),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: layout.headerPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
                 children: [
-                  Text(
-                    _statusLabel(playback.status),
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: compact ? 12 : null,
-                    ),
+                  IconButton(
+                    tooltip: 'Back',
+                    onPressed: onBack,
+                    color: playerTheme.foreground,
+                    icon: const Icon(Icons.arrow_back),
                   ),
-                  for (final label in _technicalLabels(playback.mediaInfo))
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: compact ? 12 : null,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      safePlaybackLabel(title),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: playerTheme.foreground,
                       ),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: canFavorite
+                        ? (favorite == true
+                              ? 'Remove from favourites'
+                              : 'Add to favourites')
+                        : 'Favourites unavailable for this item',
+                    onPressed: canFavorite && !favoriteBusy
+                        ? onToggleFavorite
+                        : null,
+                    color: playerTheme.foreground,
+                    icon: favoriteBusy
+                        ? SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: playerTheme.foreground,
+                            ),
+                          )
+                        : Icon(
+                            favorite == true
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                          ),
+                  ),
                 ],
               ),
-            ),
-            if (controlError != null)
-              Text(controlError!, style: const TextStyle(color: Colors.amber)),
-          ],
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      _statusLabel(playback.status),
+                      style: TextStyle(
+                        color: playerTheme.secondaryForeground,
+                        fontSize: layout.technicalFontSize,
+                      ),
+                    ),
+                    for (final label in _technicalLabels(playback.mediaInfo))
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: playerTheme.secondaryForeground,
+                          fontSize: layout.technicalFontSize,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (controlError != null)
+                Text(
+                  controlError!,
+                  style: TextStyle(color: playerTheme.warning),
+                ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   List<String> _technicalLabels(PlaybackMediaInfo info) => [
     if (info.width != null &&

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/features/player/player_layout.dart';
 import 'package:iptv_flutter/features/player/widgets/player_error_panel.dart';
 import 'package:iptv_flutter/features/player/widgets/player_header.dart';
 import 'package:iptv_flutter/features/player/widgets/player_seek_bar.dart';
@@ -71,7 +72,9 @@ void main() {
             channelLayout: '5.1',
           ),
         ),
-        compact: false,
+        layout: PlayerLayout.fromConstraints(
+          const BoxConstraints.tightFor(width: 1280, height: 720),
+        ),
         canFavorite: available,
         favorite: true,
         favoriteBusy: busy,
@@ -136,7 +139,9 @@ void main() {
                 fps: double.nan,
               ),
             ),
-            compact: true,
+            layout: PlayerLayout.fromConstraints(
+              const BoxConstraints.tightFor(width: 640, height: 360),
+            ),
             canFavorite: false,
             favorite: null,
             favoriteBusy: false,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_tokens.dart';
+import 'player_theme.dart';
 
 abstract final class AppTheme {
   static ThemeData dark({
@@ -41,6 +42,11 @@ abstract final class AppTheme {
           : AppTokens.focusDuration,
     );
     return base.copyWith(
+      extensions: [
+        disableAnimations
+            ? const PlayerTheme().copyWith(controlsFadeDuration: Duration.zero)
+            : const PlayerTheme(),
+      ],
       scaffoldBackgroundColor: AppTokens.background,
       focusColor: AppTokens.focusRing.withValues(alpha: 0.16),
       visualDensity: VisualDensity.standard,

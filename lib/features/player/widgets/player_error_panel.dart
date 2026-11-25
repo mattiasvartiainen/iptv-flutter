@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../services/playback/playback_contract.dart';
+import '../../../ui/theme/player_theme.dart';
+import '../player_layout.dart';
 
 class PlayerErrorPanel extends StatelessWidget {
   const PlayerErrorPanel({
@@ -16,23 +18,27 @@ class PlayerErrorPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-    color: Colors.black54,
+    color: PlayerTheme.of(context).errorScrim,
     child: Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: const BoxConstraints(maxWidth: PlayerLayout.errorMaxWidth),
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: PlayerLayout.errorPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.white, size: 48),
+              Icon(
+                Icons.error_outline,
+                color: PlayerTheme.of(context).foreground,
+                size: 48,
+              ),
               const SizedBox(height: 16),
               Text(
                 _playbackErrorMessage(errorKind),
                 textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(color: Colors.white),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: PlayerTheme.of(context).foreground,
+                ),
               ),
               const SizedBox(height: 20),
               Wrap(

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../app/app_shortcuts.dart';
 import '../../models/content_item.dart';
 import '../../services/playback/playback_contract.dart';
+import '../../ui/theme/player_theme.dart';
 import '../../ui/widgets/app_scope.dart';
 import 'player_controller.dart';
 import 'widgets/player_controls.dart';
@@ -159,10 +160,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final player = AppScope.playerControllerOf(context);
     final preferences = AppScope.preferencesControllerOf(context);
     final theme = Theme.of(context);
+    final playerTheme = PlayerTheme.of(context);
+    final videoBackground = player.capabilities.usesPlatformVideoPlane
+        ? Colors.transparent
+        : playerTheme.videoBackground;
     return Scaffold(
-      backgroundColor: player.capabilities.usesPlatformVideoPlane
-          ? Colors.transparent
-          : Colors.black,
+      backgroundColor: videoBackground,
       body: MouseRegion(
         onHover: (_) => _showControls(),
         child: GestureDetector(
@@ -248,9 +251,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     fit: StackFit.expand,
                     children: [
                       ColoredBox(
-                        color: player.capabilities.usesPlatformVideoPlane
-                            ? Colors.transparent
-                            : Colors.black,
+                        color: videoBackground,
                         child: Center(
                           child:
                               player.videoView ??
@@ -263,8 +264,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                       if (playback.status == PlaybackStatus.loading ||
                           playback.isBuffering)
-                        const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
+                        Center(
+                          child: CircularProgressIndicator(
+                            color: playerTheme.foreground,
+                          ),
                         ),
                       if (playback.status == PlaybackStatus.error)
                         PlayerErrorPanel(
@@ -284,7 +287,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               opacity: _controlsVisible ? 1 : 0,
                               duration: MediaQuery.disableAnimationsOf(context)
                                   ? Duration.zero
-                                  : const Duration(milliseconds: 180),
+                                  : playerTheme.controlsFadeDuration,
                               child: Focus(
                                 onFocusChange: _handleControlFocus,
                                 child: ListenableBuilder(

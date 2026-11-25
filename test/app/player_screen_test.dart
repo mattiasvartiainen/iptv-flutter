@@ -8,6 +8,7 @@ import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
+import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/favorite_repository.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
@@ -41,6 +42,13 @@ Future<_PlayerHarness> _pumpPlayerApp(
   PlaybackAdapter? playbackAdapter,
   ContentItem? item,
   FavoriteRepository? favorites,
+  PlatformCapabilities capabilities = const PlatformCapabilities(
+    primaryInput: PrimaryInput.pointer,
+    hasHardwareBack: false,
+    supportsHover: true,
+  ),
+  bool disableAnimations = false,
+  bool accessibleNavigation = false,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -85,9 +93,12 @@ Future<_PlayerHarness> _pumpPlayerApp(
       data: MediaQueryData(
         size: size,
         textScaler: TextScaler.linear(textScale),
+        disableAnimations: disableAnimations,
+        accessibleNavigation: accessibleNavigation,
       ),
       child: IptvApp(
         dependencies: AppDependencies.forTesting(
+          capabilities: capabilities,
           appController: app,
           playerController: player,
           playlistsController: playlists,
@@ -110,6 +121,121 @@ bool _controlsAreIgnoringInput(WidgetTester tester) => tester
     .ignoring;
 
 void main() {
+  testWidgets(
+    'resize across compact boundary preserves playback, focus and surface',
+    (tester) async {
+      final adapter = _CountingVideoAdapter();
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: adapter,
+        item: _movie,
+      );
+      await harness.player.pause();
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      final session = harness.player.playbackSession;
+      final focus = FocusManager.instance.primaryFocus;
+      final surface = tester.element(find.byType(_CountingVideoView));
+      final initialLoads = adapter.loads;
+      for (final size in [
+        const Size(640, 360),
+        const Size(390, 844),
+        const Size(1920, 1080),
+      ]) {
+        tester.view.physicalSize = size;
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byKey(const ValueKey('player-central-play')),
+              )
+              .iconSize,
+          size.height < 500 ? 36 : 52,
+        );
+        expect(harness.player.playbackSession, session);
+        expect(
+          harness.player.playbackState.value.status,
+          PlaybackStatus.paused,
+        );
+        expect(adapter.loads, initialLoads);
+        expect(adapter.viewsCreated, 1);
+        expect(tester.element(find.byType(_CountingVideoView)), same(surface));
+        expect(FocusManager.instance.primaryFocus, same(focus));
+        expect(tester.takeException(), isNull);
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(adapter.state.status, PlaybackStatus.playing);
+    },
+  );
+
+  for (final input in PrimaryInput.values) {
+    testWidgets('player targets and remote actions retain $input policy', (
+      tester,
+    ) async {
+      final adapter = _TrackingPlaybackAdapter();
+      await _pumpPlayerApp(
+        tester,
+        size: const Size(640, 360),
+        playbackAdapter: adapter,
+        item: _movie,
+        capabilities: PlatformCapabilities(
+          primaryInput: input,
+          hasHardwareBack: input != PrimaryInput.pointer,
+          supportsHover: input == PrimaryInput.pointer,
+        ),
+      );
+      final back = find.widgetWithIcon(IconButton, Icons.arrow_back);
+      final minimum = input == PrimaryInput.remote ? 56.0 : 48.0;
+      expect(tester.getSize(back).height, greaterThanOrEqualTo(minimum));
+      expect(tester.getSize(back).width, greaterThanOrEqualTo(minimum));
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(adapter.state.status, PlaybackStatus.paused);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('reduced motion changes fade only, not auto-hide timing', (
+    tester,
+  ) async {
+    await _pumpPlayerApp(tester, disableAnimations: true);
+    final fade = find.descendant(
+      of: find.byKey(const ValueKey<String>('player-controls')),
+      matching: find.byType(AnimatedOpacity),
+    );
+    expect(tester.widget<AnimatedOpacity>(fade).duration, Duration.zero);
+    await tester.pump(const Duration(seconds: 3));
+    expect(_controlsAreIgnoringInput(tester), isFalse);
+    await tester.pump(const Duration(seconds: 1));
+    expect(_controlsAreIgnoringInput(tester), isTrue);
+  });
+
+  testWidgets('accessible navigation keeps controls available', (tester) async {
+    await _pumpPlayerApp(tester, accessibleNavigation: true);
+    await tester.pump(const Duration(seconds: 5));
+    expect(_controlsAreIgnoringInput(tester), isFalse);
+  });
+
+  testWidgets('native-plane background remains transparent', (tester) async {
+    await _pumpPlayerApp(tester, playbackAdapter: _NativePlaneAdapter());
+    final surface = find.byKey(const ValueKey<String>('player-controls'));
+    final scaffold = tester.widget<Scaffold>(
+      find.ancestor(of: surface, matching: find.byType(Scaffold)).first,
+    );
+    expect(scaffold.backgroundColor, Colors.transparent);
+    final backgrounds = find.ancestor(
+      of: find.byIcon(Icons.ondemand_video),
+      matching: find.byType(ColoredBox),
+    );
+    expect(
+      tester.widget<ColoredBox>(backgrounds.first).color,
+      Colors.transparent,
+    );
+  });
+
   testWidgets(
     'unsafe webOS build reports a setup error and visible Back exits',
     (tester) async {
@@ -550,11 +676,13 @@ class _Favorites implements FavoriteRepository {
 }
 
 class _CountingVideoAdapter extends _TrackingPlaybackAdapter {
+  int loads = 0;
   int viewsCreated = 0;
   int builds = 0;
   Widget? _view;
   @override
   Future<void> load(ContentItem item) {
+    loads++;
     _view = null;
     return super.load(item);
   }
@@ -590,6 +718,18 @@ class _ConfigurationPlaybackAdapter extends FakePlaybackAdapter {
   @override
   Future<void> load(ContentItem item) async =>
       throw PlaybackConfigurationError();
+}
+
+class _NativePlaneAdapter extends _TrackingPlaybackAdapter {
+  @override
+  PlaybackCapabilities get capabilities => const PlaybackCapabilities(
+    supportsSeek: true,
+    supportsPause: true,
+    supportsVolume: false,
+    supportsDrm: false,
+    supportsLiveStreams: true,
+    usesPlatformVideoPlane: true,
+  );
 }
 
 class _RecoveringPlaybackAdapter extends FakePlaybackAdapter {

@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import '../../../models/content_item.dart';
 import '../../../services/playback/playback_contract.dart';
 import '../../../ui/formatting.dart';
+import '../../../ui/theme/player_theme.dart';
 import '../player_controller.dart';
+import '../player_layout.dart';
 import 'player_header.dart';
 import 'player_seek_bar.dart';
 
@@ -50,9 +52,10 @@ class PlayerControls extends StatelessWidget {
         duration > Duration.zero &&
         item.type != ContentType.live;
     final canPause = player.capabilities.supportsPause;
+    final playerTheme = PlayerTheme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxHeight < 500;
+        final layout = PlayerLayout.fromConstraints(constraints);
         return Stack(
           children: [
             Positioned(
@@ -62,7 +65,7 @@ class PlayerControls extends StatelessWidget {
               child: PlayerHeader(
                 title: playback.item?.title ?? item.title,
                 playback: playback,
-                compact: compact,
+                layout: layout,
                 canFavorite: player.canFavorite,
                 favorite: player.favorite,
                 favoriteBusy: player.favoriteBusy,
@@ -78,7 +81,7 @@ class PlayerControls extends StatelessWidget {
                 child: IconButton.filled(
                   key: const ValueKey('player-central-play'),
                   focusNode: playFocus,
-                  iconSize: compact ? 36 : 52,
+                  iconSize: layout.centralIconSize,
                   tooltip: playback.status == PlaybackStatus.playing
                       ? 'Pause'
                       : 'Play',
@@ -100,22 +103,11 @@ class PlayerControls extends StatelessWidget {
               right: 0,
               bottom: 0,
               child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black87, Colors.transparent],
-                  ),
-                ),
+                decoration: BoxDecoration(gradient: playerTheme.bottomGradient),
                 child: SafeArea(
                   top: false,
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      compact ? 4 : 28,
-                      16,
-                      compact ? 4 : 12,
-                    ),
+                    padding: layout.bottomPadding,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -164,7 +156,7 @@ class PlayerControls extends StatelessWidget {
                                   player.capabilities.supportsSubtitleTracks
                                   ? 'Subtitles'
                                   : 'Subtitles unavailable',
-                              color: Colors.white,
+                              color: playerTheme.foreground,
                               onPressed:
                                   player.capabilities.supportsSubtitleTracks
                                   ? onChooseSubtitles
@@ -175,7 +167,7 @@ class PlayerControls extends StatelessWidget {
                               tooltip: player.capabilities.supportsAudioTracks
                                   ? 'Audio tracks'
                                   : 'Audio track selection unavailable',
-                              color: Colors.white,
+                              color: playerTheme.foreground,
                               onPressed: player.capabilities.supportsAudioTracks
                                   ? onChooseAudio
                                   : null,
@@ -183,12 +175,12 @@ class PlayerControls extends StatelessWidget {
                             ),
                             if (player.capabilities.supportsVolume)
                               SizedBox(
-                                width: 140,
+                                width: PlayerLayout.volumeWidth,
                                 child: Row(
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.volume_up,
-                                      color: Colors.white,
+                                      color: playerTheme.foreground,
                                     ),
                                     Expanded(
                                       child: Slider(
@@ -234,9 +226,9 @@ class _PlayerDiagnostics extends StatelessWidget {
       child: Text(
         '$position / $duration${latency == null ? '' : ' · ${latency.inMilliseconds} ms startup'}',
         textAlign: TextAlign.center,
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: PlayerTheme.of(context).secondaryForeground,
+        ),
       ),
     );
   }

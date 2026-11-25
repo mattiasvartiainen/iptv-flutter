@@ -33,6 +33,30 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-player-presentation separates adaptive layout/theme policy from playback.
+Dependencies: WP-player-contract. Touches: player screen/presentation widgets,
+new player layout policy/theme extension, AppTheme and related tests/docs.
+Skills: flutter-build-responsive-layout, dart-add-unit-test,
+dart-write-documentation, dart-run-static-analysis. Preserve existing geometry,
+palette, capability gates, focus/Back, hide timers and track chooser lifetime.
+Use available constraints for layout and inherited app input/accessibility
+styling; no OS checks, backend-selection changes or Android TV detection work.
+Keep presentation policy independent of controllers and native media services.
+
+Implemented `PlayerLayout` for compact/regular overlay geometry and bounded
+track-dialog sizing, and a customizable `PlayerTheme` extension for player
+colors/scrims/fade motion. Shared app input sizing, typography and focus styling
+remain inherited; native-plane transparency overrides themed video background.
+Playback/controller/session code is unchanged. Architecture tests protect
+policy/behavior separation. Resize tests retain the native surface, session and
+focus across compact/portrait/TV-sized windows without another load.
+
+Verification: 114 focused layout/theme/widget/input/controller/session tests
+pass; Windows debug build passes. Analyzer retains the two baseline infos.
+Broad regression: 897 passes and the two known Settings focus failures,
+excluding the previously stalled telemetry file. Native Android/LG hardware
+validation and Android TV profile detection remain separate.
+
 WP-player-contract clarifies capabilities, surface lifetime and typed errors.
 Dependencies: WP-player-widgets. Touches: playback contract/errors/session,
 native adapters, PlayerController and related tests/docs. Skills:
@@ -180,6 +204,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-presentation | Adaptive player layout/theme policy | Player | WP-player-contract | M | DONE (2026-11-25): Constraint-based geometry and inherited player theme; 114 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-contract | Capabilities, surface lifetime and typed errors | Player | WP-player-widgets | M | DONE (2026-11-25) - capability gates, resource-owned reactive surfaces and safe typed failures; 127 focused tests and Windows build pass; baseline analyzer/test caveats above |
 | WP-player-widgets | Focused player presentation widgets | Player | WP-player-session | M | DONE (2026-11-25): Stateless controls/header, seek bar, track dialog and error panel; 69 focused tests and Windows debug build pass. |
 | WP-player-session | Playback session and lifecycle guarantees | Player | WP-player-overlay | M | DONE (2026-11-25): Latest-wins ownership, cancellable loads/restarts, awaited cleanup; 103 focused tests and Windows debug build pass. Regression caveats documented above. |

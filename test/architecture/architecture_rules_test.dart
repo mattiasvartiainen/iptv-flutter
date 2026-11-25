@@ -80,6 +80,35 @@ void main() {
 
     expect(violations, isEmpty);
   });
+
+  test('player presentation policy stays independent of playback behavior', () {
+    for (final path in [
+      'lib/features/player/player_layout.dart',
+      'lib/ui/theme/player_theme.dart',
+    ]) {
+      expect(
+        RegExp(
+          r'''^\s*import\s+['"][^'"]*(?:services/[^'"]*|player_controller\.dart)['"]''',
+          multiLine: true,
+        ).hasMatch(sources[path]!),
+        isFalse,
+        reason: '$path must not depend on playback behavior.',
+      );
+    }
+    for (final path in [
+      'lib/features/player/player_controller.dart',
+      'lib/services/playback/playback_session.dart',
+    ]) {
+      expect(
+        RegExp(
+          r'''^\s*import\s+['"][^'"]*(?:player_layout|player_theme|app_theme)\.dart['"]''',
+          multiLine: true,
+        ).hasMatch(sources[path]!),
+        isFalse,
+        reason: '$path must not depend on presentation policy.',
+      );
+    }
+  });
 }
 
 Map<String, String> _readDartSources() {
