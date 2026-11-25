@@ -83,6 +83,49 @@ void main() {
     expect(indexer.events, ['pause:failed-import', 'release:failed-import:']);
   });
 
+  test(
+    'refresh repairs cached titles from the quoted-comma parsing bug',
+    () async {
+      const titles = ['Patrik 1,5 (2008) [SE]', '[SE] Patrik 1,5 (2008)'];
+      server.responses['/movies.m3u'] = [
+        '#EXTM3U',
+        for (var index = 0; index < titles.length; index++) ...[
+          '#EXTINF:-1 tvg-name="${titles[index]}" '
+              'tvg-logo="https://cdn.test/poster.jpg" '
+              'group-title="Sweden (VOD)",${titles[index]}',
+          'https://stream.test/movie-$index.mp4',
+        ],
+      ].join('\n');
+      final sync = createCatalogSyncService(adapter);
+      Future<CatalogLoadResult> refresh() => sync.load(
+        playlistId: 'movies',
+        playlistUrl: server.url('/movies.m3u'),
+        policy: CatalogLoadPolicy.networkOnly,
+      );
+      expect((await refresh()).itemCount, 2);
+      final db = await adapter.database;
+      Future<List<Map<String, Object?>>> readTitles() => db.rawQuery(
+        'SELECT title FROM items WHERE playlist_id = ? ORDER BY ord',
+        ['movies'],
+      );
+      expect((await readTitles()).map((row) => row['title']), titles);
+
+      await db.update(
+        'items',
+        {
+          'title': '5 (2008) [SE]" tvg-logo="https://cdn.test/poster.jpg"',
+          'content_hash': 0,
+        },
+        where: 'playlist_id = ?',
+        whereArgs: ['movies'],
+      );
+      expect((await refresh()).itemCount, 2);
+
+      expect((await readTitles()).map((row) => row['title']), titles);
+      expect(server.requestCount, 2);
+    },
+  );
+
   test('cacheFirst reuses a cached catalog with no refresh due', () async {
     final indexer = _RecordingSearchIndexer();
     final sync = createCatalogSyncService(adapter, searchIndexer: indexer);

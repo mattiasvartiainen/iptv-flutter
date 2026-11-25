@@ -31,6 +31,79 @@ https://stream.test/movie.m3u8
     expect(items.single.type, ContentType.vod);
   });
 
+  for (final title in ['Patrik 1,5 (2008) [SE]', '[SE] Patrik 1,5 (2008)']) {
+    for (final streaming in [false, true]) {
+      test('preserves quoted commas: $title, streaming=$streaming', () {
+        final playlist =
+            '''#EXTM3U
+#EXTINF:-1 xui-id="{XUI_ID}" tvg-id="" tvg-name="$title" tvg-logo="https://cdn.test/images/poster.jpg" group-title="Sweden (VOD)",$title
+https://stream.test/movie.mp4
+''';
+        final items = <ContentItem>[];
+        if (streaming) {
+          final parser = M3uStreamingParser();
+          for (var index = 0; index < playlist.length; index++) {
+            parser.addChunk(playlist.substring(index, index + 1), items.add);
+          }
+          parser.finish(items.add);
+        } else {
+          items.addAll(parser.parse(playlist));
+        }
+
+        expect(items, hasLength(1));
+        expect(items.single.title, title);
+        expect(items.single.group, 'Sweden (VOD)');
+        expect(items.single.logoUrl, 'https://cdn.test/images/poster.jpg');
+        expect(items.single.type, ContentType.vod);
+        expect(items.single.metadata['tvg-name'], title);
+        expect(items.single.metadata['xui-id'], '{XUI_ID}');
+      });
+    }
+  }
+
+  test('ignores commas in all quoted attributes and preserves title commas', () {
+    final item = parser.parse(
+      '''#EXTINF:-1 tvg-name="Fallback, name" tvg-logo="https://cdn.test/a,b.jpg" group-title="Sweden, Movies",One, two, three
+https://stream.test/movie.mp4
+''',
+    ).single;
+
+    expect(item.title, 'One, two, three');
+    expect(item.group, 'Sweden, Movies');
+    expect(item.logoUrl, 'https://cdn.test/a,b.jpg');
+  });
+
+  for (final separator in ['', ',']) {
+    test('uses quoted tvg-name fallback with separator "$separator"', () {
+      final item = parser.parse(
+        '''#EXTINF:-1 tvg-name="Patrik 1,5" group-title="Movies"$separator
+https://stream.test/movie.mp4
+''',
+      ).single;
+
+      expect(item.title, 'Patrik 1,5');
+      expect(item.group, 'Movies');
+    });
+  }
+
+  test('does not interpret attribute-like title text as metadata', () {
+    final item = parser.parse(
+      '''#EXTINF:-1 tvg-name="Original" group-title="Movies",A "quoted, title" group-title="News" tvg-name="Other" tvg-logo="https://cdn.test/fake.jpg"
+https://stream.test/movie.mp4
+''',
+    ).single;
+
+    expect(
+      item.title,
+      'A "quoted, title" group-title="News" tvg-name="Other" '
+      'tvg-logo="https://cdn.test/fake.jpg"',
+    );
+    expect(item.group, 'Movies');
+    expect(item.type, ContentType.vod);
+    expect(item.metadata['tvg-name'], 'Original');
+    expect(item.logoUrl, isNull);
+  });
+
   test('uses safe fallbacks for missing metadata', () {
     final items = parser.parse('''#EXTINF:-1,
 https://stream.test/unnamed.m3u8

@@ -47,32 +47,11 @@ class M3uParser {
       if (line.startsWith('#')) continue;
       if (metadataLine == null) continue;
 
-      final attributes = _attributes(metadataLine);
-      final comma = metadataLine.indexOf(',');
-      final title = comma >= 0 && comma + 1 < metadataLine.length
-          ? metadataLine.substring(comma + 1).trim()
-          : '';
-      final resolvedUrl = _resolveUrl(line, sourceUrl);
-      final group =
-          _first(attributes, const ['group-title', 'group']) ?? 'Uncategorized';
-      final logo = _first(attributes, const ['tvg-logo', 'logo']);
-      final itemTitle = title.isEmpty
-          ? (attributes['tvg-name'] ?? resolvedUrl)
-          : title;
-
-      final identityNamespace = sourceUrl ?? '';
       items.add(
-        ContentItem(
-          id: strongStableId(
-            'item',
-            '$identityNamespace|$resolvedUrl|$itemTitle|${items.length}',
-          ),
-          title: itemTitle,
-          type: _contentType(attributes, group, resolvedUrl),
-          streamUrl: resolvedUrl,
-          group: group.isEmpty ? 'Uncategorized' : group,
-          logoUrl: logo?.isEmpty == true ? null : logo,
-          metadata: _retain(attributes),
+        _parseRecord(
+          metadataLine: metadataLine,
+          streamUrl: line,
+          sourceUrl: sourceUrl,
           sourceIndex: items.length,
         ),
       );
@@ -81,14 +60,16 @@ class M3uParser {
     return items;
   }
 
-  ContentItem? _parseRecord({
+  ContentItem _parseRecord({
     required String metadataLine,
     required String streamUrl,
     required String? sourceUrl,
     required int sourceIndex,
   }) {
-    final attributes = _attributes(metadataLine);
-    final comma = metadataLine.indexOf(',');
+    final comma = _titleSeparator(metadataLine);
+    final attributes = _attributes(
+      comma < 0 ? metadataLine : metadataLine.substring(0, comma),
+    );
     final title = comma >= 0 && comma + 1 < metadataLine.length
         ? metadataLine.substring(comma + 1).trim()
         : '';
@@ -114,6 +95,19 @@ class M3uParser {
       metadata: _retain(attributes),
       sourceIndex: sourceIndex,
     );
+  }
+
+  int _titleSeparator(String line) {
+    var quoted = false;
+    for (var index = 0; index < line.length; index++) {
+      final unit = line.codeUnitAt(index);
+      if (unit == 0x22) {
+        quoted = !quoted;
+      } else if (unit == 0x2c && !quoted) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   Map<String, String> _attributes(String line) {
@@ -272,7 +266,6 @@ class M3uStreamingParser {
       sourceIndex: _sourceIndex,
     );
     _metadataLine = null;
-    if (item == null) return;
     _sourceIndex++;
     sink(item);
   }

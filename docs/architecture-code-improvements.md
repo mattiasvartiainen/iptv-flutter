@@ -87,6 +87,12 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 Size guide: XS < 30 min of agent work, S = one focused change, M = several files, L = multi-step; split L packages into sub-commits that each keep tests green.
 
+### Additional Catalog Fixes
+
+| WP | Title | Depends on | Status |
+|----|-------|------------|--------|
+| WP-6.5a | Quote-aware EXTINF title parsing | WP-6.5, WP-6.1 | DONE (2026-11-25): Buffered/streaming imports share record parsing; title delimiter is the first comma outside double-quoted attributes, and attributes are parsed only from the header. All 35 focused parser/worker/SQLite/architecture tests pass, including both reported titles and cached-title repair on network refresh. Analyzer retains two baseline infos. Full suite reached 588 passes and the two known modal-focus failures, then stalled and was stopped. Install a fresh build and Refresh the affected playlist to repair cached titles; no database migration is needed. |
+
 ### Additional Observability Work
 
 | WP | Title | Depends on | Status |
