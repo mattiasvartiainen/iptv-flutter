@@ -9,9 +9,12 @@ import 'package:iptv_flutter/services/sources/source_contracts.dart';
 import 'package:iptv_flutter/services/sources/source_verification_record.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/services/storage/secure_storage_service.dart';
+import 'package:iptv_flutter/services/storage/storage_contracts.dart';
+import 'package:iptv_flutter/services/xtream/bounded_xtream_json.dart';
 import 'package:iptv_flutter/services/xtream/stored_xtream_credentials.dart';
 import 'package:iptv_flutter/services/xtream/xtream_api_client.dart';
 import 'package:iptv_flutter/services/xtream/xtream_authentication.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 
 import '../../support/database_adapter.dart';
 
@@ -148,6 +151,7 @@ void main() {
   });
   test('v14 upgrade preserves local series and episodes', () async {
     final db = await adapter.database;
+    await db.execute('DROP INDEX idx_items_series_membership');
     final before = await db.query('items');
     await db.execute('DROP TRIGGER invalidate_series_metadata_source');
     await db.execute('DROP TRIGGER invalidate_series_metadata_episode');
@@ -159,7 +163,7 @@ void main() {
     await db.execute('PRAGMA user_version = 14');
     await adapter.close();
     final upgraded = await adapter.database;
-    expect((await upgraded.rawQuery('PRAGMA user_version')).single.values.single, 15);
+    expect((await upgraded.rawQuery('PRAGMA user_version')).single.values.single, 17);
     expect(await upgraded.query('items'), before);
     expect((await resolve()).single.metadata, isNotNull);
   });
@@ -176,6 +180,65 @@ void main() {
     server.extraEpisodes.add(62);
     expect((await resolve()).single.metadata, isNotNull);
   });
+  test('250 members are validated once in bounded keyset pages inside the cache transaction', () async {
+    final db = await adapter.database;
+    final template = (await db.query('items')).single;
+    await db.transaction((txn) async {
+      for (var index = 1; index < 250; index++) {
+        await txn.insert('items', {...template, 'id': 42 + index * 2,
+          'item_key': 42 + index * 2,
+          'stream_url': 'https://provider.test/series/fixture-account/fixture-password/${42 + index * 2}.mkv'});
+      }
+    });
+    server.extraEpisodes = List.generate(249, (index) => 44 + index * 2);
+    final recorded = _RecordingAdapter(adapter);
+    final resolver = StoredXtreamCredentials(settings);
+    repository = SqliteSeriesMetadataRepository(database: recorded,
+      resolveCredentials: resolver.resolve,
+      client: XtreamApiClient(resolveCredentials: resolver.resolve, createTransport: () => _Transport(server)));
+    expect((await resolve()).single.metadata, isNotNull);
+    expect(recorded.pageSizes, [100, 100, 50]);
+    expect(recorded.cursors, [null, 240, 440]);
+    expect(await db.query('series_metadata_cache'), hasLength(1));
+  });
+  test('episode changed beyond identity sample during provider request cannot create cache', () async {
+    final db = await adapter.database;
+    final template = (await db.query('items')).single;
+    for (var index = 1; index < 125; index++) {
+      await db.insert('items', {...template, 'id': 42 + index, 'item_key': 42 + index,
+        'stream_url': 'https://provider.test/series/fixture-account/fixture-password/${42 + index}.mkv'});
+    }
+    server.extraEpisodes = List.generate(124, (index) => 43 + index);
+    server.gate = Completer<void>();
+    final result = resolve();
+    await server.started.future;
+    await db.update('items', {'stream_url': 'https://fixture.test/not-a-provider-episode'},
+      where: 'id = 166');
+    server.gate!.complete();
+    expect((await result).single.failure, MetadataFailure.unmapped);
+    expect(await db.query('series_metadata_cache'), isEmpty);
+  });
+  test('cancelling membership paging releases the transaction without storing metadata', () async {
+    final db = await adapter.database;
+    final template = (await db.query('items')).single;
+    for (var index = 1; index < 125; index++) {
+      await db.insert('items', {...template, 'id': 42 + index, 'item_key': 42 + index,
+        'stream_url': 'https://provider.test/series/fixture-account/fixture-password/${42 + index}.mkv'});
+    }
+    server.extraEpisodes = List.generate(124, (index) => 43 + index);
+    final cancellation = MetadataCancellation();
+    final recorded = _RecordingAdapter(adapter)..onPage = cancellation.cancel;
+    final resolver = StoredXtreamCredentials(settings);
+    repository = SqliteSeriesMetadataRepository(database: recorded,
+      resolveCredentials: resolver.resolve,
+      client: XtreamApiClient(resolveCredentials: resolver.resolve, createTransport: () => _Transport(server)));
+    expect(await resolve(cancellation: cancellation), isEmpty);
+    await recorded.finished.future;
+    expect(recorded.pageSizes.first, 100);
+    expect(recorded.pageSizes.length, lessThanOrEqualTo(2));
+    expect(await db.query('series_metadata_cache'), isEmpty);
+    await db.transaction((txn) => txn.update('series_v8', {'ord': 1}, where: 'series_key = 7'));
+  });
   test('oversized detail, malformed data and sparse responses remain explicit', () async {
     server.oversized = true;
     expect((await resolve()).single.failure, MetadataFailure.tooLarge);
@@ -191,6 +254,14 @@ void main() {
     expect((await resolve()).single.failure, MetadataFailure.storage);
     expect(await db.query('series_metadata_cache'), isEmpty);
     expect((await resolve(force: true)).single.metadata, isNotNull);
+  });
+  test('Series JSON complexity limits remain explicit and do not affect local episodes', () async {
+    final db = await adapter.database;
+    final before = await db.query('items');
+    server.detailOverride = List.filled(maxXtreamJsonNodes, 0);
+    expect((await resolve()).single.failure, MetadataFailure.tooLarge);
+    expect(await db.query('series_metadata_cache'), isEmpty);
+    expect(await db.query('items'), before);
   });
   test('local-title edits, inserted episodes and playlist deletion invalidate persisted identity', () async {
     await resolve();
@@ -252,6 +323,63 @@ class _Secrets implements PlaylistSecretStore {
   Future<void> delete({required String key}) async { values.remove(key); }
 }
 
+class _RecordingAdapter implements DatabaseAdapter {
+  _RecordingAdapter(this.delegate);
+  final DatabaseAdapter delegate;
+  final pageSizes = <int>[];
+  final cursors = <int?>[];
+  void Function()? onPage;
+  final finished = Completer<void>();
+  @override
+  Future<Database> get database => delegate.database;
+  @override
+  Future<void> initialize() => delegate.initialize();
+  @override
+  Future<void> close() => delegate.close();
+  @override
+  Future<T> transaction<T>(Future<T> Function(DatabaseExecutor) action) async {
+    try {
+      return await delegate.transaction((txn) => action(_RecordingExecutor(txn, this)));
+    } finally {
+      finished.complete();
+    }
+  }
+}
+
+class _RecordingExecutor implements DatabaseExecutor {
+  _RecordingExecutor(this.delegate, this.recorded);
+  final DatabaseExecutor delegate;
+  final _RecordingAdapter recorded;
+  @override
+  Future<List<Map<String, Object?>>> query(String table, {
+    bool? distinct, List<String>? columns, String? where, List<Object?>? whereArgs,
+    String? groupBy, String? having, String? orderBy, int? limit, int? offset,
+  }) async {
+    final rows = await delegate.query(table, distinct: distinct, columns: columns,
+      where: where, whereArgs: whereArgs, groupBy: groupBy, having: having,
+      orderBy: orderBy, limit: limit, offset: offset);
+    if (table == 'items' && limit == 100) {
+      expect(offset, isNull);
+      recorded.pageSizes.add(rows.length);
+      recorded.cursors.add(whereArgs!.length == 3 ? whereArgs.last as int : null);
+      recorded.onPage?.call();
+    }
+    return rows;
+  }
+  @override
+  Future<List<Map<String, Object?>>> rawQuery(String sql, [List<Object?>? arguments]) =>
+    delegate.rawQuery(sql, arguments);
+  @override
+  Future<int> insert(String table, Map<String, Object?> values, {
+    String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm,
+  }) => delegate.insert(table, values, nullColumnHack: nullColumnHack, conflictAlgorithm: conflictAlgorithm);
+  @override
+  Future<int> rawDelete(String sql, [List<Object?>? arguments]) =>
+    delegate.rawDelete(sql, arguments);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _Server {
   final actions = <String>[];
   final uris = <Uri>[];
@@ -261,6 +389,7 @@ class _Server {
   List<int> extraEpisodes = [];
   bool oversized = false;
   bool malformed = false;
+  Object? detailOverride;
   Completer<void>? gate;
   final started = Completer<void>();
 }
@@ -277,7 +406,7 @@ class _Transport implements XtreamAuthTransport {
       if (!server.started.isCompleted) server.started.complete();
       await server.gate!.future;
     }
-    final Object payload = switch (action) {
+    final Object payload = (action == 'get_series_info' ? server.detailOverride : null) ?? switch (action) {
       'get_series_categories' => [{'category_id': 3, 'category_name': 'Series'}],
       'get_series' => [
         {'series_id': 99, 'name': 'Fixture Show'},

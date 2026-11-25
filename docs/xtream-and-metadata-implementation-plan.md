@@ -1,6 +1,6 @@
 # Xtream API And Metadata Implementation Plan
 
-Created: 2026-10-15. Updated: 2026-11-25. Status: XM-01 through XM-03 and the selected-movie enrichment/Details slice implemented. Live activation and inline series browsing remain planned, not implemented.
+Created: 2026-10-15. Updated: 2026-11-25. Status: XM-01 through XM-03, selected-movie enrichment/Details, and selected-show enrichment/inline Series browsing implemented. Direct Live activation remains planned.
 Audience: developers and coding agents implementing source-aware catalogs and richer movie/series details.
 
 ## 1. Purpose And Authority
@@ -32,7 +32,56 @@ Opening the Live TV section itself does not auto-play anything. Playback starts 
 - Source edits/API disabling invalidate caches/bindings; playlist/item deletion cascades cleanup. Late responses cannot write into an edited/deleted source. Leaving Details cancels its lease; interrupted loading resumes when returning from the player. Source revision changes clear the current view's metadata.
 - Validation: all 172 focused tests pass; completed broad regression run has 661 passes and the two pre-existing Windows/Linux Settings/editor focus failures. The full run separately reproduced the pre-existing telemetry-section stall; that file was excluded from the completed broad run. Analyzer retains only its two existing infos. Details are tested at 360x800, 390x844, 800x360, 1440x900 and 1920x1080 at 1x/2x text. Playback activation is checked at a wide viewport because the existing compact player overflows at 2x text; it was not redesigned here. Deterministic artwork visual snapshots and native/provider smoke tests remain pending.
 
-XM-04's broader provider identity/catalog-membership work, series mappings, external providers and the Live/Series navigation changes are not completed by this slice.
+XM-04's broader provider identity/catalog-membership work, external providers and direct Live activation are not completed by the movie slice. Selected-show mapping/inline browsing are implemented by the later Series slice.
+
+### Import And Activation Hardening (WP-XM-hardening)
+
+- [Append-only v16 migration](../lib/services/storage/series_metadata_v16_migration.dart)
+  adds an indexed Series-cache foreign-key lookup and replaces per-episode
+  table scans with playlist/show-scoped invalidation. Live/movie inserts/deletes
+  skip Series invalidation; unchanged episode fields and ordinal-only updates
+  preserve metadata. Movie/Series enrichment remains on demand, never part of
+  playlist import.
+- Shared item activation deduplicates repeated requests and validates both the
+  originating route and catalog binding before opening Details. Back, playlist
+  switches and newer selections discard obsolete completions. Missing/failed
+  lookups show safe focus-preserving notifications and allow retry.
+- SQLite populated-cache probe: 30,000 episode writes with 3,000 unrelated cached
+  shows took 4,428 ms with v15 versus 96 ms with v16 on this Windows development
+  machine. This measures database-write overhead, not whole-import speed.
+  The 20,000-item loopback import benchmark passed cold, identical, 5% churn
+  and reorder scenarios; measured refresh times were 1,152/1,368/1,259 ms.
+  Query-plan tests enforce indexed lookups without fragile timing thresholds.
+
+### Medium Metadata Hardening (WP-XM-medium)
+
+- [v17 migration](../lib/services/storage/series_membership_v17_migration.dart)
+  adds a partial `(series_key, id)` index for episodes only. Membership and
+  identity samples use it without temporary sorts. Keyset pages contain at most
+  100 rows, never OFFSET; all local members are validated once, atomically with
+  the cache write, rather than scanning twice. Cancellation releases the
+  transaction without caching. No per-import generation triggers are added.
+- Invalid movie cache payloads, expiry values and failure names are logged safely
+  and the affected playlist/item/revision/locale row is removed. Normal reads
+  report storage failure with Retry; a forced refresh can recover immediately.
+  Other locales and valid stale/offline behavior are preserved.
+- HTTP bodies use fixed-capacity `Uint8List` storage capped at the request's
+  existing byte limit (authentication 2 MiB by default; metadata 10 MiB).
+  `TransferableTypedData` avoids copying a boxed integer list into the decoder
+  isolate. Authentication, movie and Series decoding share a pre-allocation
+  JSON complexity check: at most 100,000 containers/keys/values, nesting depth
+  64 and 256 KiB UTF-8 bytes per string. Exceeding any budget surfaces the
+  existing too-large failure; local browsing/playback remains usable.
+  These bound input/allocation amplification, not total app RSS: decoded text,
+  the bounded JSON graph, HTTP chunks, GC and concurrent requests still consume
+  memory. TV hardware memory profiling remains pending.
+- The isolated 20,000-item import benchmark passes cold, identical, 5% churn and
+  reorder scenarios. Warmed cold imports took 1,958-2,163 ms; refreshes took
+  1,147/1,416/1,266 ms respectively. These development-machine timings are
+  observations, not guaranteed provider/hardware performance.
+- Validation: 119 focused tests pass. Final broad regression: 737 passes and the two existing Windows/Linux
+  Settings/editor focus failures; only the separately reproduced telemetry
+  stall is excluded. Analyzer retains its two baseline infos.
 
 ### References And Evidence
 
@@ -55,7 +104,7 @@ XM-04's broader provider identity/catalog-membership work, series mappings, exte
 | [Classifier](../lib/services/catalog/catalog_classifier.dart) | URL path, extension, group/provider hints and episode-title inference. | Verified API kinds take precedence for positively mapped records. Never classify a bare numeric URL by ID alone. |
 | [Read API](../lib/services/catalog/catalog_query_service.dart) | Bounded summaries; full item lookup only for selected content; series/seasons/episodes queries. | Selected-entity provider identity and metadata lookup without per-card requests. |
 | [Catalog storage design](catalog-import-and-browsing-redesign.md) | Local item keys derive from stream URLs; series keys are derived from playlist/group/title. | Separate provider identifiers and metadata bindings; do not replace local identity. |
-| [Details](../lib/features/details/details_screen.dart) | Adaptive local Details and async Xtream movie enrichment/cache are implemented; live/episode activation remains Details and series activation browses seasons. | Direct live playback and inline series overview remain separate steps. |
+| [Details](../lib/features/details/details_screen.dart) | Adaptive local Details, async Xtream movie enrichment/cache, and inline enriched Series overview are implemented. Live/episode activation remains Details; asynchronous item activation is guarded and deduplicated. | Direct live playback remains a separate step. |
 | [Activation facade](../lib/state/app_controller.dart) | Home, catalog and Search items all use `openDetailsById`; series/season activation pushes separate routes. | One type-aware activation command and an inline season-selection command without a route push. |
 
 The presence of credentials or `PlaylistSourceKind.xtream` is not evidence that API authentication has succeeded. Conversely, a URL source can support Xtream metadata while continuing to import its original M3U.

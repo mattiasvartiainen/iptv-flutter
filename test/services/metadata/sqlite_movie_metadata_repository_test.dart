@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/metadata/movie_metadata.dart';
@@ -83,6 +84,62 @@ void main() {
       final cached = (await resolve()).single;
       expect(cached.metadata![MovieMetadataField.plot], 'Provider plot');
       expect(provider.calls, 1);
+    },
+  );
+  for (final corrupted in [
+    {'payload': '{'},
+    {
+      'payload': jsonEncode({
+        'fields': {'plot': 42},
+        'sources': {},
+      }),
+    },
+    {
+      'payload': jsonEncode({
+        'fields': {'poster': 'https://fixture.test/a?token=x'},
+        'sources': {},
+      }),
+    },
+    {'failure': 'invalid-failure'},
+    {'expires_at': 'invalid-expiry'},
+    {'payload': Uint8List.fromList([0, 1, 2])},
+  ]) {
+    test(
+      'invalid movie cache is removed and Retry fetches again: $corrupted',
+      () async {
+        await resolve();
+        final db = await adapter.database;
+        await db.update('movie_metadata_cache', corrupted);
+        expect((await resolve()).single.failure, MetadataFailure.storage);
+        expect(await db.query('movie_metadata_cache'), isEmpty);
+        expect(
+          (await resolve(
+            force: true,
+          )).single.metadata![MovieMetadataField.plot],
+          'Provider plot',
+        );
+        expect(provider.calls, 2);
+      },
+    );
+  }
+  test(
+    'forced refresh can recover an already corrupt row immediately and preserves other locales',
+    () async {
+      await resolve();
+      await resolve(
+        target: const MovieMetadataSubject(
+          playlistId: 'p',
+          itemId: '42',
+          locale: 'sv',
+        ),
+      );
+      final db = await adapter.database;
+      await db.update('movie_metadata_cache', {
+        'payload': '{',
+      }, where: "locale = 'en'");
+      expect((await resolve(force: true)).single.metadata, isNotNull);
+      expect(await db.query('movie_metadata_cache'), hasLength(2));
+      expect(provider.calls, 3);
     },
   );
 
@@ -386,6 +443,7 @@ void main() {
 
   test('v13 upgrade preserves catalog and user data', () async {
     final db = await adapter.database;
+    await db.execute('DROP INDEX idx_items_series_membership');
     final before = await db.query('items');
     await db.execute('DROP TRIGGER invalidate_series_metadata_source');
     await db.execute('DROP TRIGGER invalidate_series_metadata_episode');
@@ -402,7 +460,7 @@ void main() {
     final upgraded = await adapter.database;
     expect(
       (await upgraded.rawQuery('PRAGMA user_version')).single.values.single,
-      15,
+      17,
     );
     expect(await upgraded.query('items'), before);
     expect(

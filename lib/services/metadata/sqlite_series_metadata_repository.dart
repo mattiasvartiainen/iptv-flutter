@@ -319,14 +319,7 @@ AND p.source_verification = 'verified' AND p.enabled = 1
       if (operation.isCancelled || !await _current(binding)) {
         return const SeriesMetadataResult(failure: MetadataFailure.cancelled);
       }
-      if (!await _membersMatch(await database.database, binding, response.episodeIds)) {
-        return const SeriesMetadataResult(failure: MetadataFailure.unmapped);
-      }
-      if (result.metadata != null &&
-          !await _store(binding, result, response.episodeIds, operation)) {
-        return const SeriesMetadataResult(failure: MetadataFailure.cancelled);
-      }
-      return result;
+      return await _store(binding, result, response.episodeIds, operation);
     } on DatabaseException {
       logger.error('series_metadata_storage_failed');
       return const SeriesMetadataResult(failure: MetadataFailure.storage);
@@ -338,14 +331,15 @@ AND p.source_verification = 'verified' AND p.enabled = 1
     }
   }
 
-  Future<bool> _store(
+  Future<SeriesMetadataResult> _store(
     _SeriesBinding binding,
     SeriesMetadataResult result,
     Set<String> providerEpisodes,
     XtreamCancellation operation,
   ) async {
-    final payload = jsonEncode({
-      for (final entry in result.metadata!.fields.entries)
+    final metadata = result.metadata;
+    final payload = metadata == null ? null : jsonEncode({
+      for (final entry in metadata.fields.entries)
         entry.key.name: entry.value,
     });
     return database.transaction((txn) async {
@@ -371,11 +365,18 @@ AND s.title = ?
         orderBy: 'id',
         limit: 20,
       );
-      if (operation.isCancelled || current.isEmpty || jsonEncode(episodes) != binding.evidence ||
-          !await _membersMatch(txn, binding, providerEpisodes)) {
-        return false;
+      if (operation.isCancelled || current.isEmpty || jsonEncode(episodes) != binding.evidence) {
+        return const SeriesMetadataResult(failure: MetadataFailure.cancelled);
       }
-      if (operation.isCancelled) return false;
+      final matches = await _membersMatch(txn, binding, providerEpisodes, operation);
+      if (!matches) {
+        return SeriesMetadataResult(failure: operation.isCancelled ?
+          MetadataFailure.cancelled : MetadataFailure.unmapped);
+      }
+      if (operation.isCancelled) {
+        return const SeriesMetadataResult(failure: MetadataFailure.cancelled);
+      }
+      if (payload == null) return result;
       final timestamp = now().millisecondsSinceEpoch;
       await txn.insert('series_metadata_cache', {
         'playlist_id': binding.subject.playlistId,
@@ -397,24 +398,27 @@ SELECT rowid FROM (SELECT rowid, SUM(byte_size) OVER (
 ORDER BY accessed_at DESC, rowid DESC) AS total FROM series_metadata_cache)
 WHERE total > 52428800)
 ''');
-      return true;
+      return result;
     });
   }
 
-  Future<bool> _membersMatch(DatabaseExecutor db, _SeriesBinding binding, Set<String> providerEpisodes) async {
+  Future<bool> _membersMatch(DatabaseExecutor db, _SeriesBinding binding,
+    Set<String> providerEpisodes, XtreamCancellation operation) async {
     if (providerEpisodes.isEmpty) return false;
-    var offset = 0;
+    int? lastId;
     while (true) {
-      final rows = await db.query('items', columns: ['stream_url'],
-        where: 'playlist_id = ? AND series_key = ? AND kind = 3',
-        whereArgs: [binding.subject.playlistId, binding.subject.seriesId],
-        orderBy: 'id', offset: offset, limit: 100);
+      if (operation.isCancelled) return false;
+      final rows = await db.query('items', columns: ['id', 'stream_url'],
+        where: 'playlist_id = ? AND series_key = ? AND kind = 3'
+          '${lastId == null ? '' : ' AND id > ?'}',
+        whereArgs: [binding.subject.playlistId, binding.subject.seriesId, ?lastId],
+        orderBy: 'id', limit: 100);
       for (final row in rows) {
         final id = xtreamStreamId(row['stream_url']! as String, binding.credentials, kind: 'series');
         if (id == null || !providerEpisodes.contains(id)) return false;
       }
-      offset += rows.length;
-      if (rows.length < 100) return offset > 0;
+      if (rows.length < 100) return lastId != null || rows.isNotEmpty;
+      lastId = rows.last['id']! as int;
     }
   }
 }

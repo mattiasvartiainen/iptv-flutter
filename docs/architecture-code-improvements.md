@@ -33,6 +33,23 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-XM-medium combines the three approved medium metadata findings. Dependencies:
+WP-XM-hardening. Touches: Series membership/cache repository and append-only
+lookup-index migration, movie cache decoding/recovery, Xtream response buffering/
+decoding, their regression tests and schema-upgrade expectations.
+Skills: dart-add-unit-test, dart-run-static-analysis. Validate every local episode
+once atomically, preserve Retry/local playback, bound response buffers and JSON
+complexity, and measure import performance before completion.
+
+WP-XM-hardening combines the two user-approved high-priority review fixes:
+indexed/scoped Series-cache invalidation (append-only v16) and generation-safe
+shared item activation. Dependencies: WP-XM-series and WP-3.1. Touches: migration
+registration/schema upgrade tests, AppController/CatalogViewState, shell error
+notification and focused regression/performance tests. Skills: dart-add-unit-test,
+dart-run-static-analysis. Preserve Details/Player behavior and metadata matching;
+measure populated-cache import overhead and verify Back/repeated OK/playlist
+switch/error handling before marking done.
+
 Series enrichment follow-up (2026-11-25): WP-XM-series is implemented.
 This explicitly combined vertical slice implements XM-06 selected-show mapping
 and XM-08a/b overview/inline browsing. Dependencies: completed movie metadata,
@@ -46,6 +63,8 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-XM-medium | Efficient membership, recoverable movie cache and bounded decoding | Metadata | WP-XM-hardening | M | DONE (2026-11-25): Atomic 100-row keyset membership with partial v17 index, scoped corrupt-cache recovery and typed/transferable response buffers with pre-allocation JSON budgets. 119 focused tests pass; final broad regression has 737 passes and the two existing Settings/editor focus failures, excluding only the reproduced telemetry stall. Analyzer retains two baseline infos. Isolated 20k-item cold/identical/churn/reorder benchmark passes (refreshes 1,147/1,416/1,266 ms). TV memory/provider validation remains pending. |
+| WP-XM-hardening | Import-safe metadata invalidation and guarded activation | Metadata | WP-XM-series, WP-3.1 | S | DONE (2026-11-25): Indexed/scoped v16 invalidation and guarded/deduplicated activation; 88 focused tests pass, final broad regression has 714 passes with the two existing Settings/editor focus failures. Full run reproduced the existing telemetry-section stall; completed regression excludes only that file. Analyzer retains its two baseline infos. A 30k-episode/3k-cache SQLite probe improved 4,428 ms to 96 ms; the 20k-item cold/identical/churn/reorder import benchmark passes. |
 | WP-0.1 | Add `AGENTS.md` with project rules | 0 Guardrails | – | S | DONE (2026-10-03): Added concise root rules; detailed references linked. |
 | WP-0.2 | Tighten lints, clear analyzer baseline | 0 Guardrails | – | S | DONE (2026-10-03): Seven additional lints enabled; analyzer clean; webOS plugin pinned. |
 | WP-0.3 | Architecture boundary test | 0 Guardrails | – | S | DONE (2026-10-03): Added platform/layer import checks with an exact exception allowlist; 122 tests pass. |

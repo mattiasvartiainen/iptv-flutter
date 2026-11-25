@@ -1,12 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
 import '../logging/app_logger.dart';
 import '../metadata/movie_metadata.dart';
 import '../sources/source_contracts.dart';
+import 'bounded_xtream_json.dart';
 import 'xtream_authentication.dart';
 import 'xtream_series_metadata.dart';
 import 'xtream_vod_metadata.dart';
@@ -42,7 +43,7 @@ class XtreamApiClient {
       connectionRevision: connectionRevision,
       cancellation: cancellation,
       byteLimit: maxResponseBytes,
-      decode: (bytes, _) => _decodeAuthentication(bytes),
+      decode: (bytes, _) => compute(_decodeTransferredAuthentication, bytes),
     );
     final result =
         response.value ??
@@ -79,7 +80,7 @@ class XtreamApiClient {
       byteLimit: byteLimit,
       parameters: {'action': 'get_vod_info', 'vod_id': movieId},
       decode: (bytes, credentials) =>
-          compute(decodeXtreamVodBytes, (bytes, movieId, credentials)),
+          compute(decodeTransferredXtreamVod, (bytes, movieId, credentials)),
     );
     final result =
         response.value ??
@@ -98,7 +99,7 @@ class XtreamApiClient {
     required String playlistId,
     required int connectionRevision,
     required int byteLimit,
-    required FutureOr<T> Function(List<int>, XtreamCredentials) decode,
+    required FutureOr<T> Function(TransferableTypedData, XtreamCredentials) decode,
     Map<String, String> parameters = const {},
     XtreamCancellation? cancellation,
   }) async {
@@ -160,17 +161,22 @@ class XtreamApiClient {
       if ((response.contentLength ?? 0) > byteLimit) {
         throw XtreamAuthFailure.responseTooLarge;
       }
-      final bytes = <int>[];
+      final bytes = Uint8List(byteLimit);
+      var length = 0;
       await for (final chunk in response.body) {
         if (finished || operation.isCancelled) {
           throw XtreamAuthFailure.cancelled;
         }
-        if (bytes.length + chunk.length > byteLimit) {
+        if (length + chunk.length > byteLimit) {
           throw XtreamAuthFailure.responseTooLarge;
         }
-        bytes.addAll(chunk);
+        bytes.setRange(length, length + chunk.length, chunk);
+        length += chunk.length;
       }
-      return _RequestResult(value: await decode(bytes, credentials));
+      final transferred = TransferableTypedData.fromList([
+        Uint8List.sublistView(bytes, 0, length),
+      ]);
+      return _RequestResult(value: await decode(transferred, credentials));
     }
 
     try {
@@ -180,6 +186,8 @@ class XtreamApiClient {
       ]).timeout(deadline);
     } on XtreamAuthFailure catch (failure) {
       return _RequestResult(failure: failure);
+    } on XtreamJsonLimitException {
+      return const _RequestResult(failure: XtreamAuthFailure.responseTooLarge);
     } on TimeoutException {
       return const _RequestResult(failure: XtreamAuthFailure.timeout);
     } on HandshakeException {
@@ -226,8 +234,8 @@ class XtreamApiClient {
       },
       decode: (bytes, credentials) => compute(
         decodeXtreamSeries,
-        XtreamSeriesRequest(
-          bytes: bytes,
+        XtreamSeriesRequest.transferred(
+          transferableBytes: bytes,
           action: action,
           credentials: credentials,
           title: title,
@@ -281,8 +289,16 @@ MetadataFailure _metadataFailure(XtreamAuthFailure failure) =>
       _ => MetadataFailure.network,
     };
 
+XtreamAuthResult _decodeTransferredAuthentication(TransferableTypedData bytes) {
+  try {
+    return _decodeAuthentication(bytes.materialize().asUint8List());
+  } on XtreamAuthFailure catch (failure) {
+    return _failure(failure);
+  }
+}
+
 XtreamAuthResult _decodeAuthentication(List<int> bytes) {
-  final decoded = jsonDecode(utf8.decode(bytes));
+  final decoded = decodeBoundedXtreamJson(bytes);
   if (decoded is! Map<String, dynamic> ||
       decoded['user_info'] is! Map<String, dynamic>) {
     throw XtreamAuthFailure.malformedResponse;

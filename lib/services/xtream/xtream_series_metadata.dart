@@ -1,6 +1,7 @@
-import 'dart:convert';
+import 'dart:isolate';
 
 import '../metadata/series_metadata.dart';
+import 'bounded_xtream_json.dart';
 import 'xtream_authentication.dart';
 import 'xtream_vod_metadata.dart';
 
@@ -13,8 +14,18 @@ class XtreamSeriesRequest {
     this.group,
     this.seriesId,
     this.episodeIds = const {},
-  });
+  }) : transferableBytes = null;
+  const XtreamSeriesRequest.transferred({
+    required this.transferableBytes,
+    required this.action,
+    required this.credentials,
+    this.title,
+    this.group,
+    this.seriesId,
+    this.episodeIds = const {},
+  }) : bytes = const [];
   final List<int> bytes;
+  final TransferableTypedData? transferableBytes;
   final String action;
   final XtreamCredentials credentials;
   final String? title;
@@ -42,7 +53,9 @@ String normalizeSeriesName(String value) =>
     value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
 XtreamSeriesResponse decodeXtreamSeries(XtreamSeriesRequest request) {
-  final payload = jsonDecode(utf8.decode(request.bytes));
+  final payload = decodeBoundedXtreamJson(
+    request.transferableBytes?.materialize().asUint8List() ?? request.bytes,
+  );
   if (payload is Map<String, dynamic>) {
     final user = payload['user_info'];
     if (user is Map && (user['auth'] == 0 || user['auth'] == '0')) {

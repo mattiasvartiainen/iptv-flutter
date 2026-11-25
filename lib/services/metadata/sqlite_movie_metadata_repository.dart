@@ -108,9 +108,42 @@ WHERE i.id = ? AND i.playlist_id = ?
       MovieMetadata? stale;
       if (cached.isNotEmpty) {
         final cache = cached.single;
-        stale = _decodeCache(cache['payload'] as String?);
-        final fresh =
-            (cache['expires_at']! as int) > _now().millisecondsSinceEpoch;
+        MetadataFailure? cachedFailure;
+        var fresh = false;
+        try {
+          final payload = cache['payload'];
+          final expiresAt = cache['expires_at'];
+          if ((payload != null && payload is! String) || expiresAt is! int) {
+            throw const FormatException('Invalid cache row');
+          }
+          stale = _decodeCache(payload is String ? payload : null);
+          fresh = expiresAt > _now().millisecondsSinceEpoch;
+          final failure = cache['failure'];
+          if (failure != null) {
+            cachedFailure = MetadataFailure.values
+                .where((value) => value.name == failure)
+                .firstOrNull;
+            if (cachedFailure == null) {
+              throw const FormatException('Invalid cached failure');
+            }
+          }
+        } on FormatException {
+          _logger.error('movie_metadata_cache_invalid');
+          await db.delete(
+            'movie_metadata_cache',
+            where:
+                'playlist_id = ? AND item_id = ? AND revision = ? AND locale = ?',
+            whereArgs: args,
+          );
+          if (!forceRefresh) {
+            if (!cancellation.isCancelled) {
+              yield const MovieMetadataResult(failure: MetadataFailure.storage);
+            }
+            return;
+          }
+          stale = null;
+          fresh = false;
+        }
         await db.update(
           'movie_metadata_cache',
           {'accessed_at': _now().millisecondsSinceEpoch},
@@ -120,12 +153,7 @@ WHERE i.id = ? AND i.playlist_id = ?
         );
         if (!await _current(prepared) || cancellation.isCancelled) return;
         if (fresh && !forceRefresh) {
-          yield MovieMetadataResult(
-            metadata: stale,
-            failure: cache['failure'] == null
-                ? null
-                : MetadataFailure.values.byName(cache['failure']! as String),
-          );
+          yield MovieMetadataResult(metadata: stale, failure: cachedFailure);
           return;
         }
         if (stale != null) {

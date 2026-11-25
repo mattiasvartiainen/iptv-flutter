@@ -1,14 +1,21 @@
-import 'dart:convert';
+import 'dart:isolate';
 
 import '../metadata/movie_metadata.dart';
 import '../security/url_redaction.dart';
+import 'bounded_xtream_json.dart';
 import 'xtream_authentication.dart';
+
+MovieMetadataResult decodeTransferredXtreamVod(
+  (TransferableTypedData, String, XtreamCredentials) request,
+) => decodeXtreamVodBytes((
+  request.$1.materialize().asUint8List(), request.$2, request.$3,
+));
 
 MovieMetadataResult decodeXtreamVodBytes(
   (List<int>, String, XtreamCredentials) request,
 ) {
   final (bytes, id, credentials) = request;
-  final payload = jsonDecode(utf8.decode(bytes));
+  final payload = decodeBoundedXtreamJson(bytes);
   if (payload is! Map<String, dynamic>) {
     return const MovieMetadataResult(failure: MetadataFailure.malformed);
   }

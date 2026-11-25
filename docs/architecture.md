@@ -123,12 +123,27 @@ Live activation remains planned:
   local episode against the selected provider show's membership. A separate
   v15 cache stores sanitized show information, isolated by playlist/revision/
   locale; metadata never replaces local streams or introduces playable episodes.
+  The append-only v16 migration indexes cache foreign-key lookups and scopes
+  invalidation to the affected playlist/show. Live/movie writes and unchanged
+  episode/ordinal updates preserve Series metadata; no enrichment is fetched
+  during playlist imports.
+  Append-only v17 adds an episode-only `(series_key, id)` index for keyset
+  membership pages. Every member is checked once inside the cache transaction;
+  the transaction still prevents storing metadata for a concurrently changed show.
 - Plain M3U/M3U8 remains supported. API/external metadata is optional; unavailable
   enrichment never blocks local browsing or playback.
 
 Use the existing typed navigation, constructor injection and `ChangeNotifier`
 patterns. Keep episode availability and playback identity in the catalog, not
 in descriptive metadata. No additional state-management framework is required.
+Shared asynchronous item activation deduplicates repeated OK and rejects lookup
+completions after navigation or catalog rebinding. Lookup failures have safe
+logging and a focus-preserving shell notification; they do not open Details.
+Xtream responses use capped typed byte storage and transferable isolate input.
+Before JSON allocation, a shared scanner bounds nesting, value/key count and
+individual string size. Oversized/complex responses fail explicitly without
+blocking local playback. Invalid movie cache rows are removed so Retry can fetch
+fresh metadata.
 
 ## 7. Persistence
 

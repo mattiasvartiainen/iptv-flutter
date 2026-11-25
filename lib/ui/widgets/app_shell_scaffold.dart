@@ -7,6 +7,7 @@ import '../../app/navigation/app_route.dart';
 import '../../app/navigation/navigation_controller.dart';
 import '../../services/catalog/catalog_query.dart';
 import '../../state/app_controller.dart';
+import '../../state/catalog_view_state.dart';
 import '../theme/app_tokens.dart';
 import 'app_scope.dart';
 
@@ -30,6 +31,52 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     with WidgetsBindingObserver {
   final FocusScopeNode _pageFocusScope = FocusScopeNode(debugLabel: 'App page');
   bool _focusCheckScheduled = false;
+  ValueNotifier<ItemActivationFailure?>? _activationFailure;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final failure = AppScope.appControllerOf(
+      context,
+    ).catalogView.activationFailure;
+    if (identical(failure, _activationFailure)) return;
+    _activationFailure?.removeListener(_showActivationFailure);
+    _activationFailure = failure;
+    failure.addListener(_showActivationFailure);
+  }
+
+  void _showActivationFailure() {
+    final failure = _activationFailure?.value;
+    if (failure == null || ModalRoute.of(context)?.isCurrent != true) return;
+    final route = AppScope.navigationControllerOf(context).currentRoute;
+    final binding = AppScope.appControllerOf(
+      context,
+    ).catalogView.bindingGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          _activationFailure?.value != failure ||
+          AppScope.appControllerOf(context).catalogView.bindingGeneration !=
+              binding ||
+          !identical(
+            AppScope.navigationControllerOf(context).currentRoute,
+            route,
+          )) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            failure == ItemActivationFailure.notFound
+                ? 'This item is no longer available. Refresh the playlist.'
+                : 'Could not open this item. Please try again.',
+          ),
+        ),
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
   final FocusNode _sortFocus = FocusNode(debugLabel: 'Catalog sort');
   final FocusNode _wideSortFocus = FocusNode(
     debugLabel: 'Catalog sort heading',
@@ -91,6 +138,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
 
   @override
   void dispose() {
+    _activationFailure?.removeListener(_showActivationFailure);
     WidgetsBinding.instance.removeObserver(this);
     FocusManager.instance.removeListener(_scheduleFocusCheck);
     _pageFocusScope.dispose();

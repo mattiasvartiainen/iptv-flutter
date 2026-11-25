@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/metadata/movie_metadata.dart';
+import 'package:iptv_flutter/services/xtream/bounded_xtream_json.dart';
 import 'package:iptv_flutter/services/xtream/xtream_api_client.dart';
 import 'package:iptv_flutter/services/xtream/xtream_authentication.dart';
 import 'package:iptv_flutter/services/xtream/xtream_movie_metadata_provider.dart';
@@ -32,6 +34,31 @@ Map<String, Object?> vodPayload({Object id = '42'}) => {
 };
 
 void main() {
+  test('tiny chunks and exact byte threshold decode without a boxed growable buffer', () async {
+    final bytes = utf8.encode(jsonEncode(vodPayload()));
+    final transport = _Transport(vodPayload())..chunks = bytes.map((byte) => Uint8List.fromList([byte]));
+    final client = XtreamApiClient(resolveCredentials: (_, _) async => credentials,
+      createTransport: () => transport);
+    expect((await client.getVodInfo(playlistId: 'p', connectionRevision: 1,
+      movieId: '42', cancellation: XtreamCancellation(), byteLimit: bytes.length)).metadata, isNotNull);
+    final oversized = _Transport(vodPayload())..chunks = [Uint8List.fromList([...bytes, 32])];
+    expect((await XtreamApiClient(resolveCredentials: (_, _) async => credentials,
+      createTransport: () => oversized).getVodInfo(playlistId: 'p', connectionRevision: 1,
+      movieId: '42', cancellation: XtreamCancellation(), byteLimit: bytes.length)).failure,
+      MetadataFailure.tooLarge);
+    expect(oversized.closed, isTrue);
+  });
+  for (final excessive in [
+    List.filled(maxXtreamJsonNodes, 0),
+    'x' * (maxXtreamJsonStringBytes + 1),
+    List.generate(maxXtreamJsonDepth + 1, (_) => 0).fold<Object>(0, (value, _) => [value]),
+  ]) {
+    test('allocation-heavy JSON below wire cap surfaces tooLarge (${excessive.runtimeType})', () async {
+      final transport = _Transport(excessive);
+      expect((await _fetch(transport)).failure, MetadataFailure.tooLarge);
+      expect(transport.closed, isTrue);
+    });
+  }
   test('movie identity matches verified origin/base path/account and kind', () {
     final movie = Uri(
       scheme: 'https',
@@ -273,12 +300,13 @@ class _Transport implements XtreamAuthTransport {
   int status = 200;
   Uri? uri;
   bool closed = false;
+  Iterable<List<int>>? chunks;
   Completer<XtreamAuthResponse>? gate;
   final started = Completer<void>();
   XtreamAuthResponse get response => XtreamAuthResponse(
     statusCode: status,
     retryAfter: '30',
-    body: Stream.value(utf8.encode(jsonEncode(payload))),
+    body: chunks == null ? Stream.value(utf8.encode(jsonEncode(payload))) : Stream.fromIterable(chunks!),
   );
   @override
   Future<XtreamAuthResponse> get(Uri authenticatedUri) async {

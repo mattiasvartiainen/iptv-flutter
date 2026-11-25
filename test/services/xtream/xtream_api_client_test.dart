@@ -2,10 +2,24 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/sources/source_contracts.dart';
+import 'package:iptv_flutter/services/xtream/bounded_xtream_json.dart';
 import 'package:iptv_flutter/services/xtream/xtream_api_client.dart';
 import 'package:iptv_flutter/services/xtream/xtream_authentication.dart';
 
 void main() {
+  test('authentication rejects allocation-heavy JSON below byte limit and keeps malformed errors safe', () async {
+    for (final (payload, failure) in [
+      (List.filled(maxXtreamJsonNodes, 0), XtreamAuthFailure.responseTooLarge),
+      (<Object>[], XtreamAuthFailure.malformedResponse),
+      ({'user_info': {'auth': 'invalid'}}, XtreamAuthFailure.malformedResponse),
+    ]) {
+      final transport = _Transport(payload);
+      final result = await XtreamApiClient(resolveCredentials: (_, _) async => _credentials,
+        createTransport: () => transport).authenticate(playlistId: 'p', connectionRevision: 1);
+      expect(result.failure, failure);
+      expect(transport.closed, isTrue);
+    }
+  });
   test(
     'authenticates without returning account credentials or server override',
     () async {

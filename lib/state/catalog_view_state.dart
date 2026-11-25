@@ -10,6 +10,7 @@ import '../services/settings/app_preferences.dart';
 typedef PageFetcher<T> = Future<CatalogPage<T>> Function(int offset, int limit);
 
 enum CatalogFailure { pageLoadFailed, groupsLoadFailed, sortSaveFailed }
+enum ItemActivationFailure { notFound, lookupFailed }
 
 /// Holds one visible page window of a query result.
 ///
@@ -185,6 +186,8 @@ class CatalogViewState extends ChangeNotifier {
   bool get hasContent => itemCount > 0;
   String? get playlistId => _playlistId;
   CatalogQueryService? get queryService => _service;
+  int get bindingGeneration => _bindingGeneration;
+  final activationFailure = ValueNotifier<ItemActivationFailure?>(null);
 
   Future<void> bind({
     required CatalogQueryService service,
@@ -581,6 +584,8 @@ class CatalogViewState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    activationFailure.dispose();
+    _bindingGeneration++;
     items.dispose();
     series.dispose();
     episodes.dispose();

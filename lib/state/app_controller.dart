@@ -2,16 +2,22 @@ import '../app/navigation/app_route.dart';
 import '../app/navigation/navigation_controller.dart';
 import '../models/content_item.dart';
 import '../services/catalog/catalog_query.dart';
+import '../services/logging/app_logger.dart';
 import 'catalog_view_state.dart';
 
 class AppController {
   AppController({
     required this.catalogView,
     required this.navigationController,
+    this.logger = const DebugAppLogger(),
   });
 
   final CatalogViewState catalogView;
   final NavigationController navigationController;
+  final AppLogger logger;
+  int _activationGeneration = 0;
+  ({String itemId, AppRoute route, int binding, Future<void> future})?
+  _pendingActivation;
 
   int get catalogItemCount => catalogView.itemCount;
   PrimaryNavItem get activeNavItem => navigationController.activeNavItem;
@@ -56,9 +62,71 @@ class AppController {
     navigationController.push(DetailsRoute(item));
   }
 
-  Future<void> openDetailsById(String itemId) async {
-    final item = await catalogView.itemById(itemId);
-    if (item != null) openDetails(item);
+  Future<void> openDetailsById(String itemId) {
+    final route = navigationController.currentRoute;
+    if (route is DetailsRoute && route.item.id == itemId) {
+      return Future<void>.value();
+    }
+    final binding = catalogView.bindingGeneration;
+    final pending = _pendingActivation;
+    if (pending != null &&
+        pending.itemId == itemId &&
+        identical(pending.route, route) &&
+        pending.binding == binding) {
+      return pending.future;
+    }
+    final generation = ++_activationGeneration;
+    final future = _resolveDetails(itemId, route, binding, generation);
+    _pendingActivation = (
+      itemId: itemId,
+      route: route,
+      binding: binding,
+      future: future,
+    );
+    return future;
+  }
+
+  Future<void> _resolveDetails(
+    String itemId,
+    AppRoute route,
+    int binding,
+    int generation,
+  ) async {
+    var routeChanged = false;
+    void invalidate() {
+      routeChanged = true;
+      if (generation == _activationGeneration) _pendingActivation = null;
+    }
+
+    navigationController.addListener(invalidate);
+    bool current() =>
+        !routeChanged &&
+        generation == _activationGeneration &&
+        binding == catalogView.bindingGeneration &&
+        identical(navigationController.currentRoute, route);
+    catalogView.activationFailure.value = null;
+    try {
+      ContentItem? item;
+      try {
+        item = await catalogView.itemById(itemId);
+      } catch (_) {
+        if (!current()) return;
+        logger.error('catalog_activation_lookup_failed');
+        catalogView.activationFailure.value =
+            ItemActivationFailure.lookupFailed;
+        return;
+      }
+      if (!current()) return;
+      if (item == null) {
+        logger.warning('catalog_activation_item_missing');
+        catalogView.activationFailure.value = ItemActivationFailure.notFound;
+        return;
+      }
+      openDetails(item);
+    } finally {
+      navigationController.removeListener(invalidate);
+      if (generation == _activationGeneration) _pendingActivation = null;
+    }
   }
 
   void openSettings() {

@@ -130,6 +130,7 @@ class AppDependencies {
       logger: logger,
     );
     final appController = AppController(
+      logger: logger,
       catalogView: catalogView,
       navigationController: navigationController,
     );
