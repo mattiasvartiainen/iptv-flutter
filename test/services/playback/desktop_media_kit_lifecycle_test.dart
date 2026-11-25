@@ -68,6 +68,31 @@ void main() {
   );
 
   test(
+    'desktop native failures preserve typed classification without native text',
+    () async {
+      final opening = native.openGate = Completer<void>();
+      final loading = adapter.load(item);
+      final failure = expectLater(
+        loading,
+        throwsA(
+          isA<PlaybackException>()
+              .having((error) => error.kind, 'kind', PlaybackErrorKind.timeout)
+              .having(
+                (error) => error.toString(),
+                'safe text',
+                isNot(contains('token')),
+              ),
+        ),
+      );
+      opening.completeError(
+        StateError('Timeout https://example.com/video?token=test'),
+      );
+      await failure;
+      expect(adapter.state.errorKind, PlaybackErrorKind.timeout);
+    },
+  );
+
+  test(
     'disposal cancels initialization and awaits native cleanup exactly once',
     () async {
       final opening = native.openGate = Completer<void>();

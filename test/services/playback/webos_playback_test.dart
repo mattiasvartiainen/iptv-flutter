@@ -1,12 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
+import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/platform/app_platform.dart';
 import 'package:iptv_flutter/platform/platform_profile.dart';
 import 'package:iptv_flutter/platform/webos_playback_adapter.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
+import 'package:iptv_flutter/services/playback/playback_video_surface.dart';
+import 'package:video_player_drm/video_player.dart' as video;
 import 'package:video_player_drm/video_player_platform_interface.dart' as lg;
 
 const item = ContentItem(
@@ -158,6 +163,90 @@ void main() {
     }
     await selected.dispose();
   });
+
+  test(
+    'LG native failure classification survives the controller boundary',
+    () async {
+      final navigation = NavigationController();
+      final player = PlayerController(
+        playbackAdapter: adapter,
+        navigationController: navigation,
+      );
+      addTearDown(() async {
+        player.dispose();
+        await player.disposalComplete;
+        navigation.dispose();
+      });
+      final created = platform.created.stream.first;
+      final loading = player.openPlayer(item);
+      final id = await created;
+      platform.events[id]!.addError(
+        PlatformException(
+          code: 'VideoError',
+          message: 'HTTP 404 https://example.com/live/user/pass?token=test',
+        ),
+      );
+      await loading;
+      expect(adapter.state.errorKind, PlaybackErrorKind.notFound);
+      expect(player.playbackState.value.errorKind, PlaybackErrorKind.notFound);
+      expect(player.playbackState.value.message, isNull);
+    },
+  );
+
+  test('LG load failure is typed and contains no native URL', () async {
+    final created = platform.created.stream.first;
+    final loading = adapter.load(item);
+    final failure = expectLater(
+      loading,
+      throwsA(
+        isA<PlaybackException>()
+            .having((error) => error.kind, 'kind', PlaybackErrorKind.network)
+            .having(
+              (error) => error.toString(),
+              'safe text',
+              isNot(contains('token')),
+            ),
+      ),
+    );
+    final id = await created;
+    platform.events[id]!.addError(
+      PlatformException(
+        code: 'VideoError',
+        message: 'Connection failed https://example.com/video?token=test',
+      ),
+    );
+    await failure;
+    expect(adapter.state.errorKind, PlaybackErrorKind.network);
+  });
+
+  test(
+    'LG surface is stable while retained and replaced with its native controller',
+    () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      platform.initialize(await created);
+      await loading;
+      final view =
+          adapter.buildVideoView()
+              as PlaybackVideoSurface<video.VideoPlayerValue>;
+      expect(adapter.buildVideoView(), same(view));
+      final controller = view.values as video.VideoPlayerController;
+      controller.value = controller.value.copyWith(size: const Size(800, 600));
+      expect(view.aspectRatio(view.values.value), 4 / 3);
+      expect(adapter.buildVideoView(), same(view));
+      await adapter.stop();
+      await adapter.play();
+      expect(adapter.buildVideoView(), same(view));
+      final replacementCreated = platform.created.stream.first;
+      final replacing = adapter.load(item);
+      expect(adapter.buildVideoView(), isNull);
+      platform.initialize(await replacementCreated);
+      await replacing;
+      expect(adapter.buildVideoView(), isNot(same(view)));
+      await adapter.dispose();
+      expect(adapter.buildVideoView(), isNull);
+    },
+  );
 
   test(
     'loads native video, exposes safe tracks and selects by index',

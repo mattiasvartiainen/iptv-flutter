@@ -96,6 +96,118 @@ void main() {
     expect(logger.errorEvents, ['playback_load_failed']);
   });
 
+  for (final kind in PlaybackErrorKind.values) {
+    test(
+      'typed load failure $kind survives controller classification',
+      () async {
+        player.dispose();
+        await player.disposalComplete;
+        adapter = _TypedFailingPlaybackAdapter(kind);
+        player = PlayerController(
+          playbackAdapter: adapter,
+          navigationController: navigation,
+        );
+        await player.openPlayer(fixtureCatalog.first);
+        expect(player.playbackState.value.status, PlaybackStatus.error);
+        expect(player.playbackState.value.errorKind, kind);
+        expect(player.playbackState.value.message, isNull);
+      },
+    );
+  }
+
+  test(
+    'surface identity can change or disappear within a controller session',
+    () async {
+      player.dispose();
+      await player.disposalComplete;
+      final controlled = ControlledPlayback();
+      adapter = controlled;
+      player = PlayerController(
+        playbackAdapter: adapter,
+        navigationController: navigation,
+      );
+      await player.openPlayer(fixtureCatalog.first);
+      controlled.view = const SizedBox(key: ValueKey('first-surface'));
+      expect(player.videoView, same(controlled.view));
+      controlled.view = const SizedBox(key: ValueKey('second-surface'));
+      controlled.emit(controlled.state.copyWith());
+      expect(player.videoView, same(controlled.view));
+      controlled.view = null;
+      controlled.emit(controlled.state.copyWith());
+      expect(player.videoView, isNull);
+    },
+  );
+
+  test(
+    'explicit play works without pause capability and unsupported controls stay gated',
+    () async {
+      player.dispose();
+      await player.disposalComplete;
+      final controlled = ControlledPlayback(
+        capabilities: const PlaybackCapabilities(
+          supportsSeek: false,
+          supportsPause: false,
+          supportsVolume: false,
+          supportsDrm: false,
+          supportsLiveStreams: true,
+        ),
+      );
+      adapter = controlled;
+      player = PlayerController(
+        playbackAdapter: adapter,
+        navigationController: navigation,
+      );
+      await player.openPlayer(fixtureCatalog.first);
+      await player.close();
+      await player.play();
+      expect(player.playbackState.value.status, PlaybackStatus.playing);
+      await player.pause();
+      await player.seekTo(Duration.zero);
+      await player.setVolume(50);
+      expect(await player.selectTrack('off', subtitle: true), isFalse);
+      expect(controlled.calls, [
+        'load:${fixtureCatalog.first.id}',
+        'stop',
+        'load:${fixtureCatalog.first.id}',
+      ]);
+    },
+  );
+
+  test(
+    'unsupported selected Live item stops old output and reports the requested item',
+    () async {
+      player.dispose();
+      await player.disposalComplete;
+      final controlled = ControlledPlayback(
+        capabilities: const PlaybackCapabilities(
+          supportsSeek: true,
+          supportsPause: true,
+          supportsVolume: true,
+          supportsDrm: false,
+          supportsLiveStreams: false,
+        ),
+      );
+      adapter = controlled;
+      player = PlayerController(
+        playbackAdapter: adapter,
+        navigationController: navigation,
+      );
+      final vod = fixtureCatalog.firstWhere(
+        (item) => item.type == ContentType.vod,
+      );
+      final live = fixtureCatalog.firstWhere(
+        (item) => item.type == ContentType.live,
+      );
+      await player.openPlayer(vod);
+      await player.openPlayer(live);
+      expect(controlled.calls, ['load:${vod.id}', 'stop', 'stop']);
+      expect(controlled.state.status, PlaybackStatus.stopped);
+      expect(player.playbackState.value.status, PlaybackStatus.error);
+      expect(player.playbackState.value.item, live);
+      expect(player.playbackState.value.errorKind, PlaybackErrorKind.unknown);
+    },
+  );
+
   test('exiting the player stops playback and returns to details', () async {
     final item = fixtureCatalog.first;
     navigation.push(DetailsRoute(item));
@@ -370,6 +482,13 @@ class _FailingPlaybackAdapter extends FakePlaybackAdapter {
   Future<void> load(ContentItem item) async {
     throw StateError('Playback unavailable');
   }
+}
+
+class _TypedFailingPlaybackAdapter extends FakePlaybackAdapter {
+  _TypedFailingPlaybackAdapter(this.kind);
+  final PlaybackErrorKind kind;
+  @override
+  Future<void> load(ContentItem item) async => throw PlaybackException(kind);
 }
 
 class _RecordingLogger implements AppLogger {

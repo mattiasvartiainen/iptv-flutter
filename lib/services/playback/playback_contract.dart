@@ -7,6 +7,12 @@ export 'playback_error.dart';
 
 enum PlaybackStatus { idle, loading, playing, paused, stopped, error }
 
+/// Fixed backend support, not current stream metadata or command readiness.
+///
+/// A supported operation can still fail before initialization or for a stream
+/// without the required tracks/duration. Owners gate controls with these flags
+/// and stream state; the session rejects unsupported calls before native work.
+@immutable
 class PlaybackCapabilities {
   const PlaybackCapabilities({
     required this.supportsSeek,
@@ -19,13 +25,28 @@ class PlaybackCapabilities {
     this.usesPlatformVideoPlane = false,
   });
 
+  /// Whether absolute seeking is implemented (not whether this stream seeks).
   final bool supportsSeek;
+
+  /// Whether pausing is implemented; [PlaybackAdapter.play] is independent.
   final bool supportsPause;
+
+  /// Whether per-stream volume accepts a percentage from 0 to 100.
   final bool supportsVolume;
+
+  /// Whether an implemented DRM configuration flow exists, not plugin support.
   final bool supportsDrm;
+
+  /// Whether live items can be loaded; this does not guarantee codec support.
   final bool supportsLiveStreams;
+
+  /// Whether embedded audio selection is implemented.
   final bool supportsAudioTracks;
+
+  /// Whether embedded subtitle selection is implemented, including disabling.
   final bool supportsSubtitleTracks;
+
+  /// Whether the host needs transparency for a native video plane.
   final bool usesPlatformVideoPlane;
 }
 
@@ -76,6 +97,11 @@ class PlaybackMediaInfo {
       );
 }
 
+/// Optional embedded track selection advertised by backend capabilities.
+///
+/// IDs come from the current media info, including backend-specific Off/Auto
+/// entries. Completion means request acceptance; selected IDs reflect native
+/// confirmation only and remain `null` when unavailable.
 abstract interface class PlaybackTrackAdapter {
   Future<void> selectAudioTrack(String id);
   Future<void> selectSubtitleTrack(String id);
@@ -154,13 +180,27 @@ class PlaybackState {
 ///
 /// Owners serialize ordinary commands. Only [stop] may interrupt [load].
 /// Events retain the supplied [ContentItem] and describe the current resource,
-/// never a detached controller. Failed
-/// commands throw; track selection completion means request acceptance, not
-/// native confirmation. Unsupported operations are gated by [capabilities].
+/// never a detached controller. Native initialization failures throw
+/// [PlaybackException]; other command/cleanup failures remain observable and
+/// are classified by [playbackErrorKind] at the owner boundary.
+/// Unsupported operations throw
+/// [UnsupportedError], not unsupported-media errors. Track completion means
+/// request acceptance, not native confirmation. Unsupported operations are
+/// gated by [capabilities].
 abstract interface class PlaybackAdapter {
   PlaybackCapabilities get capabilities;
   PlaybackState get state;
   Stream<PlaybackState> get states;
+
+  /// Returns the current resource's stable widget, or `null` without a surface.
+  ///
+  /// Repeated calls return the same widget while the native resource survives.
+  /// Position/metadata changes do not recreate it; aspect ratio reacts within
+  /// the widget. Detached resources, cancelled initialization and disposal
+  /// invalidate it. Replacement or stop may reuse a retained native resource's
+  /// surface (as on MediaKit). Owners query this on state changes rather than
+  /// caching the first non-null widget.
+  /// Implementations publish state when surface availability/identity changes.
   Widget? buildVideoView();
 
   /// Replaces the resource and starts playback once initialization completes.

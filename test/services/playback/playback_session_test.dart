@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
 import 'package:iptv_flutter/services/playback/playback_session.dart';
+import 'package:iptv_flutter/services/playback/video_player_playback.dart';
 
 import '../../support/controlled_playback.dart';
 
@@ -71,6 +72,77 @@ void main() {
       await flushCommands();
       expect(session.state.item, second);
       expect(session.state.status, PlaybackStatus.playing);
+    },
+  );
+
+  test(
+    'unsupported commands never reach the backend or alter the session',
+    () async {
+      final unsupported = ControlledPlayback(
+        capabilities: const PlaybackCapabilities(
+          supportsPause: false,
+          supportsSeek: false,
+          supportsVolume: false,
+          supportsDrm: false,
+          supportsLiveStreams: false,
+        ),
+      );
+      final guarded = PlaybackSession(unsupported);
+      addTearDown(guarded.dispose);
+      await guarded.load(first);
+      final previous = guarded.state;
+      for (final command in [
+        guarded.pause,
+        () => guarded.seek(Duration.zero),
+        () => guarded.setVolume(50),
+        () => guarded.selectAudioTrack('1'),
+        () => guarded.selectSubtitleTrack('off'),
+        () => guarded.load(
+          const ContentItem(
+            id: 'live',
+            title: 'Live',
+            type: ContentType.live,
+            streamUrl: 'https://example.com/live',
+            group: 'Tests',
+          ),
+        ),
+      ]) {
+        await expectLater(command(), throwsUnsupportedError);
+        expect(guarded.state, same(previous));
+      }
+      expect(unsupported.calls, ['load:first']);
+      await guarded.stop();
+      await guarded.play();
+      expect(guarded.state.status, PlaybackStatus.playing);
+      expect(unsupported.calls, ['load:first', 'stop', 'load:first']);
+    },
+  );
+
+  test('advertised tracks require the optional track interface', () async {
+    final invalid = _InvalidTrackBackend();
+    addTearDown(invalid.dispose);
+    expect(() => PlaybackSession(invalid), throwsArgumentError);
+  });
+
+  test(
+    'surface lookup observes replacement and invalidation within the same item',
+    () async {
+      await session.load(first);
+      expect(session.buildVideoView(), isNull);
+      backend.view = const SizedBox(key: ValueKey('native-first'));
+      backend.emit(backend.state.copyWith());
+      final old = session.buildVideoView();
+      expect(old, same(backend.view));
+      expect(session.buildVideoView(), same(old));
+      backend.view = const SizedBox(key: ValueKey('native-second'));
+      backend.emit(backend.state.copyWith());
+      expect(session.buildVideoView(), same(backend.view));
+      expect(session.buildVideoView(), isNot(same(old)));
+      backend.view = null;
+      backend.emit(backend.state.copyWith());
+      expect(session.buildVideoView(), isNull);
+      await session.dispose();
+      expect(session.buildVideoView(), isNull);
     },
   );
 
@@ -163,6 +235,7 @@ void main() {
         } else {
           command.complete();
         }
+
         await Future.wait([pausing, replacement, obsoleteSeek, latest]);
         expect(backend.calls, ['load:first', 'pause', 'load:third']);
         expect(session.state.item, third);
@@ -333,5 +406,17 @@ void main() {
       await opening;
       expect(backend.calls.last, 'dispose');
     },
+  );
+}
+
+class _InvalidTrackBackend extends VideoPlayerPlaybackAdapter {
+  @override
+  PlaybackCapabilities get capabilities => const PlaybackCapabilities(
+    supportsSeek: true,
+    supportsPause: true,
+    supportsVolume: true,
+    supportsDrm: false,
+    supportsLiveStreams: true,
+    supportsAudioTracks: true,
   );
 }

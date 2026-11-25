@@ -174,16 +174,16 @@ class DesktopMediaKitPlaybackAdapter
       );
       if (_disposed || load.isCancelled) return;
       await _player.play();
-    } catch (error) {
+    } catch (error, stack) {
       if (_disposed || load.isCancelled) return;
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
-          errorKind: classifyPlaybackError(error.toString()),
+          errorKind: playbackErrorKind(error),
           clearMessage: true,
         ),
       );
-      rethrow;
+      Error.throwWithStackTrace(PlaybackException.from(error), stack);
     }
   }
 
@@ -295,6 +295,7 @@ class DesktopMediaKitPlaybackAdapter
   Future<void> dispose() {
     if (_disposeFuture != null) return _disposeFuture!;
     _disposed = true;
+    _videoView = null;
     _load?.cancel();
     return _disposeFuture = _dispose();
   }

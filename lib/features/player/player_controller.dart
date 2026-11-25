@@ -50,7 +50,6 @@ class PlayerController extends ChangeNotifier {
   bool _favoriteBusy = false;
   bool _favoriteLoading = false;
   String? _controlError;
-  Widget? _videoView;
   bool get canFavorite =>
       favorites != null &&
       _playbackState.value.item?.catalogPlaylistId != null &&
@@ -80,8 +79,7 @@ class PlayerController extends ChangeNotifier {
 
   PlaybackCapabilities get capabilities => playbackAdapter.capabilities;
 
-  Widget? get videoView =>
-      _disposed ? null : _videoView ??= playbackAdapter.buildVideoView();
+  Widget? get videoView => _disposed ? null : playbackAdapter.buildVideoView();
 
   void registerBackRequestHandler(Object owner, bool Function() handler) {
     _backHandlerOwner = owner;
@@ -107,7 +105,6 @@ class PlayerController extends ChangeNotifier {
   Future<void> open(ContentItem item) async {
     if (_disposed) return;
     final generation = ++_playbackLoadGeneration;
-    _videoView = null;
     _favorite = null;
     _favoriteBusy = false;
     _favoriteLoading = false;
@@ -133,7 +130,11 @@ class PlayerController extends ChangeNotifier {
       }
     } catch (error, stackTrace) {
       if (_disposed || generation != _playbackLoadGeneration) return;
-      _recordFailure('playback_load_failed', error, stackTrace);
+      if (error is UnsupportedError) {
+        await _stopPlayback();
+        if (_disposed || generation != _playbackLoadGeneration) return;
+      }
+      _recordFailure('playback_load_failed', error, stackTrace, item: item);
     }
   }
 
@@ -147,7 +148,6 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> play() async {
-    if (!capabilities.supportsPause) return;
     await _runCommand('playback_play_failed', playbackAdapter.play);
   }
 
@@ -332,7 +332,12 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
-  void _recordFailure(String event, Object error, StackTrace stackTrace) {
+  void _recordFailure(
+    String event,
+    Object error,
+    StackTrace stackTrace, {
+    ContentItem? item,
+  }) {
     _logger.error(
       event,
       error: safePlaybackLabel(error.toString()),
@@ -343,9 +348,8 @@ class PlayerController extends ChangeNotifier {
     if (!_disposed) {
       _playbackState.value = _playbackState.value.copyWith(
         status: PlaybackStatus.error,
-        errorKind: error is PlaybackConfigurationError
-            ? PlaybackErrorKind.configuration
-            : classifyPlaybackError(error.toString()),
+        item: item,
+        errorKind: playbackErrorKind(error),
         clearMessage: true,
       );
     }
@@ -428,7 +432,6 @@ class PlayerController extends ChangeNotifier {
     _backHandlerOwner = null;
     _backRequestHandler = null;
     _disposeFuture = _disposePlayback();
-    _videoView = null;
     unawaited(
       _disposeFuture!.then<void>(
         (_) {},

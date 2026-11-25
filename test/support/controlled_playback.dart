@@ -6,6 +6,17 @@ import 'package:iptv_flutter/services/playback/playback_contract.dart';
 import 'package:iptv_flutter/services/playback/playback_load.dart';
 
 class ControlledPlayback implements PlaybackAdapter, PlaybackTrackAdapter {
+  ControlledPlayback({
+    this.capabilities = const PlaybackCapabilities(
+      supportsPause: true,
+      supportsSeek: true,
+      supportsVolume: true,
+      supportsDrm: false,
+      supportsLiveStreams: true,
+      supportsAudioTracks: true,
+      supportsSubtitleTracks: true,
+    ),
+  });
   final calls = <String>[];
   final _states = StreamController<PlaybackState>.broadcast(sync: true);
   PlaybackState _state = const PlaybackState.idle();
@@ -22,15 +33,7 @@ class ControlledPlayback implements PlaybackAdapter, PlaybackTrackAdapter {
   Widget? view;
 
   @override
-  PlaybackCapabilities get capabilities => const PlaybackCapabilities(
-    supportsPause: true,
-    supportsSeek: true,
-    supportsVolume: true,
-    supportsDrm: false,
-    supportsLiveStreams: true,
-    supportsAudioTracks: true,
-    supportsSubtitleTracks: true,
-  );
+  final PlaybackCapabilities capabilities;
   @override
   PlaybackState get state => _state;
   @override

@@ -241,4 +241,27 @@ void main() {
       expect(retries, 1);
     },
   );
+
+  for (final entry in {
+    PlaybackErrorKind.configuration:
+        'This webOS package must be rebuilt using the supported build script.',
+    PlaybackErrorKind.accessDenied: 'Playback failed: access denied.',
+    PlaybackErrorKind.notFound: 'Playback failed: stream not found.',
+    PlaybackErrorKind.timeout: 'Playback failed: stream timeout.',
+    PlaybackErrorKind.unsupportedFormat:
+        'Playback failed: unsupported media format.',
+    PlaybackErrorKind.network: 'Playback failed: network unavailable.',
+    PlaybackErrorKind.unknown: 'Playback failed. Try another stream.',
+    null: 'Playback failed. Try another stream.',
+  }.entries) {
+    testWidgets('error panel maps ${entry.key} to safe product text', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        PlayerErrorPanel(errorKind: entry.key, onBack: () {}, onRetry: () {}),
+      );
+      expect(find.text(entry.value), findsOneWidget);
+    });
+  }
 }

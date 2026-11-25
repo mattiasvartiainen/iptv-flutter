@@ -33,6 +33,30 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-player-contract clarifies capabilities, surface lifetime and typed errors.
+Dependencies: WP-player-widgets. Touches: playback contract/errors/session,
+native adapters, PlayerController and related tests/docs. Skills:
+dart-add-unit-test, dart-write-documentation, dart-run-static-analysis.
+Keep backend selection and UI/input policy unchanged. Define capability flags
+as backend support rather than current stream availability; reject unsupported
+session commands before native calls. Let adapters own stable, resource-scoped
+surfaces with reactive aspect ratio; remove controller first-widget caching.
+Preserve safe typed media failures through the controller, including LG loads.
+No import, database, new package or device-specific layout work.
+
+Implemented fixed backend capability semantics and session-level unsupported
+command gates, including track-interface validation and Play independent of
+Pause. Adapters own stable native-resource surfaces; Android/LG aspect ratios
+react without replacing the native child. Controller queries current surfaces
+and preserves safe typed initialization errors, including LG classification.
+Unsupported item selection stops previous output and reports the requested item.
+
+Verification: final 127 focused contract/controller/native/UI tests pass;
+Windows debug build passes; analyzer retains only the two baseline infos.
+Broad regression: 881 passes and the two known Settings focus failures,
+excluding the previously stalled telemetry file. Real Android/LG hardware
+validation remains pending.
+
 WP-player-widgets extracts focused player presentation without behavior changes.
 Dependencies: WP-player-session. Touches: PlayerScreen, player controls/header,
 seek bar, track dialog/error panel, their widget tests and architecture docs.
@@ -156,6 +180,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-contract | Capabilities, surface lifetime and typed errors | Player | WP-player-widgets | M | DONE (2026-11-25) - capability gates, resource-owned reactive surfaces and safe typed failures; 127 focused tests and Windows build pass; baseline analyzer/test caveats above |
 | WP-player-widgets | Focused player presentation widgets | Player | WP-player-session | M | DONE (2026-11-25): Stateless controls/header, seek bar, track dialog and error panel; 69 focused tests and Windows debug build pass. |
 | WP-player-session | Playback session and lifecycle guarantees | Player | WP-player-overlay | M | DONE (2026-11-25): Latest-wins ownership, cancellable loads/restarts, awaited cleanup; 103 focused tests and Windows debug build pass. Regression caveats documented above. |
 | WP-player-overlay | Shared player controls, tracks and favourites | Player | WP-XM-medium | M | DONE (2026-11-25; desktop/unit/build-helper verified, LG package/hardware pending) |

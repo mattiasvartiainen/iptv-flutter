@@ -194,6 +194,32 @@ late errors, background/foreground, requested-item retention and disposal.
 Mocked native interfaces cover MediaKit, Android video_player and LG
 video_player_drm; they do not replace device/native-engine validation.
 
+Capability flags describe fixed backend support, not current stream readiness,
+track availability or codec compatibility. The session rejects unsupported
+commands with `UnsupportedError` before invoking the backend; advertised track
+support requires `PlaybackTrackAdapter`. UI still gates controls with both flags
+and current media state. Play is independent of pause support. Volume is a
+per-stream 0-100 percentage, not system volume; DRM remains unadvertised until
+a licence/configuration flow is implemented.
+An unsupported direct session call leaves its current playback unchanged;
+selecting an unsupported item through the player stops previous output and
+reports failure for the requested item rather than leaving the old video playing.
+
+Adapters own video-widget identity for each native resource. Android and LG
+cache a `PlaybackVideoSurface` that listens to native values for aspect ratio
+while retaining its video child (invalid dimensions use 16:9). A disposed or
+cancelled controller invalidates its surface; MediaKit can reuse its surviving
+player/surface across loads. State changes signal availability/replacement.
+The controller queries the current surface instead of caching the first widget,
+so a stopped-item restart or same-session replacement cannot show an old view.
+
+Native initialization failures use `PlaybackException`, carrying only a
+`PlaybackErrorKind`, never the native message/URL. `playbackErrorKind` preserves
+typed/configuration errors before falling back to the shared legacy-text mapper
+for command/cleanup failures. Unsupported operations are not unsupported-media
+errors. State events carry error kinds; the owner logs safe failures and the
+error panel maps kinds to product text. Track/favourite failures remain nonfatal.
+
 The dedicated webOS adapter wraps LG's separate `video_player_drm` API for ordinary streams and embedded audio/subtitle selection. Android retains standard `video_player`; desktop uses `media_kit` or the fake/fixture adapter. Playback rides the webOS media pipeline, so codec/variant support and transparent native-plane compositing must be validated on hardware (see [`decisions.md`](decisions.md)). Keep backend selection in `lib/platform` and expose unsupported LG volume/custom headers honestly.
 
 Flutter webOS reports a Linux-like target platform, so platform selection must not rely on `defaultTargetPlatform` alone. Desktop runs use `media_kit`; webOS builds pass `--dart-define=IPTV_WEBOS=true` and use the webOS adapter. Desktop backend selection remains behind `IPTV_DESKTOP_BACKEND`, with `fake` and `media_kit` supported today; `vlc` is reserved for a future adapter and is not implemented yet.

@@ -1,11 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
 import 'package:iptv_flutter/services/playback/playback_http_headers.dart';
+import 'package:iptv_flutter/services/playback/playback_video_surface.dart';
 import 'package:iptv_flutter/services/playback/video_player_playback.dart';
+import 'package:video_player/video_player.dart' as vp;
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 void main() {
@@ -92,6 +94,67 @@ void main() {
       await playing;
       expect(adapter.state.status, PlaybackStatus.playing);
     });
+
+    test(
+      'surface is stable per resource and its ratio follows native values',
+      () async {
+        platform.autoInitialize = true;
+        await adapter.load(item);
+        final view =
+            adapter.buildVideoView()
+                as PlaybackVideoSurface<vp.VideoPlayerValue>;
+        expect(adapter.buildVideoView(), same(view));
+        final controller = view.values as vp.VideoPlayerController;
+        controller.value = controller.value.copyWith(
+          size: const Size(800, 600),
+        );
+        expect(view.aspectRatio(view.values.value), 4 / 3);
+        expect(adapter.buildVideoView(), same(view));
+        await adapter.stop();
+        expect(adapter.buildVideoView(), same(view));
+        await adapter.play();
+        expect(adapter.buildVideoView(), same(view));
+        final nextLoad = adapter.load(item);
+        expect(adapter.buildVideoView(), isNull);
+        await nextLoad;
+        expect(adapter.buildVideoView(), isNot(same(view)));
+        await adapter.dispose();
+        expect(adapter.buildVideoView(), isNull);
+      },
+    );
+
+    test(
+      'native load errors throw safe typed failures matching state',
+      () async {
+        final created = platform.created.stream.first;
+        final loading = adapter.load(item);
+        final failure = expectLater(
+          loading,
+          throwsA(
+            isA<PlaybackException>()
+                .having(
+                  (error) => error.kind,
+                  'kind',
+                  PlaybackErrorKind.accessDenied,
+                )
+                .having(
+                  (error) => error.toString(),
+                  'safe text',
+                  isNot(contains('token')),
+                ),
+          ),
+        );
+        final id = await created;
+        platform.events[id]!.addError(
+          PlatformException(
+            code: 'VideoError',
+            message: 'HTTP 403 https://example.com/video?token=test',
+          ),
+        );
+        await failure;
+        expect(adapter.state.errorKind, PlaybackErrorKind.accessDenied);
+      },
+    );
 
     test(
       'disposal is idempotent, cancels initialization and awaits native release',

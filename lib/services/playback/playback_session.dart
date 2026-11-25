@@ -19,6 +19,11 @@ class PlaybackSession implements PlaybackAdapter, PlaybackTrackAdapter {
   PlaybackSession(this._backend, {AppLogger logger = const DebugAppLogger()})
     : _logger = logger,
       _state = _backend.state {
+    if ((_backend.capabilities.supportsAudioTracks ||
+            _backend.capabilities.supportsSubtitleTracks) &&
+        _backend is! PlaybackTrackAdapter) {
+      throw ArgumentError('Track capabilities require PlaybackTrackAdapter.');
+    }
     _subscription = _backend.states.listen(_acceptState);
   }
 
@@ -94,6 +99,11 @@ class PlaybackSession implements PlaybackAdapter, PlaybackTrackAdapter {
   @override
   Future<void> load(ContentItem item) {
     if (_disposed) return Future<void>.value();
+    if (item.type == ContentType.live && !capabilities.supportsLiveStreams) {
+      return Future<void>.error(
+        UnsupportedError('Live playback is unavailable.'),
+      );
+    }
     final generation = ++_generation;
     _interruptLoad();
     _publish(
@@ -126,7 +136,14 @@ class PlaybackSession implements PlaybackAdapter, PlaybackTrackAdapter {
   Future<void> _command(
     Future<void> Function() command, {
     bool mayLoad = false,
+    bool supported = true,
   }) {
+    if (_disposed) return Future<void>.value();
+    if (!supported) {
+      return Future<void>.error(
+        UnsupportedError('Playback command is unavailable.'),
+      );
+    }
     final generation = _generation;
     return _enqueue(() async {
       if (!_current(generation) || _nativeGeneration != generation) return;
@@ -156,25 +173,34 @@ class PlaybackSession implements PlaybackAdapter, PlaybackTrackAdapter {
   }
 
   @override
-  Future<void> pause() => _command(_backend.pause);
+  Future<void> pause() =>
+      _command(_backend.pause, supported: capabilities.supportsPause);
   @override
-  Future<void> seek(Duration position) =>
-      _command(() => _backend.seek(position));
+  Future<void> seek(Duration position) => _command(
+    () => _backend.seek(position),
+    supported: capabilities.supportsSeek,
+  );
   @override
-  Future<void> setVolume(double volume) =>
-      _command(() => _backend.setVolume(volume));
+  Future<void> setVolume(double volume) => _command(
+    () => _backend.setVolume(volume),
+    supported: capabilities.supportsVolume,
+  );
 
-  Future<void> _selectTrack(String id, {required bool subtitle}) =>
-      _command(() {
-        final backend = _backend;
-        if (backend is! PlaybackTrackAdapter) {
-          throw UnsupportedError('Track selection is unavailable.');
-        }
-        final tracks = backend as PlaybackTrackAdapter;
-        return subtitle
-            ? tracks.selectSubtitleTrack(id)
-            : tracks.selectAudioTrack(id);
-      });
+  Future<void> _selectTrack(String id, {required bool subtitle}) => _command(
+    () {
+      final backend = _backend;
+      if (backend is! PlaybackTrackAdapter) {
+        throw UnsupportedError('Track selection is unavailable.');
+      }
+      final tracks = backend as PlaybackTrackAdapter;
+      return subtitle
+          ? tracks.selectSubtitleTrack(id)
+          : tracks.selectAudioTrack(id);
+    },
+    supported: subtitle
+        ? capabilities.supportsSubtitleTracks
+        : capabilities.supportsAudioTracks,
+  );
   @override
   Future<void> selectAudioTrack(String id) => _selectTrack(id, subtitle: false);
   @override

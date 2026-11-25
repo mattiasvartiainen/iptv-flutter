@@ -7,11 +7,13 @@ import '../../models/content_item.dart';
 import 'playback_contract.dart';
 import 'playback_http_headers.dart';
 import 'playback_load.dart';
+import 'playback_video_surface.dart';
 
 class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   final _stateController = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
   VideoPlayerController? _controller;
+  Widget? _videoView;
   bool _disposed = false;
   PlaybackLoad? _load;
   Future<void>? _disposeFuture;
@@ -35,11 +37,13 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   @override
   Widget? buildVideoView() {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return null;
-    return AspectRatio(
-      aspectRatio: controller.value.aspectRatio > 0
-          ? controller.value.aspectRatio
-          : 16 / 9,
+    if (_disposed || controller == null || !controller.value.isInitialized) {
+      return null;
+    }
+    return _videoView ??= PlaybackVideoSurface<VideoPlayerValue>(
+      values: controller,
+      aspectRatio: (value) =>
+          value.size.width > 0 && value.size.height > 0 ? value.aspectRatio : 0,
       child: VideoPlayer(controller),
     );
   }
@@ -81,7 +85,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         return;
       }
       _handleControllerUpdate();
-    } catch (error) {
+    } catch (error, stack) {
       if (_disposed ||
           load.isCancelled ||
           !identical(_controller, controller)) {
@@ -91,12 +95,12 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         _publish(
           _state.copyWith(
             status: PlaybackStatus.error,
-            errorKind: classifyPlaybackError(error.toString()),
+            errorKind: playbackErrorKind(error),
             clearMessage: true,
           ),
         );
       }
-      rethrow;
+      Error.throwWithStackTrace(PlaybackException.from(error), stack);
     }
   }
 
@@ -197,8 +201,12 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         clearDuration: value.duration == Duration.zero,
         isBuffering: value.isBuffering,
         mediaInfo: PlaybackMediaInfo(
-          width: value.size.width > 0 ? value.size.width.round() : null,
-          height: value.size.height > 0 ? value.size.height.round() : null,
+          width: value.size.width.isFinite && value.size.width > 0
+              ? value.size.width.round()
+              : null,
+          height: value.size.height.isFinite && value.size.height > 0
+              ? value.size.height.round()
+              : null,
         ),
         volume: value.volume * 100,
         playbackStartedAt: value.isPlaying
@@ -217,6 +225,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   Future<void> _disposeController() {
     final controller = _controller;
     _controller = null;
+    _videoView = null;
     controller?.removeListener(_handleControllerUpdate);
     if (controller != null) {
       final previous = _controllerDisposal;

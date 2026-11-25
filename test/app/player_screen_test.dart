@@ -161,6 +161,7 @@ void main() {
         playbackAdapter: adapter,
         item: _movie,
       );
+
       final initialBuilds = adapter.builds;
       for (var i = 1; i <= 20; i++) {
         await harness.player.seekTo(Duration(seconds: i));
@@ -169,6 +170,34 @@ void main() {
       expect(adapter.viewsCreated, 1);
       expect(adapter.builds, initialBuilds);
       expect(initialBuilds, greaterThan(0));
+    },
+  );
+  testWidgets(
+    'same-session surface changes replace or remove the visible video',
+    (tester) async {
+      final adapter = _ReplacingVideoAdapter();
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: adapter,
+        item: _movie,
+      );
+      expect(
+        find.byKey(const ValueKey('first-native-surface')),
+        findsOneWidget,
+      );
+      adapter.view = const SizedBox(key: ValueKey('second-native-surface'));
+      await harness.player.seekTo(const Duration(seconds: 1));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('first-native-surface')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('second-native-surface')),
+        findsOneWidget,
+      );
+      adapter.view = null;
+      await harness.player.seekTo(const Duration(seconds: 2));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('second-native-surface')), findsNothing);
+      expect(find.byIcon(Icons.ondemand_video), findsOneWidget);
     },
   );
   testWidgets('tap reveals without pausing, centre pauses and Space resumes', (
@@ -523,11 +552,28 @@ class _Favorites implements FavoriteRepository {
 class _CountingVideoAdapter extends _TrackingPlaybackAdapter {
   int viewsCreated = 0;
   int builds = 0;
+  Widget? _view;
+  @override
+  Future<void> load(ContentItem item) {
+    _view = null;
+    return super.load(item);
+  }
+
   @override
   Widget buildVideoView() {
+    return _view ??= _createView();
+  }
+
+  Widget _createView() {
     viewsCreated++;
     return _CountingVideoView(onBuild: () => builds++);
   }
+}
+
+class _ReplacingVideoAdapter extends _TrackingPlaybackAdapter {
+  Widget? view = const SizedBox(key: ValueKey('first-native-surface'));
+  @override
+  Widget? buildVideoView() => view;
 }
 
 class _CountingVideoView extends StatelessWidget {

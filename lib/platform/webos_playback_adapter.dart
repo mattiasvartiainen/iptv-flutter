@@ -7,6 +7,7 @@ import '../models/content_item.dart';
 import '../services/playback/playback_contract.dart';
 import '../services/playback/playback_labels.dart';
 import '../services/playback/playback_load.dart';
+import '../services/playback/playback_video_surface.dart';
 
 class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   WebOsPlaybackAdapter()
@@ -21,6 +22,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   final _states = StreamController<PlaybackState>.broadcast();
   PlaybackState _state = const PlaybackState.idle();
   lg.VideoPlayerController? _controller;
+  Widget? _videoView;
   bool _disposed = false;
   int _loadGeneration = 0;
   PlaybackLoad? _load;
@@ -48,9 +50,13 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   @override
   Widget? buildVideoView() {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return null;
-    return AspectRatio(
-      aspectRatio: controller.value.aspectRatio,
+    if (_disposed || controller == null || !controller.value.isInitialized) {
+      return null;
+    }
+    return _videoView ??= PlaybackVideoSurface<lg.VideoPlayerValue>(
+      values: controller,
+      aspectRatio: (value) =>
+          value.size.width > 0 && value.size.height > 0 ? value.aspectRatio : 0,
       child: lg.VideoPlayer(controller),
     );
   }
@@ -92,16 +98,16 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
       if (_isCurrent(controller) && generation == _loadGeneration) {
         _handleUpdate();
       }
-    } catch (error) {
+    } catch (error, stack) {
       if (!_isCurrent(controller) || generation != _loadGeneration) return;
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
-          errorKind: classifyPlaybackError(error.toString()),
+          errorKind: playbackErrorKind(error),
           clearMessage: true,
         ),
       );
-      throw StateError('Unable to load video.');
+      Error.throwWithStackTrace(PlaybackException.from(error), stack);
     }
   }
 
@@ -301,6 +307,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   Future<void> _disposeController() {
     final controller = _controller;
     _controller = null;
+    _videoView = null;
     if (controller != null) {
       controller.removeListener(_handleUpdate);
       final previous = _controllerDisposal;
