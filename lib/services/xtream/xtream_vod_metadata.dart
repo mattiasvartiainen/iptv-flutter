@@ -45,7 +45,21 @@ MovieMetadataResult normalizeXtreamVod(
       info is! Map<String, dynamic>) {
     return const MovieMetadataResult(failure: MetadataFailure.malformed);
   }
-  final fields = <MovieMetadataField, String>{};
+  return MovieMetadataResult(
+    metadata: normalizeXtreamDescription(
+      info,
+      credentials,
+      fallbackName: movie['name'],
+    ),
+  );
+}
+
+ContentMetadata normalizeXtreamDescription(
+  Map<String, dynamic> info,
+  XtreamCredentials credentials, {
+  Object? fallbackName,
+}) {
+  final fields = <ContentMetadataField, String>{};
   String? text(Object? value) {
     if (value is! String) return null;
     final trimmed = value.trim();
@@ -88,7 +102,7 @@ MovieMetadataResult normalizeXtreamVod(
     if (normalized != null) fields[field] = normalized;
   }
 
-  put(MovieMetadataField.title, [info['name'], movie['name']]);
+  put(MovieMetadataField.title, [info['name'], fallbackName]);
   put(MovieMetadataField.plot, [info['plot'], info['description']]);
   put(MovieMetadataField.genres, [info['genre']]);
   put(MovieMetadataField.cast, [info['cast'], info['actors']]);
@@ -131,10 +145,8 @@ MovieMetadataResult normalizeXtreamVod(
   } else {
     artwork(MovieMetadataField.backdrop, backdrops);
   }
-  return MovieMetadataResult(
-    metadata: MovieMetadata(
-      fields: fields,
-      sources: {for (final field in fields.keys) field: 'xtream'},
-    ),
+  return ContentMetadata(
+    fields: fields,
+    sources: {for (final field in fields.keys) field: 'xtream'},
   );
 }

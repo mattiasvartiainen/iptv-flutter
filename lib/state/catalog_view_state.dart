@@ -184,6 +184,7 @@ class CatalogViewState extends ChangeNotifier {
 
   bool get hasContent => itemCount > 0;
   String? get playlistId => _playlistId;
+  CatalogQueryService? get queryService => _service;
 
   Future<void> bind({
     required CatalogQueryService service,

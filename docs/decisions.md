@@ -116,6 +116,16 @@ unchanged and uses only the verified playlist's provider, not TMDB or other
 external services. Preserve original streams and local identity, fetch metadata
 only for selected movies, and keep Play usable independently of enrichment.
 
+### Series overview and enrichment (2026-11-25)
+The follow-up "now enrich series" approves WP-XM-series's selected-show Xtream
+metadata and local inline overview. Exact category/title candidates are only
+suggestions: every imported episode must match a verified account-bound
+`/series/` identity and belong to the selected provider show. Ambiguous or
+unmatched shows retain local browsing; do not guess or crawl unrelated details.
+Provider episodes never create local playable items. The typed overview owns
+selection/paging; legacy Seasons/Episodes routes remain compatibility cases,
+not the normal entry flow. Native provider/remote checks remain pending.
+
 ### Catalog sorting (2026-11-25)
 User-approved scope: Live TV defaults to provider playlist order, with an explicit
 Playlist order / Alphabetical (A-Z) toggle beside the list/card-view control.

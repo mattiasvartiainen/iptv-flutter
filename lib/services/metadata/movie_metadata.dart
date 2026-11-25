@@ -1,36 +1,9 @@
-import 'dart:async';
+import 'content_metadata.dart';
 
-enum MovieMetadataField {
-  title,
-  plot,
-  poster,
-  backdrop,
-  genres,
-  releaseDate,
-  runtime,
-  cast,
-  director,
-  rating,
-  tmdbId,
-}
+export 'content_metadata.dart';
 
-class MovieMetadata {
-  MovieMetadata({
-    Map<MovieMetadataField, String> fields = const {},
-    Map<MovieMetadataField, String> sources = const {},
-  }) : fields = Map.unmodifiable(fields),
-       sources = Map.unmodifiable(sources);
-
-  final Map<MovieMetadataField, String> fields;
-  final Map<MovieMetadataField, String> sources;
-
-  String? operator [](MovieMetadataField field) => fields[field];
-
-  MovieMetadata fillMissing(MovieMetadata other) => MovieMetadata(
-    fields: {...other.fields, ...fields},
-    sources: {...other.sources, ...sources},
-  );
-}
+typedef MovieMetadataField = ContentMetadataField;
+typedef MovieMetadata = ContentMetadata;
 
 class MovieMetadataSubject {
   const MovieMetadataSubject({
@@ -46,22 +19,6 @@ class MovieMetadataSubject {
   final String locale;
   final int connectionRevision;
   final String? providerMovieId;
-}
-
-enum MetadataFailure {
-  unverified,
-  unmapped,
-  notMovie,
-  notFound,
-  unsupported,
-  denied,
-  malformed,
-  rateLimited,
-  network,
-  timeout,
-  cancelled,
-  tooLarge,
-  storage,
 }
 
 class MovieMetadataResult {
@@ -80,15 +37,6 @@ class MovieMetadataResult {
   final Duration? retryAfter;
 }
 
-class MetadataCancellation {
-  final _completion = Completer<void>();
-  bool get isCancelled => _completion.isCompleted;
-  Future<void> get whenCancelled => _completion.future;
-  void cancel() {
-    if (!isCancelled) _completion.complete();
-  }
-}
-
 abstract interface class MovieMetadataProvider {
   String get id;
   bool supports(MovieMetadataSubject subject);
@@ -104,36 +52,4 @@ abstract interface class MovieMetadataRepository {
     required MetadataCancellation cancellation,
     bool forceRefresh = false,
   });
-}
-
-String? safeArtworkUrl(String? value) {
-  if (value == null || value.trim().isEmpty) return null;
-  try {
-    final uri = Uri.tryParse(value.trim());
-    if (uri == null ||
-        !const ['http', 'https'].contains(uri.scheme) ||
-        uri.host.isEmpty ||
-        uri.userInfo.isNotEmpty ||
-        uri.hasFragment ||
-        uri.queryParameters.keys.any(
-          (key) => RegExp(
-            r'password|username|token|auth|key|signature|credential',
-            caseSensitive: false,
-          ).hasMatch(key),
-        ) ||
-        uri.pathSegments.any(
-          const [
-            'live',
-            'movie',
-            'series',
-            'get.php',
-            'player_api.php',
-          ].contains,
-        )) {
-      return null;
-    }
-    return uri.toString();
-  } on FormatException {
-    return null;
-  }
 }

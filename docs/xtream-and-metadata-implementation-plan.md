@@ -297,19 +297,19 @@ External-provider choice, credentials/distribution, opt-in/data-sharing and curr
 
 ## 10. Work Packages
 
-READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. The selected-movie slice is implemented; XM-04's broader mappings, XM-08a and XM-12 remain next starting points.
+READY means prerequisites are satisfied, not that this document authorizes coding. Read listed owners and relevant `.agents/skills/` before each implementation. Selected-movie and Series overview/enrichment slices are implemented; broader identity work and XM-12 remain starting points.
 
 | ID | Deliverable | Depends On | Status |
 |---|---|---|---|
 | XM-01 | Source/capability contracts and detection parser | None | DONE (2026-10-15): Local-only contracts/parser, exact password preservation; 29 focused cases and all 315 tests pass. |
 | XM-02 | Safe Xtream authentication client and fixture contract tests | XM-01 | DONE (2026-10-15): Injected credentials/transport, sanitized typed results, bounded cancellable HTTP; 59 authentication cases and all 374 tests pass. |
 | XM-03 | Source persistence/editor verification and URL promotion | XM-02 | DONE (2026-10-15): Revision-safe persistence/recovery and integrated Add/Edit verification, retry/cancellation and URL-only fallback; all 469 tests pass. Native checks pending. |
-| XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | PARTIAL (2026-11-25): Verified selected-movie path bindings implemented by WP-XM-movie. Bare-URL catalog membership, broader provider identity and series mappings remain pending. |
+| XM-04 | Typed provider identity and hybrid M3U mappings | XM-03 | PARTIAL (2026-11-25): Verified selected-movie bindings and selected-Series episode membership are implemented. Bare-URL catalog membership and broader provider identity remain pending. |
 | XM-05 | Metadata repository/cache and first Xtream provider | Movie-scoped XM-04 | IMPLEMENTED (2026-11-25): Account/revision/locale-scoped movie cache, Xtream provider, safe bounded requests, deduplication/cancellation and fake second-provider merge covered by focused tests. Native/provider validation pending. |
-| XM-06 | On-demand series mappings and episode relationships | XM-05 | PENDING |
+| XM-06 | On-demand series mappings and episode relationships | XM-05 | IMPLEMENTED (2026-11-25): Exact category/title candidates, one selected-show detail and account-bound membership checks over every imported episode in bounded batches; ambiguous/incomplete data retains local browsing. Native/provider compatibility pending. |
 | XM-07 | Enhanced movie details | XM-05 | IMPLEMENTED (2026-11-25): Immediate local Details/Play, async enrichment, responsive artwork/facts, safe retry and focus/Back tests pass. Deterministic artwork snapshots and native checks pending; not completion of DE-02/03. |
-| XM-08a | Local series overview with inline seasons/episodes | Existing typed navigation and catalog queries | READY (2026-11-25): Requested navigation scope recorded; interaction recommendations in section 9. |
-| XM-08b | Provider metadata and backdrop on series overview | XM-06, XM-08a | PENDING |
+| XM-08a | Local series overview with inline seasons/episodes | Existing typed navigation and catalog queries | IMPLEMENTED (2026-11-25): Typed overview, lazy single-scroll card/list episode surface, numeric season selection without route pushes; keyboard focus/Back, bounded paging, failures/retry and viewport tests. Native remote checks pending. |
+| XM-08b | Provider metadata and backdrop on series overview | XM-06, XM-08a | IMPLEMENTED (2026-11-25): Shared descriptive normalization/artwork, optional show facts, sanitized revision/locale-scoped v15 cache, independent local browsing, cancellation and safe retry. Deterministic artwork snapshots and native/provider checks pending. |
 | XM-09 | Later category-batched Xtream catalog sync and identity bridge | XM-04, XM-06, import/search policy approval | GATED |
 | XM-10 | TMDB integration decision, matching and provider | XM-05, privacy/token/terms approval | GATED |
 | XM-11 | Cross-device, security and performance checkpoint | XM-12, XM-07, XM-08a, XM-08b; XM-10 if selected | PENDING |
@@ -380,6 +380,41 @@ Done: missing/malformed fields, wrong item IDs, unavailable APIs, stale/negative
 Owners: Xtream series mapper, bindings, series query service and catalog state. Fetch candidate show IDs category-by-category; request one selected show's detail when confidently mapped. Validate season keys/episode IDs/numbers and preserve specials without violating current schema constraints; add a migration if zero-number specials need representation. Do not silently coerce special episode zero to one.
 
 Done: two shows with the same title, unrelated show IDs, title-only ambiguity, incomplete series, huge detail payload, missing/duplicate episodes, nonnumeric season keys and sparse API metadata have safe fixtures. Existing local series stay usable when no mapping is available; no all-series episode crawl occurs.
+
+### Series implementation evidence (WP-XM-series, 2026-11-25)
+
+- [Series decoder](../lib/services/xtream/xtream_series_metadata.dart) uses bounded,
+  off-isolate category/show/detail actions from the existing HTTP client.
+  Only exact normalized category/title candidates are accepted, and more than
+  one candidate remains unmapped rather than fetching every show's episodes.
+  Specials (`0`) are accepted in provider metadata without fabricating/coercing
+  local episode rows; the existing M3U classifier's zero-label behavior is unchanged.
+- [Series repository](../lib/services/metadata/sqlite_series_metadata_repository.dart)
+  validates a bounded identity sample, then every local episode against provider
+  membership in 100-row batches. It never modifies catalog/playback data.
+  The verified provider ID is persisted with sanitized descriptive cache data.
+  Cache freshness is seven days, maintenance evicts entries over 30 days and
+  over a 50 MiB LRU budget. Concurrent readers share work; account requests
+  serialize, honor Retry-After, and source edits/deletion cancel late publication.
+  Negative Series caching and shared scheduling across Movie/Series repositories
+  are deferred; no auth failures are cached as empty metadata.
+- [Overview controller](../lib/features/details/series_details_controller.dart)
+  owns transient local seasons/selected-season paging independently of metadata.
+  [Overview screen](../lib/features/details/series_details_screen.dart) uses one
+  lazy scroll surface with card/list preferences, initial season focus, explicit
+  season-to-episode/error and first-row-to-season navigation, and existing
+  episode Details/Player activation. Metadata arrival does not request focus.
+- Category names/title formatting must agree with the imported grouping for
+  automatic matching. Providers that rename categories, omit episode membership,
+  or return duplicate show candidates remain local-only rather than guessed.
+  External metadata requests, API-native catalog import and Live activation
+  remain outside this implementation. Automated tests use fixtures only.
+- Verification: all 155 focused Series/Movie/catalog/storage/navigation tests
+  pass, including long 2x-text layouts and the actual 50 MiB payload threshold.
+  The final broad regression has 698 passes and only the two known Windows/Linux
+  Settings/editor focus failures. The full command again stalled in the existing
+  telemetry-section test and was stopped; the completed run excludes exactly
+  that test file. Analyzer retains two pre-existing infos, with no new issues.
 
 ### XM-07: Enhanced Movie Details
 

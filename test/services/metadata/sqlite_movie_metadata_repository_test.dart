@@ -387,6 +387,12 @@ void main() {
   test('v13 upgrade preserves catalog and user data', () async {
     final db = await adapter.database;
     final before = await db.query('items');
+    await db.execute('DROP TRIGGER invalidate_series_metadata_source');
+    await db.execute('DROP TRIGGER invalidate_series_metadata_episode');
+    await db.execute('DROP TRIGGER invalidate_series_metadata_episode_update');
+    await db.execute('DROP TRIGGER invalidate_series_metadata_episode_insert');
+    await db.execute('DROP TRIGGER invalidate_series_metadata_title');
+    await db.execute('DROP TABLE series_metadata_cache');
     await db.execute('DROP TRIGGER invalidate_movie_metadata_source');
     await db.execute('DROP TABLE movie_provider_bindings');
     await db.execute('DROP TABLE movie_metadata_cache');
@@ -396,7 +402,7 @@ void main() {
     final upgraded = await adapter.database;
     expect(
       (await upgraded.rawQuery('PRAGMA user_version')).single.values.single,
-      14,
+      15,
     );
     expect(await upgraded.query('items'), before);
     expect(

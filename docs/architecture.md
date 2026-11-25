@@ -109,8 +109,8 @@ Flutter widgets should be repeatable from state. A screen may own ephemeral widg
 ### Planned content-selection flows (2026-11-25)
 
 The [Xtream and metadata plan](xtream-and-metadata-implementation-plan.md#9-details-and-interaction)
-defines the requested flows. The movie slice is implemented; Live/Series
-navigation changes remain planned:
+defines the requested flows. Movie and Series details are implemented; direct
+Live activation remains planned:
 
 - Live channel activation opens the existing player directly, without Details.
 - Movies retain Details and Play, with immediate local data and on-demand,
@@ -118,6 +118,11 @@ navigation changes remain planned:
   The selected-movie Xtream provider and scoped v14 metadata cache are implemented.
 - Series open one overview with artwork/information and seasons. Selecting a
   season loads paged episodes below on the same screen, without another route.
+  `SeriesDetailsRoute` and its feature-local controller own transient selection.
+  Verified Xtream sources use category-filtered discovery and validate every
+  local episode against the selected provider show's membership. A separate
+  v15 cache stores sanitized show information, isolated by playlist/revision/
+  locale; metadata never replaces local streams or introduces playable episodes.
 - Plain M3U/M3U8 remains supported. API/external metadata is optional; unavailable
   enrichment never blocks local browsing or playback.
 
@@ -188,4 +193,3 @@ Represent errors with user-safe categories rather than raw exceptions:
 - storage unavailable.
 
 Detailed diagnostics may be available in developer logs, but user-facing messages should not echo credentials or provider URLs unnecessarily.
-

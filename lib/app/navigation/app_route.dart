@@ -25,6 +25,11 @@ final class SeasonsRoute extends AppRoute {
   final SeriesSummary series;
 }
 
+final class SeriesDetailsRoute extends AppRoute {
+  const SeriesDetailsRoute(this.series);
+  final SeriesSummary series;
+}
+
 final class EpisodesRoute extends AppRoute {
   const EpisodesRoute(this.series, this.season);
 

@@ -285,6 +285,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     return route is HomeRoute ||
         route is CatalogRoute ||
         route is SeriesRoute ||
+        route is SeriesDetailsRoute ||
         route is SeasonsRoute ||
         route is EpisodesRoute;
   }

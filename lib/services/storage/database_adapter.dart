@@ -4,6 +4,7 @@ import 'package:sqflite_common/sqlite_api.dart';
 import '../telemetry/app_telemetry.dart';
 import 'catalog_sort_v13_migration.dart';
 import 'movie_metadata_v14_migration.dart';
+import 'series_metadata_v15_migration.dart';
 import 'source_verification_v12_migration.dart';
 import 'storage_contracts.dart';
 import 'storage_migrations.dart';
@@ -33,6 +34,7 @@ class SqfliteDatabaseAdapter implements DatabaseAdapter {
              SourceVerificationV12Migration(),
              CatalogSortV13Migration(),
              MovieMetadataV14Migration(),
+             SeriesMetadataV15Migration(),
            ];
 
   final String fileName;

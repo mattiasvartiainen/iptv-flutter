@@ -9,6 +9,7 @@ import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/metadata/movie_metadata.dart';
+import 'package:iptv_flutter/services/metadata/series_metadata.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/app_preferences.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
@@ -91,6 +92,7 @@ Future<TestAppHarness> pumpIptvApp(
   CatalogQueryService? catalogQueryService,
   PlaybackAdapter? playbackAdapter,
   MovieMetadataRepository? movieMetadataRepository,
+  SeriesMetadataRepository? seriesMetadataRepository,
   PlatformCapabilities capabilities = const PlatformCapabilities(
     primaryInput: PrimaryInput.touch,
     hasHardwareBack: true,
@@ -148,6 +150,7 @@ Future<TestAppHarness> pumpIptvApp(
           capabilities: capabilities,
           extraShortcuts: extraShortcuts,
           movieMetadataRepository: movieMetadataRepository,
+          seriesMetadataRepository: seriesMetadataRepository,
         ),
       ),
     ),

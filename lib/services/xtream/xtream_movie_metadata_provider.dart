@@ -32,6 +32,14 @@ class XtreamMovieMetadataProvider implements MovieMetadataProvider {
 }
 
 String? xtreamMovieId(String streamUrl, XtreamCredentials credentials) {
+  return xtreamStreamId(streamUrl, credentials, kind: 'movie');
+}
+
+String? xtreamStreamId(
+  String streamUrl,
+  XtreamCredentials credentials, {
+  required String kind,
+}) {
   try {
     final stream = Uri.tryParse(streamUrl);
     final endpoint = credentials.endpoint;
@@ -52,7 +60,7 @@ String? xtreamMovieId(String streamUrl, XtreamCredentials credentials) {
     for (var index = 0; index < base.length; index++) {
       if (parts[index] != base[index]) return null;
     }
-    if (parts[base.length] != 'movie' ||
+    if (parts[base.length] != kind ||
         parts[base.length + 1] != credentials.username ||
         parts[base.length + 2] != credentials.password) {
       return null;

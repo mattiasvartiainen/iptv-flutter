@@ -10,7 +10,9 @@ import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/diagnostics/startup_preflight.dart';
 import '../services/logging/app_logger.dart';
 import '../services/metadata/movie_metadata.dart';
+import '../services/metadata/series_metadata.dart';
 import '../services/metadata/sqlite_movie_metadata_repository.dart';
+import '../services/metadata/sqlite_series_metadata_repository.dart';
 import '../services/settings/app_preferences.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
@@ -36,6 +38,7 @@ class AppDependencies {
     required this.preferencesController,
     required this.logger,
     this.movieMetadataRepository,
+    this.seriesMetadataRepository,
     this.telemetryController,
     required AppStartup? startup,
     required this.capabilities,
@@ -97,6 +100,15 @@ class AppDependencies {
       ],
       logger: logger,
     );
+    final seriesMetadata = SqliteSeriesMetadataRepository(
+      database: databaseAdapter,
+      resolveCredentials: credentials.resolve,
+      client: XtreamApiClient(
+        resolveCredentials: credentials.resolve,
+        logger: logger,
+      ),
+      logger: logger,
+    );
     final catalogView = CatalogViewState(
       logger: logger,
       preferences: AppPreferences(settingsRepository: settingsRepository),
@@ -146,6 +158,7 @@ class AppDependencies {
       logger: logger,
       telemetryController: telemetryController,
       movieMetadataRepository: movieMetadata,
+      seriesMetadataRepository: seriesMetadata,
       startup: startup,
       capabilities: profile.capabilities,
       extraShortcuts: profile.extraShortcuts,
@@ -163,6 +176,7 @@ class AppDependencies {
     required AppPreferencesController preferencesController,
     AppLogger logger = const DebugAppLogger(),
     MovieMetadataRepository? movieMetadataRepository,
+    SeriesMetadataRepository? seriesMetadataRepository,
     PlatformCapabilities capabilities = const PlatformCapabilities(
       primaryInput: PrimaryInput.touch,
       hasHardwareBack: true,
@@ -176,6 +190,7 @@ class AppDependencies {
     preferencesController: preferencesController,
     logger: logger,
     movieMetadataRepository: movieMetadataRepository,
+    seriesMetadataRepository: seriesMetadataRepository,
     startup: null,
     capabilities: capabilities,
     extraShortcuts: extraShortcuts,
@@ -191,6 +206,7 @@ class AppDependencies {
   final AppPreferencesController preferencesController;
   final AppLogger logger;
   final MovieMetadataRepository? movieMetadataRepository;
+  final SeriesMetadataRepository? seriesMetadataRepository;
   final TelemetryController? telemetryController;
   final AppStartup? _startup;
   final PlatformCapabilities capabilities;

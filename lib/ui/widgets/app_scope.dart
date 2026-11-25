@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../app/navigation/navigation_controller.dart';
 import '../../features/player/player_controller.dart';
 import '../../services/metadata/movie_metadata.dart';
+import '../../services/metadata/series_metadata.dart';
 import '../../state/app_controller.dart';
 import '../../state/app_preferences_controller.dart';
 import '../../state/playlists_controller.dart';
@@ -18,6 +19,7 @@ class AppScope extends InheritedWidget {
     required this.navigationController,
     this.telemetryController,
     this.movieMetadataRepository,
+    this.seriesMetadataRepository,
     required super.child,
   });
 
@@ -28,6 +30,11 @@ class AppScope extends InheritedWidget {
   final NavigationController navigationController;
   final TelemetryController? telemetryController;
   final MovieMetadataRepository? movieMetadataRepository;
+  final SeriesMetadataRepository? seriesMetadataRepository;
+
+  static SeriesMetadataRepository? seriesMetadataRepositoryOf(
+    BuildContext context,
+  ) => _scopeOf(context).seriesMetadataRepository;
 
   static MovieMetadataRepository? movieMetadataRepositoryOf(
     BuildContext context,
@@ -69,5 +76,6 @@ class AppScope extends InheritedWidget {
       preferencesController != oldWidget.preferencesController ||
       navigationController != oldWidget.navigationController ||
       movieMetadataRepository != oldWidget.movieMetadataRepository ||
+      seriesMetadataRepository != oldWidget.seriesMetadataRepository ||
       telemetryController != oldWidget.telemetryController;
 }

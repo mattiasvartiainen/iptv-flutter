@@ -8,6 +8,7 @@ import '../logging/app_logger.dart';
 import '../metadata/movie_metadata.dart';
 import '../sources/source_contracts.dart';
 import 'xtream_authentication.dart';
+import 'xtream_series_metadata.dart';
 import 'xtream_vod_metadata.dart';
 
 class XtreamApiClient {
@@ -191,6 +192,65 @@ class XtreamApiClient {
       finished = true;
       transport?.close();
     }
+  }
+
+  Future<XtreamSeriesResponse> seriesRequest({
+    required String playlistId,
+    required int connectionRevision,
+    required String action,
+    required XtreamCancellation cancellation,
+    required String title,
+    required String group,
+    String? categoryId,
+    String? seriesId,
+    Set<String> episodeIds = const {},
+  }) async {
+    if (!const [
+          'get_series_categories',
+          'get_series',
+          'get_series_info',
+        ].contains(action) ||
+        (action == 'get_series' && positiveProviderId(categoryId) == null) ||
+        (action == 'get_series_info' && positiveProviderId(seriesId) == null)) {
+      throw ArgumentError('Invalid series request.');
+    }
+    final response = await _request(
+      playlistId: playlistId,
+      connectionRevision: connectionRevision,
+      cancellation: cancellation,
+      byteLimit: 10 * 1024 * 1024,
+      parameters: {
+        'action': action,
+        'category_id': ?categoryId,
+        'series_id': ?seriesId,
+      },
+      decode: (bytes, credentials) => compute(
+        decodeXtreamSeries,
+        XtreamSeriesRequest(
+          bytes: bytes,
+          action: action,
+          credentials: credentials,
+          title: title,
+          group: group,
+          seriesId: seriesId,
+          episodeIds: episodeIds,
+        ),
+      ),
+    );
+    final result =
+        response.value ??
+        XtreamSeriesResponse(
+          failure: _metadataFailure(response.failure!),
+          retryAfter: response.retryAfter,
+        );
+    _logger.info(
+      'xtream_series_metadata_completed',
+      context: {
+        'action': action,
+        if (result.failure != null) 'failure': result.failure!.name,
+      },
+    );
+    return result;
   }
 }
 

@@ -175,10 +175,8 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byIcon(Icons.sort_by_alpha), findsNothing);
           expect(find.byIcon(Icons.format_list_numbered), findsNothing);
-          app.openSeriesEpisodes(
-            app.catalogView.series.items.first,
-            app.catalogView.seasons.last,
-          );
+          await tester.ensureVisible(find.text('Season 2'));
+          await tester.tap(find.text('Season 2'));
           await tester.pumpAndSettle();
           expect(find.byIcon(Icons.format_list_numbered), findsNothing);
         }

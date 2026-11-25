@@ -10,6 +10,7 @@ import 'app/navigation/app_route.dart';
 import 'app/navigation/navigation_controller.dart';
 import 'features/catalog/catalog_screen.dart';
 import 'features/details/details_screen.dart';
+import 'features/details/series_details_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/player/player_controller.dart';
 import 'features/player/player_screen.dart';
@@ -151,6 +152,8 @@ class _IptvAppState extends State<IptvApp> {
           child: AppScope(
             movieMetadataRepository:
                 widget.dependencies.movieMetadataRepository,
+            seriesMetadataRepository:
+                widget.dependencies.seriesMetadataRepository,
             appController: controller,
             playerController: widget.dependencies.playerController,
             playlistsController: widget.dependencies.playlistsController,
@@ -299,6 +302,7 @@ class AppShell extends StatelessWidget {
     SeriesRoute() ||
     SeasonsRoute() ||
     EpisodesRoute() => CatalogScreen(route: route),
+    SeriesDetailsRoute(:final series) => SeriesDetailsScreen(series: series),
     DetailsRoute(:final item) => DetailsScreen(item: item),
     PlayerRoute(:final item) => PlayerScreen(item: item),
     SearchRoute() => const SearchScreen(),

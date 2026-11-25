@@ -46,7 +46,7 @@ void main() {
         (measurement) => measurement.operation == 'db.migration',
       );
       expect(migrations.map((measurement) => measurement.attributes), [
-        for (var version = 1; version <= 14; version++) {'version': version},
+        for (var version = 1; version <= 15; version++) {'version': version},
       ]);
       expect(telemetry.measurements.last.operation, 'db.open');
       expect(
@@ -65,7 +65,7 @@ void main() {
       );
       expect(
         (await db.rawQuery('PRAGMA user_version')).single.values.single,
-        14,
+        15,
       );
       _expectSafePayloads(telemetry);
     },

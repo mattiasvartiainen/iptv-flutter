@@ -135,14 +135,14 @@ void main() {
           );
           await tester.tap(find.byType(MediaTile).first);
           await tester.pumpAndSettle();
-          expect(app.navigationController.currentRoute, isA<SeasonsRoute>());
-          expect(
-            tester.widget<MediaTile>(find.byType(MediaTile).first).listView,
-            isTrue,
-          );
-          await tester.tap(find.byType(MediaTile).first);
+          expect(app.navigationController.currentRoute, isA<SeriesDetailsRoute>());
+          await tester.ensureVisible(find.text('Season 1'));
           await tester.pumpAndSettle();
-          expect(app.navigationController.currentRoute, isA<EpisodesRoute>());
+          expect(find.text('Select a season to see episodes.'), findsOneWidget);
+          await tester.ensureVisible(find.text('Season 1'));
+          await tester.tap(find.text('Season 1'));
+          await tester.pumpAndSettle();
+          expect(app.navigationController.currentRoute, isA<SeriesDetailsRoute>());
           expect(
             tester.widget<MediaTile>(find.byType(MediaTile).first).listView,
             isTrue,

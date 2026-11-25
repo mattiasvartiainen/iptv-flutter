@@ -44,8 +44,7 @@ class AppController {
   }
 
   void openSeriesSeasons(SeriesSummary series) {
-    navigationController.push(SeasonsRoute(series));
-    catalogView.showSeasons(series);
+    navigationController.push(SeriesDetailsRoute(series));
   }
 
   void openSeriesEpisodes(SeriesSummary series, SeasonSummary season) {

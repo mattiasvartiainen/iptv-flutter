@@ -20,6 +20,7 @@ class NavigationController extends ChangeNotifier {
         CatalogRoute(kind: CatalogItemKind.live) => PrimaryNavItem.liveTv,
         CatalogRoute(kind: CatalogItemKind.movie) => PrimaryNavItem.movies,
         SeriesRoute() ||
+        SeriesDetailsRoute() ||
         SeasonsRoute() ||
         EpisodesRoute() => PrimaryNavItem.series,
         SearchRoute() => PrimaryNavItem.search,
