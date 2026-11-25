@@ -4,9 +4,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/platform/telemetry_settings_store.dart';
-import 'package:iptv_flutter/services/telemetry/otlp_app_telemetry.dart';
-import 'package:iptv_flutter/services/telemetry/app_telemetry.dart';
 import 'package:iptv_flutter/services/logging/app_logger.dart';
+import 'package:iptv_flutter/services/telemetry/app_telemetry.dart';
+import 'package:iptv_flutter/services/telemetry/otlp_app_telemetry.dart';
 import 'package:iptv_flutter/services/telemetry/telemetry_config.dart';
 import 'package:iptv_flutter/state/telemetry_controller.dart';
 

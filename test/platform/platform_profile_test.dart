@@ -6,6 +6,7 @@ import 'package:iptv_flutter/platform/app_platform.dart';
 import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/platform/platform_profile.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart' show databaseFactorySqflitePlugin;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -105,7 +106,6 @@ void main() {
       AppPlatform.android,
       AppPlatform.windows,
       AppPlatform.linux,
-      AppPlatform.webos,
     ]) {
       expect(
         identical(
@@ -116,5 +116,17 @@ void main() {
         reason: '$platform must retain the existing FFI SQLite backend',
       );
     }
+  });
+
+  test('webOS uses the sqflite plugin database factory', () {
+    expect(
+      identical(
+        platformProfileFor(AppPlatform.webos).createDatabaseFactory(),
+        databaseFactorySqflitePlugin,
+      ),
+      isTrue,
+      reason:
+          'webOS must use the method-channel factory served by sqflite_webos',
+    );
   });
 }

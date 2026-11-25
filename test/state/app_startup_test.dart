@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/services/catalog/catalog_maintenance.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
+import 'package:iptv_flutter/services/diagnostics/startup_preflight.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_preferences_controller.dart';
 import 'package:iptv_flutter/state/app_startup.dart';
@@ -34,6 +35,9 @@ void main() {
       addTearDown(catalogView.dispose);
       addTearDown(navigationController.dispose);
       final startup = AppStartup(
+        preflight: StartupPreflight(
+          checks: [_RecordingCheck(settings.calls)],
+        ),
         storageInitializer: () async => settings.calls.add('storage'),
         catalogMaintenance: _RecordingCatalogMaintenance(settings.calls),
         preferencesController: preferences,
@@ -43,7 +47,7 @@ void main() {
       await startup.initialize();
       final events = settings.calls;
 
-      expect(events.sublist(0, 3), ['storage', 'recover', 'resume']);
+      expect(events.sublist(0, 4), ['preflight', 'storage', 'recover', 'resume']);
       expect(events.indexOf('get:show_home_live_tv'), greaterThan(0));
       expect(
         events.indexOf('listPlaylists'),
@@ -125,6 +129,21 @@ void main() {
     await expectLater(startup.initialize(), throwsStateError);
     expect(settings.calls, isEmpty);
   });
+}
+
+class _RecordingCheck implements PreflightCheck {
+  _RecordingCheck(this.events);
+
+  final List<String> events;
+
+  @override
+  String get name => 'recording';
+
+  @override
+  Future<PreflightResult> run() async {
+    events.add('preflight');
+    return const PreflightResult.ok();
+  }
 }
 
 class _RecordingCatalogMaintenance implements CatalogMaintenance {

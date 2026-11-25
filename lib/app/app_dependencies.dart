@@ -7,6 +7,7 @@ import '../platform/platform_capabilities.dart';
 import '../platform/platform_profile.dart';
 import '../platform/telemetry_settings_store.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
+import '../services/diagnostics/startup_preflight.dart';
 import '../services/logging/app_logger.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
@@ -103,6 +104,11 @@ class AppDependencies {
       logger: logger,
     );
     final startup = AppStartup(
+      preflight: StartupPreflight(
+        checks: [SqlitePreflightCheck(databaseFactory: databaseFactory)],
+        logger: logger,
+        telemetry: telemetry,
+      ),
       storageInitializer: databaseAdapter.initialize,
       catalogMaintenance: catalogRepository,
       preferencesController: preferencesController,

@@ -464,7 +464,7 @@ Future<void> main() async {
 |-----------|---------|---------|-------|------|
 | `media_kit`, `media_kit_video`, `media_kit_libs_video` | supported | supported | **not used** | Imported unconditionally by `main.dart` today; after WP-2.3 only the desktop profile imports it. |
 | `video_player` + `video_player_webos` (git) | supported (ExoPlayer) | not supported | supported | webOS plugin pinned to commit `3a742bb86b04e261044f0864f9b1f71acf0bbad3`. |
-| `sqflite_common_ffi` + `sqlite3` (native assets) | works | works | **verify** | Repo notes mention `sqflite_webos`; current code uses FFI on webOS because `Platform.isLinux` is true. Confirm on hardware before changing (WP-2.4). |
+| SQLite | FFI | FFI | `sqflite_webos` (**verify**) | FFI is retained on Android/Windows/Linux. webOS selects the standard sqflite method-channel factory and pins `sqflite_webos` to `3a742bb86b04e261044f0864f9b1f71acf0bbad3`. A startup preflight probes the SQLite version and FTS5 support; verify packaging, FTS5 and import throughput on hardware. |
 | `path_provider` | supported | supported | via `path_provider_webos` | Verify the webOS implementation is registered. |
 | Secure storage | `flutter_secure_storage` | `flutter_secure_storage` | `flutter_secure_storage` + pinned LG implementation | D-3 selected; webOS requires `securitykey.operation` and hardware verification. |
 

@@ -77,8 +77,8 @@ abstract base class _PlatformProfile implements PlatformProfile {
   DatabaseFactory createDatabaseFactory() => switch (platform) {
     AppPlatform.android ||
     AppPlatform.windows ||
-    AppPlatform.linux ||
-    AppPlatform.webos => _createFfiDatabaseFactory(),
+    AppPlatform.linux => _createFfiDatabaseFactory(),
+    AppPlatform.webos => sqflite.databaseFactorySqflitePlugin,
     AppPlatform.other => sqflite.databaseFactory,
   };
 
