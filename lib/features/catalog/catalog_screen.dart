@@ -88,26 +88,47 @@ class _ContentGrid extends StatelessWidget {
     return AppShellScaffold(
       showBack: true,
       title: title,
-      child: _GridFrame(
-        child: GroupSidebarLayout(
-          kind: groupKind,
-          collection: collection,
-          seriesCollection: null,
-          child: PagedGridView<CatalogItemSummary>(
-            collection: collection,
-            emptyMessage: emptyText,
-            gridDelegate: _viewGrid(context, _cardGrid),
-            itemBuilder: (context, item, autofocus) => MediaTile(
-              listView: AppScope.preferencesControllerOf(context).useListView,
-              key: ValueKey<String>(item.id),
-              autofocus: autofocus,
-              title: item.title,
-              subtitle: item.group,
-              icon: item.kind.icon,
-              imageUrl: item.artworkUrl ?? item.logoUrl,
-              onActivate: () => controller.openDetailsById(item.id),
+      child: ListenableBuilder(
+        listenable: controller.catalogView,
+        builder: (context, _) => Column(
+          children: [
+            if (controller.catalogView.sortFailureFor(groupKind)
+                case final failure?)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  catalogFailureMessage(failure),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            Expanded(
+              child: _GridFrame(
+                child: GroupSidebarLayout(
+                  kind: groupKind,
+                  collection: collection,
+                  seriesCollection: null,
+                  child: PagedGridView<CatalogItemSummary>(
+                    resetScrollOnLoad: true,
+                    collection: collection,
+                    emptyMessage: emptyText,
+                    gridDelegate: _viewGrid(context, _cardGrid),
+                    itemBuilder: (context, item, autofocus) => MediaTile(
+                      listView: AppScope.preferencesControllerOf(
+                        context,
+                      ).useListView,
+                      key: ValueKey<String>(item.id),
+                      autofocus: autofocus,
+                      title: item.title,
+                      subtitle: item.group,
+                      icon: item.kind.icon,
+                      imageUrl: item.artworkUrl ?? item.logoUrl,
+                      onActivate: () => controller.openDetailsById(item.id),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -126,27 +147,48 @@ class _SeriesGrid extends StatelessWidget {
     return AppShellScaffold(
       showBack: true,
       title: 'Series',
-      child: _GridFrame(
-        child: GroupSidebarLayout(
-          kind: groupKind,
-          collection: null,
-          seriesCollection: collection,
-          child: PagedGridView<SeriesSummary>(
-            collection: collection,
-            emptyMessage: 'No series episodes recognized yet.',
-            gridDelegate: _viewGrid(context, _cardGrid),
-            itemBuilder: (context, item, autofocus) => MediaTile(
-              listView: AppScope.preferencesControllerOf(context).useListView,
-              key: ValueKey<String>(item.id),
-              autofocus: autofocus,
-              title: item.title,
-              subtitle:
-                  '${item.seasonCount} seasons · ${item.episodeCount} episodes',
-              icon: Icons.tv,
-              imageUrl: item.artworkUrl,
-              onActivate: () => controller.openSeriesSeasons(item),
+      child: ListenableBuilder(
+        listenable: controller.catalogView,
+        builder: (context, _) => Column(
+          children: [
+            if (controller.catalogView.sortFailureFor(groupKind)
+                case final failure?)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  catalogFailureMessage(failure),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            Expanded(
+              child: _GridFrame(
+                child: GroupSidebarLayout(
+                  kind: groupKind,
+                  collection: null,
+                  seriesCollection: collection,
+                  child: PagedGridView<SeriesSummary>(
+                    resetScrollOnLoad: true,
+                    collection: collection,
+                    emptyMessage: 'No series episodes recognized yet.',
+                    gridDelegate: _viewGrid(context, _cardGrid),
+                    itemBuilder: (context, item, autofocus) => MediaTile(
+                      listView: AppScope.preferencesControllerOf(
+                        context,
+                      ).useListView,
+                      key: ValueKey<String>(item.id),
+                      autofocus: autofocus,
+                      title: item.title,
+                      subtitle:
+                          '${item.seasonCount} seasons · ${item.episodeCount} episodes',
+                      icon: Icons.tv,
+                      imageUrl: item.artworkUrl,
+                      onActivate: () => controller.openSeriesSeasons(item),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

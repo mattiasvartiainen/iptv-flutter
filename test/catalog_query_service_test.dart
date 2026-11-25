@@ -6,8 +6,11 @@ import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/catalog/catalog_search_indexer.dart';
 import 'package:iptv_flutter/services/catalog/m3u_parser.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_query_service.dart';
+import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
+import 'package:iptv_flutter/services/storage/catalog_sort_v13_migration.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 
+import 'support/catalog_fixtures.dart';
 import 'support/catalog_http_test_server.dart';
 import 'support/catalog_services.dart';
 import 'support/database_adapter.dart';
@@ -122,6 +125,46 @@ void main() {
       },
     );
 
+    test(
+      'series source ordering follows its first episode across pages',
+      () async {
+        final service = InMemoryCatalogQueryService(
+          'p1',
+          const M3uParser().parse(movieSeriesPlaylistText),
+        );
+        final first = await service.querySeries(
+          'p1',
+          sort: CatalogSort.playlistOrder,
+          limit: 1,
+        );
+        final second = await service.querySeries(
+          'p1',
+          sort: CatalogSort.playlistOrder,
+          offset: 1,
+          limit: 2,
+        );
+        expect([...first.items, ...second.items].map((item) => item.title), [
+          'Zebra Show',
+          'Alpha Show',
+          'Middle Show',
+        ]);
+        final group = (await service.queryGroups(
+          'p1',
+          kind: CatalogGroupKind.series,
+        )).single;
+        final grouped = await service.seriesInGroup(
+          'p1',
+          group.id,
+          sort: CatalogSort.playlistOrder,
+        );
+        expect(grouped.items.map((item) => item.title), [
+          'Zebra Show',
+          'Alpha Show',
+          'Middle Show',
+        ]);
+      },
+    );
+
     test('series can be filtered to the selected series group', () async {
       final groups = await service.queryGroups(
         'p1',
@@ -233,6 +276,68 @@ void main() {
     });
 
     test(
+      'Swedish group sorts across pages and follows a reordered refresh',
+      () async {
+        const swedishId = 'swedish-query';
+        server.responses['/swedish.m3u'] = swedishPlaylistText(
+          swedishChannelNames,
+        );
+        final sync = createCatalogSyncService(
+          adapter,
+          searchIndexer: SqliteCatalogSearchIndexer(
+            databaseAdapter: adapter,
+            autoStartWorker: false,
+          ),
+        );
+        Future<void> refresh() => sync
+            .load(
+              playlistId: swedishId,
+              playlistUrl: server.url('/swedish.m3u'),
+              policy: CatalogLoadPolicy.networkOnly,
+            )
+            .then((_) {});
+        await refresh();
+        final groups = await queries.queryGroups(
+          swedishId,
+          kind: CatalogGroupKind.live,
+        );
+        final groupId = groups.single.id;
+        for (final sort in CatalogSort.values) {
+          final titles = <String>[];
+          final ids = <String>{};
+          var offset = 0;
+          while (true) {
+            final page = await queries.itemsInGroup(
+              swedishId,
+              groupId,
+              sort: sort,
+              limit: 2,
+              offset: offset,
+            );
+            expect(page.total, 7);
+            titles.addAll(page.items.map((item) => item.title));
+            ids.addAll(page.items.map((item) => item.id));
+            if (!page.hasMore) break;
+            offset = page.nextOffset;
+          }
+          final expected = [...swedishChannelNames];
+          if (sort == CatalogSort.title) expected.sort();
+          expect(titles, expected);
+          expect(ids, hasLength(7));
+        }
+        final reordered = swedishChannelNames.reversed.toList();
+        server.responses['/swedish.m3u'] = swedishPlaylistText(reordered);
+        await refresh();
+        final refreshed = await queries.itemsInGroup(
+          swedishId,
+          groupId,
+          sort: CatalogSort.playlistOrder,
+        );
+        expect(refreshed.items.map((item) => item.title), reordered);
+      },
+    );
+
+    test(
       'groups are distinct, sorted and scoped to the requested kinds',
       () async {
         expect(
@@ -258,6 +363,182 @@ void main() {
       expect(preview, hasLength(2));
       expect(preview.first.title, 'Alpha Movie');
     });
+
+    test(
+      'Movies and Series sort globally and within groups across pages and refresh',
+      () async {
+        final repository = SqliteCatalogRepository(
+          databaseAdapter: adapter,
+          autoStartSearchIndexWorker: false,
+        );
+        server.responses['/vod.m3u'] = movieSeriesPlaylistText;
+        final sync = createCatalogSyncService(
+          adapter,
+          searchIndexer: SqliteCatalogSearchIndexer(
+            databaseAdapter: adapter,
+            autoStartWorker: false,
+          ),
+        );
+        Future<void> refresh() async {
+          await sync.load(
+            playlistId: 'vod',
+            playlistUrl: server.url('/vod.m3u'),
+            policy: CatalogLoadPolicy.networkOnly,
+          );
+        }
+
+        await refresh();
+        for (final kind in [CatalogGroupKind.movie, CatalogGroupKind.series]) {
+          final group = (await queries.queryGroups('vod', kind: kind)).single;
+          for (final grouped in [false, true]) {
+            for (final sort in CatalogSort.values) {
+              final titles = <String>[];
+              final ids = <String>{};
+              for (var offset = 0; offset < 3; offset++) {
+                if (kind == CatalogGroupKind.series) {
+                  final page = grouped
+                      ? await repository.seriesInGroup(
+                          'vod',
+                          group.id,
+                          sort: sort,
+                          offset: offset,
+                          limit: 1,
+                        )
+                      : await repository.querySeries(
+                          'vod',
+                          sort: sort,
+                          offset: offset,
+                          limit: 1,
+                        );
+                  expect(page.total, 3);
+                  titles.addAll(page.items.map((item) => item.title));
+                  ids.addAll(page.items.map((item) => item.id));
+                } else {
+                  final page = grouped
+                      ? await queries.itemsInGroup(
+                          'vod',
+                          group.id,
+                          sort: sort,
+                          offset: offset,
+                          limit: 1,
+                        )
+                      : await queries.queryItems(
+                          CatalogQuery(
+                            playlistId: 'vod',
+                            kinds: const [CatalogItemKind.movie],
+                            sort: sort,
+                            offset: offset,
+                            limit: 1,
+                          ),
+                        );
+                  expect(page.total, 3);
+                  titles.addAll(page.items.map((item) => item.title));
+                  ids.addAll(page.items.map((item) => item.id));
+                }
+              }
+              final suffix = kind == CatalogGroupKind.series ? 'Show' : 'Movie';
+              final expected = [
+                'Zebra $suffix',
+                'Alpha $suffix',
+                'Middle $suffix',
+              ];
+              if (sort == CatalogSort.title) expected.sort();
+              expect(titles, expected);
+              expect(ids, hasLength(3));
+            }
+          }
+        }
+        final zebra = (await queries.querySeries(
+          'vod',
+          searchTerm: 'Zebra',
+        )).items.single;
+        final seasons = await queries.seasons(zebra.id);
+        expect(seasons.map((season) => season.seasonNumber), [1, 2]);
+        expect(
+          (await queries.episodes(
+            seasons.last.id,
+          )).items.map((item) => item.episodeNumber),
+          [1, 2],
+        );
+        // Move the first series and movie to the end without changing their contents.
+        final entries = movieSeriesPlaylistText
+            .substring('#EXTM3U\n'.length)
+            .split('#EXTINF:')
+            .skip(1)
+            .toList();
+        server.responses['/vod.m3u'] =
+            '#EXTM3U\n${[...entries.skip(2), ...entries.take(2)].map((entry) => '#EXTINF:$entry').join()}';
+        await refresh();
+        expect(
+          (await queries.querySeries(
+            'vod',
+            sort: CatalogSort.playlistOrder,
+          )).items.map((item) => item.title),
+          ['Alpha Show', 'Zebra Show', 'Middle Show'],
+        );
+        expect(
+          (await queries.queryItems(
+            const CatalogQuery(
+              playlistId: 'vod',
+              kinds: [CatalogItemKind.movie],
+              sort: CatalogSort.playlistOrder,
+            ),
+          )).items.map((item) => item.title),
+          ['Alpha Movie', 'Middle Movie', 'Zebra Movie'],
+        );
+        final db = await adapter.database;
+        final beforeRepair = await db.query(
+          'series_v8',
+          where: 'playlist_id = ?',
+          whereArgs: ['vod'],
+          orderBy: 'series_key',
+        );
+        await db.rawUpdate(
+          "UPDATE series_v8 SET ord = -series_key WHERE playlist_id = 'vod'",
+        );
+        // Reconstruct a persisted v12 cache with stale series positions.
+        await db.execute('DROP INDEX idx_series_v8_group_ord');
+        await db.execute('DROP INDEX idx_series_v8_playlist_ord');
+        await db.delete('schema_migrations', where: 'version = 13');
+        await db.update('schema_meta', {
+          'value': '12',
+        }, where: "key = 'schema_version'");
+        await db.execute('PRAGMA user_version = 12');
+        await adapter.close();
+        final upgradedDb = await adapter.database;
+        expect(
+          (await upgradedDb.rawQuery(
+            'PRAGMA user_version',
+          )).single.values.single,
+          13,
+        );
+        await const CatalogSortV13Migration().up(upgradedDb);
+        expect(
+          await upgradedDb.query(
+            'series_v8',
+            where: 'playlist_id = ?',
+            whereArgs: ['vod'],
+            orderBy: 'series_key',
+          ),
+          beforeRepair,
+        );
+        for (final filter in ['playlist_id', 'group_id']) {
+          final plan = await upgradedDb.rawQuery(
+            'EXPLAIN QUERY PLAN SELECT series_key FROM series_v8 '
+            'WHERE $filter = ? ORDER BY ord, series_key LIMIT 1',
+            [filter == 'playlist_id' ? 'vod' : zebra.groupId],
+          );
+          final details = plan.map((row) => row['detail']).join(' ');
+          expect(
+            details,
+            contains(
+              'idx_series_v8_${filter == 'playlist_id' ? 'playlist' : 'group'}_ord',
+            ),
+          );
+          expect(details, isNot(contains('TEMP B-TREE')));
+        }
+      },
+    );
 
     test('reads the series hierarchy from the database', () async {
       final series = await queries.querySeries(playlistId);

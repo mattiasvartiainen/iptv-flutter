@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/settings/app_preferences.dart';
 
 import '../../support/in_memory_settings_repository.dart';
@@ -12,14 +13,78 @@ void main() {
     preferences = AppPreferences(settingsRepository: settings);
   });
 
+  test('sort preferences are independent per section and playlist', () async {
+    expect(
+      await preferences.catalogSort('p1', CatalogGroupKind.movie),
+      CatalogSort.title,
+    );
+    expect(
+      await preferences.catalogSort('p1', CatalogGroupKind.series),
+      CatalogSort.title,
+    );
+    await preferences.setCatalogSort(
+      'p1',
+      CatalogGroupKind.movie,
+      CatalogSort.playlistOrder,
+    );
+    final restarted = AppPreferences(settingsRepository: settings);
+    expect(
+      await restarted.catalogSort('p1', CatalogGroupKind.movie),
+      CatalogSort.playlistOrder,
+    );
+    expect(
+      await restarted.catalogSort('p1', CatalogGroupKind.series),
+      CatalogSort.title,
+    );
+    expect(
+      await restarted.catalogSort('p2', CatalogGroupKind.movie),
+      CatalogSort.title,
+    );
+    await preferences.setCatalogSort(
+      'p1',
+      CatalogGroupKind.series,
+      CatalogSort.playlistOrder,
+    );
+    expect(
+      await restarted.catalogSort('p1', CatalogGroupKind.series),
+      CatalogSort.playlistOrder,
+    );
+    expect(settings.appSettings, {
+      'movies_sort:p1': 'playlistOrder',
+      'series_sort:p1': 'playlistOrder',
+    });
+  });
+
   test('missing preferences use existing defaults', () async {
     expect(await preferences.activePlaylistId(), isNull);
     expect(await preferences.showHomeLiveTv(), isTrue);
     expect(await preferences.showHomeMovies(), isTrue);
     expect(await preferences.showHomeSeries(), isTrue);
     expect(await preferences.verboseRefreshInfo(), isFalse);
+    expect(await preferences.liveTvSort('p1'), CatalogSort.playlistOrder);
     expect(settings.appSettings, isEmpty);
   });
+
+  test(
+    'Live TV sort is saved per playlist and survives a new wrapper',
+    () async {
+      await preferences.setLiveTvSort('p1', CatalogSort.title);
+      final reloaded = AppPreferences(settingsRepository: settings);
+      expect(await reloaded.liveTvSort('p1'), CatalogSort.title);
+      expect(await reloaded.liveTvSort('p2'), CatalogSort.playlistOrder);
+      await preferences.setLiveTvSort('p1', CatalogSort.playlistOrder);
+      expect(await reloaded.liveTvSort('p1'), CatalogSort.playlistOrder);
+    },
+  );
+
+  test(
+    'invalid Live TV sort reports an error without changing storage',
+    () async {
+      settings.appSettings['live_tv_sort:p1'] = 'invalid';
+      await expectLater(preferences.liveTvSort('p1'), throwsFormatException);
+      expect(settings.appSettings['live_tv_sort:p1'], 'invalid');
+    },
+  );
 
   test('invalid preferences fall back without overwriting storage', () async {
     settings.appSettings.addAll({

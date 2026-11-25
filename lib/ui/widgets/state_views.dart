@@ -6,6 +6,8 @@ String catalogFailureMessage(CatalogFailure failure) => switch (failure) {
   CatalogFailure.pageLoadFailed =>
     'Could not load results. Check your connection and try again.',
   CatalogFailure.groupsLoadFailed => 'Could not load groups. Please try again.',
+  CatalogFailure.sortSaveFailed =>
+    'Could not save sorting. Use the sort toggle again to retry.',
 };
 
 class LoadingView extends StatelessWidget {

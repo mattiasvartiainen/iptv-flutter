@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/navigation/app_route.dart';
 import '../../app/navigation/navigation_controller.dart';
+import '../../services/catalog/catalog_query.dart';
 import '../../state/app_controller.dart';
 import '../theme/app_tokens.dart';
 import 'app_scope.dart';
@@ -27,6 +30,10 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     with WidgetsBindingObserver {
   final FocusScopeNode _pageFocusScope = FocusScopeNode(debugLabel: 'App page');
   bool _focusCheckScheduled = false;
+  final FocusNode _sortFocus = FocusNode(debugLabel: 'Catalog sort');
+  final FocusNode _wideSortFocus = FocusNode(
+    debugLabel: 'Catalog sort heading',
+  );
   final List<GlobalKey> _railLabelKeys = List.generate(6, (_) => GlobalKey());
   final FocusScopeNode _contentFocusScope = FocusScopeNode(
     debugLabel: 'App page content',
@@ -87,6 +94,8 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     WidgetsBinding.instance.removeObserver(this);
     FocusManager.instance.removeListener(_scheduleFocusCheck);
     _pageFocusScope.dispose();
+    _sortFocus.dispose();
+    _wideSortFocus.dispose();
     _contentFocusScope.dispose();
     super.dispose();
   }
@@ -150,6 +159,8 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (_catalogSortKind(context) != null)
+                            _buildCatalogSort(context, heading: false),
                           if (_supportsViewToggle(context))
                             _buildViewToggle(context),
                           IconButton(
@@ -292,6 +303,46 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
     );
   }
 
+  CatalogGroupKind? _catalogSortKind(BuildContext context) {
+    final route = AppScope.navigationControllerOf(context).currentRoute;
+    return switch (route) {
+      CatalogRoute(kind: CatalogItemKind.live) => CatalogGroupKind.live,
+      CatalogRoute(kind: CatalogItemKind.movie) => CatalogGroupKind.movie,
+      SeriesRoute() => CatalogGroupKind.series,
+      _ => null,
+    };
+  }
+
+  Widget _buildCatalogSort(BuildContext context, {required bool heading}) {
+    final view = AppScope.appControllerOf(context).catalogView;
+    final kind = _catalogSortKind(context)!;
+    final focus = heading ? _wideSortFocus : _sortFocus;
+    return ListenableBuilder(
+      listenable: view,
+      builder: (context, _) {
+        final alphabetical = view.sortFor(kind) == CatalogSort.title;
+        final label = alphabetical ? 'Alphabetical (A-Z)' : 'Playlist order';
+        final nextSort = alphabetical
+            ? CatalogSort.playlistOrder
+            : CatalogSort.title;
+        final action = alphabetical
+            ? 'Use playlist order'
+            : 'Sort alphabetically (A-Z)';
+        return IconButton(
+          focusNode: focus,
+          tooltip: '$label: $action',
+          isSelected: alphabetical,
+          onPressed: view.playlistId == null
+              ? null
+              : () => unawaited(view.setCatalogSort(kind, nextSort)),
+          icon: Icon(
+            alphabetical ? Icons.sort_by_alpha : Icons.format_list_numbered,
+          ),
+        );
+      },
+    );
+  }
+
   void _focusPageContent() {
     final remembered = _contentFocusScope.focusedChild;
     if (remembered != null && remembered.canRequestFocus) {
@@ -404,6 +455,8 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
             ),
           ],
           if (widget.title == null) const Spacer(),
+          if (_catalogSortKind(context) != null)
+            _buildCatalogSort(context, heading: true),
           if (_supportsViewToggle(context)) _buildViewToggle(context),
         ],
       ),

@@ -1,6 +1,39 @@
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 
+const swedishChannelNames = [
+  'Welcome to NXT 2026',
+  'SVT1 SD SE',
+  'SVT1 HD SE',
+  'SVT1 FHD SE',
+  'SVT2 SD SE',
+  'SVT2 HD SE',
+  'SVT2 FHD SE',
+];
+
+const movieSeriesPlaylistText = '''#EXTM3U
+#EXTINF:-1 group-title="Movies",Zebra Movie
+https://example.invalid/movie/zebra.mp4
+#EXTINF:-1 group-title="Series",Zebra Show S02 E02
+https://example.invalid/series/zebra-s02e02.mkv
+#EXTINF:-1 group-title="Movies",Alpha Movie
+https://example.invalid/movie/alpha.mp4
+#EXTINF:-1 group-title="Series",Alpha Show S01 E01
+https://example.invalid/series/alpha-s01e01.mkv
+#EXTINF:-1 group-title="Series",Zebra Show S01 E01
+https://example.invalid/series/zebra-s01e01.mkv
+#EXTINF:-1 group-title="Movies",Middle Movie
+https://example.invalid/movie/middle.mp4
+#EXTINF:-1 group-title="Series",Middle Show S01 E01
+https://example.invalid/series/middle-s01e01.mkv
+#EXTINF:-1 group-title="Series",Zebra Show S02 E01
+https://example.invalid/series/zebra-s02e01.mkv
+''';
+
+String swedishPlaylistText(Iterable<String> names) =>
+    '#EXTM3U\n${names.map((name) => '#EXTINF:-1 group-title="Sweden",$name\n'
+        'https://example.invalid/live/${Uri.encodeComponent(name)}.m3u8\n').join()}';
+
 class FixtureCatalogRepository implements CatalogRepository {
   const FixtureCatalogRepository();
 

@@ -484,6 +484,32 @@ Rules:
 
 ### 13. Query layer changes
 
+#### Implemented catalog sorting (2026-11-25)
+
+Live TV starts with All groups and defaults to original playlist order. The
+sort toggle next to the list/card-view button switches between Playlist order and
+Alphabetical (A-Z), independently of presentation. The choice is saved per
+playlist and section through `AppPreferences` under `live_tv_sort:<playlistId>`,
+`movies_sort:<playlistId>` and `series_sort:<playlistId>`. Movies and Series
+default to alphabetical sorting; Live TV keeps original playlist order.
+`CatalogViewState` passes the captured sort to both `queryItems` and
+`itemsInGroup`, and to `querySeries` / `seriesInGroup`; changing it invalidates
+old pages and resets the corresponding section's scroll.
+The existing `items.ord`, group-order and playlist-order indexes are reused,
+including provider reordering on refresh. Series use `series_v8.ord`, the earliest
+position of any episode. Reorder-only warm imports update affected series ordinals
+without rebuilding unchanged series. Append-only migration v13 repairs stale
+series ordinals in existing caches and adds `idx_series_v8_playlist_ord` and
+`idx_series_v8_group_ord` for indexed ordering. No reimport is needed.
+Save failures are logged with redaction and shown inline with retry guidance.
+The toggle shows a numbered-list icon for playlist order and an A-Z icon for
+alphabetical order, with no visible text beside it on any layout. Its tooltip
+states the current order and next action.
+D-pad/Enter/Select activation retains button focus; Back/Escape keeps normal
+page navigation. Repeated activation while saving is ignored by the controller.
+Group ordering, Home previews, search relevance and season/episode ordering
+retain their existing behavior. Sort-save failures belong to the affected section.
+
 `CatalogQueryService` gains:
 
 ```dart

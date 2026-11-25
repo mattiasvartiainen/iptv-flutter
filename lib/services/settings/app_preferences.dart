@@ -1,3 +1,4 @@
+import '../catalog/catalog_query.dart';
 import 'settings_repository.dart';
 
 class AppPreferences {
@@ -12,6 +13,43 @@ class AppPreferences {
   static const _verboseRefreshInfoKey = 'verbose_refresh_info';
   static const _activePlaylistIdKey = 'active_playlist_id';
   static const _useListViewKey = 'use_list_view';
+
+  Future<CatalogSort> liveTvSort(String playlistId) =>
+      catalogSort(playlistId, CatalogGroupKind.live);
+
+  Future<void> setLiveTvSort(String playlistId, CatalogSort sort) =>
+      setCatalogSort(playlistId, CatalogGroupKind.live, sort);
+
+  static String _sortKey(String playlistId, CatalogGroupKind kind) =>
+      '${switch (kind) {
+        CatalogGroupKind.live => 'live_tv_sort',
+        CatalogGroupKind.movie => 'movies_sort',
+        CatalogGroupKind.series => 'series_sort',
+      }}:$playlistId';
+
+  Future<CatalogSort> catalogSort(
+    String playlistId,
+    CatalogGroupKind kind,
+  ) async {
+    final value = await _settingsRepository.getAppSetting(
+      _sortKey(playlistId, kind),
+    );
+    return switch (value) {
+      null =>
+        kind == CatalogGroupKind.live
+            ? CatalogSort.playlistOrder
+            : CatalogSort.title,
+      'playlistOrder' => CatalogSort.playlistOrder,
+      'title' => CatalogSort.title,
+      _ => throw const FormatException('Invalid catalog sort preference.'),
+    };
+  }
+
+  Future<void> setCatalogSort(
+    String playlistId,
+    CatalogGroupKind kind,
+    CatalogSort sort,
+  ) => _settingsRepository.setAppSetting(_sortKey(playlistId, kind), sort.name);
 
   Future<bool> useListView() => _readBool(_useListViewKey, defaultValue: false);
 

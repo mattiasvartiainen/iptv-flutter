@@ -34,7 +34,7 @@ void main() {
     );
 
     expect(rows, hasLength(1));
-    expect(rows.first['value'], '12');
+    expect(rows.first['value'], '13');
 
     final playlistColumns = await db.rawQuery('PRAGMA table_info(playlists)');
     expect(
@@ -105,6 +105,8 @@ void main() {
     expect(indexNames, contains('idx_items_group_sort'));
     expect(indexNames, contains('idx_items_series_episode'));
     expect(indexNames, contains('idx_series_v8_group_sort'));
+    expect(indexNames, contains('idx_series_v8_group_ord'));
+    expect(indexNames, contains('idx_series_v8_playlist_ord'));
     expect(indexNames, contains('idx_items_fts_queue_priority'));
 
     for (final table in const [

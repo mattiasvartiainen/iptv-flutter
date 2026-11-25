@@ -5,10 +5,11 @@ import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/logging/app_logger.dart';
 import '../services/security/url_redaction.dart';
+import '../services/settings/app_preferences.dart';
 
 typedef PageFetcher<T> = Future<CatalogPage<T>> Function(int offset, int limit);
 
-enum CatalogFailure { pageLoadFailed, groupsLoadFailed }
+enum CatalogFailure { pageLoadFailed, groupsLoadFailed, sortSaveFailed }
 
 /// Holds one visible page window of a query result.
 ///
@@ -128,14 +129,18 @@ class PagedCollection<T> extends ChangeNotifier {
 /// Query-driven replacement for the in-memory catalog that used to live on
 /// [AppController]. Only the current page plus the home previews are resident.
 class CatalogViewState extends ChangeNotifier {
-  CatalogViewState({AppLogger logger = const DebugAppLogger()})
-    : _logger = logger,
-      items = PagedCollection(logger: logger),
-      series = PagedCollection(logger: logger),
-      episodes = PagedCollection(logger: logger),
-      searchResults = PagedCollection(logger: logger);
+  CatalogViewState({
+    AppLogger logger = const DebugAppLogger(),
+    AppPreferences? preferences,
+  }) : _logger = logger,
+       _preferences = preferences,
+       items = PagedCollection(logger: logger),
+       series = PagedCollection(logger: logger),
+       episodes = PagedCollection(logger: logger),
+       searchResults = PagedCollection(logger: logger);
 
   final AppLogger _logger;
+  final AppPreferences? _preferences;
   final PagedCollection<CatalogItemSummary> items;
   final PagedCollection<SeriesSummary> series;
   final PagedCollection<CatalogItemSummary> episodes;
@@ -159,6 +164,20 @@ class CatalogViewState extends ChangeNotifier {
   CatalogItemKind? _searchKind;
   int _searchStatusGeneration = 0;
   int _browseGeneration = 0;
+  int _bindingGeneration = 0;
+  final Map<CatalogGroupKind, CatalogSort> _sorts = {};
+  final Map<CatalogGroupKind, CatalogFailure> _sortFailures = {};
+  bool isSavingSort = false;
+
+  CatalogSort sortFor(CatalogGroupKind kind) =>
+      _sorts[kind] ??
+      (kind == CatalogGroupKind.live
+          ? CatalogSort.playlistOrder
+          : CatalogSort.title);
+  CatalogSort get liveTvSort => sortFor(CatalogGroupKind.live);
+  CatalogFailure? sortFailureFor(CatalogGroupKind kind) => _sortFailures[kind];
+  CatalogFailure? get sortFailure =>
+      browseGroupKind == null ? null : _sortFailures[browseGroupKind];
 
   /// Total media rows for the bound playlist, used for empty-state decisions.
   int itemCount = 0;
@@ -170,6 +189,7 @@ class CatalogViewState extends ChangeNotifier {
     required CatalogQueryService service,
     required String playlistId,
   }) async {
+    final binding = ++_bindingGeneration;
     _browseGeneration++;
     _service = service;
     _playlistId = playlistId;
@@ -185,10 +205,26 @@ class CatalogViewState extends ChangeNotifier {
     searchIndexStatus = null;
     _searchTerm = '';
     _searchKind = null;
+    _sorts.clear();
+    isSavingSort = false;
+    _sortFailures.clear();
+    final preferences = _preferences;
+    if (preferences != null) {
+      final sorts = await Future.wait(
+        CatalogGroupKind.values.map(
+          (kind) => preferences.catalogSort(playlistId, kind),
+        ),
+      );
+      if (binding != _bindingGeneration || _disposed) return;
+      for (final kind in CatalogGroupKind.values) {
+        _sorts[kind] = sorts[kind.index];
+      }
+    }
     await refreshHomeSections();
   }
 
   void unbind() {
+    _bindingGeneration++;
     _browseGeneration++;
     _service = null;
     _playlistId = null;
@@ -204,6 +240,9 @@ class CatalogViewState extends ChangeNotifier {
     searchIndexStatus = null;
     _searchTerm = '';
     _searchKind = null;
+    _sorts.clear();
+    isSavingSort = false;
+    _sortFailures.clear();
     homeLive = const [];
     homeMovies = const [];
     homeSeries = const [];
@@ -309,6 +348,7 @@ class CatalogViewState extends ChangeNotifier {
       CatalogItemKind.episode => CatalogGroupKind.series,
       CatalogItemKind.unknown => CatalogGroupKind.live,
     };
+    final sort = sortFor(groupKind);
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     selectedGroupId = kindChanged ? null : groupId;
@@ -328,6 +368,7 @@ class CatalogViewState extends ChangeNotifier {
                 kinds: [kind],
                 offset: offset,
                 limit: limit,
+                sort: sort,
               ),
             )
           : service.itemsInGroup(
@@ -335,8 +376,62 @@ class CatalogViewState extends ChangeNotifier {
               selectedGroup,
               offset: offset,
               limit: limit,
+              sort: sort,
             ),
     );
+  }
+
+  Future<void> setLiveTvSort(CatalogSort sort) =>
+      setCatalogSort(CatalogGroupKind.live, sort);
+
+  Future<void> setCatalogSort(CatalogGroupKind kind, CatalogSort sort) async {
+    final playlistId = _playlistId;
+    if (playlistId == null || isSavingSort || sort == sortFor(kind)) {
+      return;
+    }
+    final binding = _bindingGeneration;
+    isSavingSort = true;
+    _sortFailures.remove(kind);
+    _notify();
+    try {
+      await _preferences?.setCatalogSort(playlistId, kind, sort);
+      if (binding != _bindingGeneration || _disposed) return;
+      _sorts[kind] = sort;
+      if (browseGroupKind == kind) {
+        if (kind == CatalogGroupKind.series) {
+          series.clear();
+        } else {
+          items.clear();
+        }
+      }
+      _notify();
+      if (browseGroupKind == kind) {
+        switch (kind) {
+          case CatalogGroupKind.live:
+            await showItems(CatalogItemKind.live, groupId: selectedGroupId);
+          case CatalogGroupKind.movie:
+            await showItems(CatalogItemKind.movie, groupId: selectedGroupId);
+          case CatalogGroupKind.series:
+            await showSeries(groupId: selectedGroupId);
+        }
+      }
+    } catch (error, stackTrace) {
+      if (binding != _bindingGeneration || _disposed) return;
+      _sortFailures[kind] = CatalogFailure.sortSaveFailed;
+      _logger.error(
+        'catalog_sort_save_failed',
+        error: redactSensitiveText(error.toString()),
+        stackTrace: StackTrace.fromString(
+          redactSensitiveText(stackTrace.toString()),
+        ),
+        context: {'kind': kind.name},
+      );
+    } finally {
+      if (binding == _bindingGeneration && !_disposed) {
+        isSavingSort = false;
+        _notify();
+      }
+    }
   }
 
   Future<void> showSeries({int? groupId}) async {
@@ -346,6 +441,7 @@ class CatalogViewState extends ChangeNotifier {
     final generation = ++_browseGeneration;
 
     const groupKind = CatalogGroupKind.series;
+    final sort = sortFor(groupKind);
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     selectedGroupId = kindChanged ? null : groupId;
@@ -359,12 +455,18 @@ class CatalogViewState extends ChangeNotifier {
     final selectedGroup = selectedGroupId;
     await series.load(
       (offset, limit) => selectedGroup == null
-          ? service.querySeries(playlistId, offset: offset, limit: limit)
+          ? service.querySeries(
+              playlistId,
+              offset: offset,
+              limit: limit,
+              sort: sort,
+            )
           : service.seriesInGroup(
               playlistId,
               selectedGroup,
               offset: offset,
               limit: limit,
+              sort: sort,
             ),
     );
   }

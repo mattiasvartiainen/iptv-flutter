@@ -505,6 +505,21 @@ GROUP BY series_key, playlist_id, group_id
 ''',
         [playlistId],
       );
+    } else if (movedCount > 0) {
+      await txn.rawUpdate(
+        '''
+UPDATE series_v8 SET ord = (
+  SELECT MIN(i.ord) FROM items i WHERE i.series_key = series_v8.series_key
+)
+WHERE playlist_id = ? AND series_key IN (
+  SELECT i.series_key FROM items i
+  JOIN import_seen s ON s.item_key = i.item_key
+  WHERE i.playlist_id = ? AND s.import_id = ? AND s.new_ord IS NOT NULL
+    AND i.series_key IS NOT NULL
+)
+''',
+        [playlistId, playlistId, sessionId],
+      );
     }
 
     final counts = await txn.rawQuery(

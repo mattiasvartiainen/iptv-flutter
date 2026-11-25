@@ -9,6 +9,7 @@ import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
+import 'package:iptv_flutter/services/settings/app_preferences.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 import 'package:iptv_flutter/state/app_preferences_controller.dart';
@@ -43,7 +44,9 @@ TestAppControllers createTestControllers({
   required SettingsRepository settingsRepository,
   required PlaybackAdapter playbackAdapter,
 }) {
-  final catalogView = CatalogViewState();
+  final catalogView = CatalogViewState(
+    preferences: AppPreferences(settingsRepository: settingsRepository),
+  );
   final navigationController = NavigationController();
   final preferences = AppPreferencesController(
     settingsRepository: settingsRepository,

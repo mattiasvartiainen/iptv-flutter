@@ -18,6 +18,7 @@ class PagedGridView<T> extends StatefulWidget {
     this.prefetchThreshold = _defaultPrefetchThreshold,
     this.onRetry,
     this.emptyIcon,
+    this.resetScrollOnLoad = false,
   }) : assert(prefetchThreshold > 0);
 
   final PagedCollection<T> collection;
@@ -28,20 +29,25 @@ class PagedGridView<T> extends StatefulWidget {
   final int prefetchThreshold;
   final VoidCallback? onRetry;
   final IconData? emptyIcon;
+  final bool resetScrollOnLoad;
 
   @override
   State<PagedGridView<T>> createState() => _PagedGridViewState<T>();
 }
 
 class _PagedGridViewState<T> extends State<PagedGridView<T>> {
-  final ScrollController _scrollController = ScrollController();
+  late final ScrollController _scrollController;
   bool _firstLayoutCheckScheduled = false;
   bool _loadScheduled = false;
   double _viewportWidth = 0;
+  bool _autofocusFirstItem = true;
 
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController(
+      keepScrollOffset: !widget.resetScrollOnLoad,
+    );
     _scrollController.addListener(_checkScrollThreshold);
     widget.collection.addListener(_collectionChanged);
     _scheduleFirstLayoutCheck();
@@ -70,6 +76,19 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
 
   void _collectionChanged() {
     if (!mounted) return;
+    if (widget.resetScrollOnLoad && widget.collection.isLoading) {
+      final focused = FocusManager.instance.primaryFocus;
+      _autofocusFirstItem =
+          focused == null ||
+          focused is FocusScopeNode ||
+          focused.context?.findAncestorStateOfType<_PagedGridViewState<T>>() ==
+              this;
+    }
+    if (widget.resetScrollOnLoad &&
+        widget.collection.isLoading &&
+        _scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
     if (!widget.collection.hasMore || widget.collection.isLoadingMore) {
       _loadScheduled = false;
     }
@@ -191,7 +210,11 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
                     }
                     return const LoadingView();
                   }
-                  return widget.itemBuilder(context, items[index], index == 0);
+                  return widget.itemBuilder(
+                    context,
+                    items[index],
+                    index == 0 && _autofocusFirstItem,
+                  );
                 },
               ),
             );

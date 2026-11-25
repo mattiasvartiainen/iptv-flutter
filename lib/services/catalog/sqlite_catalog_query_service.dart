@@ -63,6 +63,7 @@ class SqliteCatalogQueryService implements CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   }) => telemetry.measure('db.query.series', () async {
     final db = await _databaseAdapter.database;
     return _querySeries(
@@ -71,6 +72,7 @@ class SqliteCatalogQueryService implements CatalogQueryService {
       offset: offset,
       limit: limit,
       searchTerm: searchTerm,
+      sort: sort,
     );
   });
 
@@ -221,6 +223,7 @@ ORDER BY g.ord, g.sort_title, g.id
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   }) => telemetry.measure('db.query.series_in_group', () async {
     final db = await _databaseAdapter.database;
     final groupRows = await db.query(
@@ -256,6 +259,7 @@ ORDER BY g.ord, g.sort_title, g.id
       limit: limit,
       searchTerm: searchTerm,
       groupId: groupId,
+      sort: sort,
     );
   });
 
@@ -374,6 +378,7 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
     required int limit,
     String? searchTerm,
     int? groupId,
+    CatalogSort sort = CatalogSort.title,
   }) async {
     final clauses = <String>[
       's.playlist_id = ?',
@@ -409,11 +414,15 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
         total: total,
       );
     }
+    final orderBy = switch (sort) {
+      CatalogSort.title => 's.sort_title, s.series_key',
+      CatalogSort.playlistOrder => 's.ord, s.series_key',
+    };
     final rows = await db.rawQuery(
       'SELECT s.series_key AS series_key, s.title, s.sort_title, '
       's.artwork_url, s.season_count, s.episode_count, s.group_id '
       'FROM series_v8 s JOIN groups g ON g.id = s.group_id '
-      'WHERE $where ORDER BY s.sort_title, s.series_key '
+      'WHERE $where ORDER BY $orderBy '
       'LIMIT ? OFFSET ?',
       [...args, limit, offset],
     );

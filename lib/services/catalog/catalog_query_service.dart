@@ -30,6 +30,7 @@ abstract interface class CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   });
 
   /// Small unpaged slice used by the home rows.
@@ -44,6 +45,7 @@ abstract interface class CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   });
 
   Future<List<SeasonSummary>> seasons(String seriesId);
@@ -93,6 +95,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
   final Map<int, (CatalogGroupKind, String)> _groupById = {};
   final List<CatalogItemSummary> _summaries = [];
   final Map<String, SeriesSummary> _seriesById = {};
+  final Map<String, int> _seriesOrdinals = {};
   final Map<String, List<SeasonSummary>> _seasonsBySeries = {};
   final Map<String, List<CatalogItemSummary>> _episodesBySeason = {};
 
@@ -139,6 +142,10 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
       if (!isEpisode) continue;
 
       final seriesId = 'series|$playlistId|${match.seriesTitle}';
+      final previousOrdinal = _seriesOrdinals[seriesId];
+      if (previousOrdinal == null || item.sourceIndex < previousOrdinal) {
+        _seriesOrdinals[seriesId] = item.sourceIndex;
+      }
       final seasonId = 'season|$seriesId|${match.seasonNumber}';
       seriesTitleById[seriesId] = match.seriesTitle;
       seriesGroupIdById[seriesId] = summary.groupId!;
@@ -232,6 +239,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     int limit = kCatalogPageSize,
     String? searchTerm,
     int? groupId,
+    CatalogSort sort = CatalogSort.title,
   }) async {
     if (playlistId != this.playlistId) return const CatalogPage.empty();
 
@@ -247,8 +255,10 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
             .where((series) => groupId == null || series.groupId == groupId)
             .toList()
           ..sort((a, b) {
-            final byTitle = a.sortTitle.compareTo(b.sortTitle);
-            return byTitle != 0 ? byTitle : a.id.compareTo(b.id);
+            final order = sort == CatalogSort.title
+                ? a.sortTitle.compareTo(b.sortTitle)
+                : _seriesOrdinals[a.id]!.compareTo(_seriesOrdinals[b.id]!);
+            return order != 0 ? order : a.id.compareTo(b.id);
           });
 
     return _paginate(matches, offset: offset, limit: limit);
@@ -351,12 +361,14 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   }) => querySeries(
     playlistId,
     offset: offset,
     limit: limit,
     searchTerm: searchTerm,
     groupId: groupId,
+    sort: sort,
   );
 
   @override

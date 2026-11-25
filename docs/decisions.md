@@ -92,6 +92,27 @@ during on-device testing; not a day-one change.
 
 ## Architecture Work Package Decisions
 
+### Catalog sorting (2026-11-25)
+User-approved scope: Live TV defaults to provider playlist order, with an explicit
+Playlist order / Alphabetical (A-Z) toggle beside the list/card-view control.
+Each activation switches directly to the other order. The icon shows the current
+order (numbered list for playlist order, A-Z for alphabetical); the tooltip names
+the current order and the next action. This replaces the initially implemented
+menu at the user's request.
+The toggle is icon-only on compact and wide layouts. Movies and Series also
+support the toggle, retaining alphabetical order as their default. Remember an
+independent choice for each section and playlist across groups and restarts.
+Series playlist order is the earliest episode appearance; update affected series
+ordinals on reorder-only refreshes without rebuilding unchanged series.
+Apply it to both All
+and selected-group pages through `CatalogQueryService`; changing sort resets
+paging and scroll position. Preserve welcome entries and channel variants.
+Group ordering, Home previews, Search relevance, and numeric
+season/episode ordering remain unchanged. Use existing `items.ord` and catalog
+indexes and `series_v8.ord`. Append-only migration v13 repairs previously stale
+series ordinals from cached episode positions and adds indexed group/playlist
+source-order reads; no reimport is required.
+
 ### Aspire Diagnostics (2026-11-01)
 User-approved direct OTLP/HTTP export of structured logs, traces and operation
 metrics to a configurable standalone Aspire dashboard, focused on playlist

@@ -138,12 +138,14 @@ class SqliteCatalogRepository
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   }) => queries.seriesInGroup(
     playlistId,
     groupId,
     offset: offset,
     limit: limit,
     searchTerm: searchTerm,
+    sort: sort,
   );
 
   @override
@@ -159,11 +161,13 @@ class SqliteCatalogRepository
     int offset = 0,
     int limit = kCatalogPageSize,
     String? searchTerm,
+    CatalogSort sort = CatalogSort.title,
   }) => queries.querySeries(
     playlistId,
     offset: offset,
     limit: limit,
     searchTerm: searchTerm,
+    sort: sort,
   );
 
   @override

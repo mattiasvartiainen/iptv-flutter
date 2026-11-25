@@ -9,6 +9,7 @@ import '../platform/telemetry_settings_store.dart';
 import '../services/catalog/sqlite_catalog_repository.dart';
 import '../services/diagnostics/startup_preflight.dart';
 import '../services/logging/app_logger.dart';
+import '../services/settings/app_preferences.dart';
 import '../services/settings/settings_repository.dart';
 import '../services/storage/database_adapter.dart';
 import '../services/telemetry/app_telemetry.dart';
@@ -77,7 +78,10 @@ class AppDependencies {
       secretStore: secretStore,
     );
     final playbackAdapter = profile.createPlaybackAdapter(logger: logger);
-    final catalogView = CatalogViewState(logger: logger);
+    final catalogView = CatalogViewState(
+      logger: logger,
+      preferences: AppPreferences(settingsRepository: settingsRepository),
+    );
     final navigationController = NavigationController();
     final preferencesController = AppPreferencesController(
       settingsRepository: settingsRepository,
