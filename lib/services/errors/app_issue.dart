@@ -1,6 +1,7 @@
 enum AppIssueKind {
   invalidUrl,
   networkUnavailable,
+  networkAuthenticationRequired,
   timeout,
   authorizationFailure,
   playlistFormatInvalid,

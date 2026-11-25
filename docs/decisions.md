@@ -114,6 +114,18 @@ Normal mode keeps friendly errors only. This is a temporary, explicitly requeste
 WP-9.2's default UI policy, available in release builds for on-TV investigation; revisit before
 production launch. LG hardware display and remote validation remain pending.
 
+### Playlist-owned failures (2026-11-25)
+Show playlist import/refresh failures inline within the affected playlist card,
+below its details/actions. Keep other playlists' errors when one is retried.
+Clear the affected error on retry, successful source save, or deletion. Keep
+editor save failures inside the editor and use section-level messages when no
+card owns the failure; do not open an automatic global error modal or move focus.
+Use the shared playlist issue mapper for friendly text and structured HTTP
+status classification. HTTP 511 suggests network sign-in but does not prove a
+captive portal or invalid playlist credentials. Existing Refresh is the retry
+action; technical details remain behind the verbose preference. These errors
+are session state, not a new database persistence feature.
+
 ### D-1 — Navigation mechanism ✅
 Use a hand-rolled sealed `AppRoute` hierarchy and `NavigationController` rendered through
 `Navigator.pages`. Keep Home as the root; top-level section navigation resets to Home and pushes the
@@ -161,4 +173,3 @@ See [Cross-Device Design Contract](design-guidelines.md) for accessibility rules
   registered at the app root. Platform overrides are supplied by `PlatformProfile`.
 - webOS hardware values and validation are pending. Use Settings > Display verbose information in a
   debug build to log numeric logical/physical key IDs without logging typed characters.
-

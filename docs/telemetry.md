@@ -133,6 +133,25 @@ rejected while instrumented operations are active; retry once they finish.
   dimensions, not playlist IDs or item titles. Byte/item counts are structured
   diagnostics, not separate time-series metrics in this first implementation.
 
+## User-facing Playlist Failures
+
+Playlist import/refresh errors appear in a full-width panel below the affected
+playlist card's actions, not in an automatic modal. Refresh retries the request
+without moving focus; errors on other playlists remain visible. Retry, a
+successful source save, or deletion clears that playlist's session-only error.
+A late failure from a superseded request is still logged but does not restore a
+cleared error. Verbose exception/stack details remain opt-in and appear under
+the same card; unowned failures retain a section-level fallback.
+
+The shared playlist issue mapper uses structured HTTP status metadata, not
+exception-text matching. HTTP 511 displays **Network sign-in may be required**:
+check the device's internet sign-in requirements and, if other services work,
+contact the playlist provider. This status is intended for network authentication
+but does not prove a captive portal; a provider gateway can return it too. It is
+not classified as invalid playlist credentials, and changing this message does
+not resolve the underlying HTTP failure. Verify the panel and Refresh/Back flow
+on LG hardware after installing a fresh build.
+
 ## Safety And Limits
 
 Export uses 256-record queues, 64-record batches, two-second network timeouts,

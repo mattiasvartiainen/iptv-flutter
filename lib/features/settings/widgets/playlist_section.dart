@@ -4,6 +4,7 @@ import '../../../services/settings/settings_repository.dart';
 import '../../../state/app_preferences_controller.dart';
 import '../../../state/playlists_controller.dart';
 import '../../../ui/theme/app_tokens.dart';
+import '../../../ui/widgets/inline_issue.dart';
 import 'playlist_card.dart';
 import 'playlist_error_details.dart';
 
@@ -24,6 +25,9 @@ class PlaylistSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final playlists = controller.playlists;
+    final issueHasCard = playlists.any(
+      (playlist) => playlist.playlistId == controller.issuePlaylistId,
+    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppTokens.panelPadding),
@@ -43,12 +47,15 @@ class PlaylistSection extends StatelessWidget {
                 Text('${playlists.length} saved'),
               ],
             ),
-            if (controller.errorMessage case final error?) ...[
+            if (!issueHasCard && controller.errorMessage != null) ...[
               const SizedBox(height: 12),
-              Text(
-                error,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+              if (controller.activeIssue case final issue?)
+                InlineIssue(issue: issue)
+              else
+                Text(
+                  controller.errorMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               if (preferencesController.verboseRefreshInfo &&
                   controller.errorDiagnostics != null) ...[
                 const SizedBox(height: 12),
@@ -68,6 +75,10 @@ class PlaylistSection extends StatelessWidget {
                         playlist.playlistId == controller.activePlaylistId,
                     isRefreshing:
                         playlist.playlistId == controller.refreshingPlaylistId,
+                    issue: controller.issueForPlaylist(playlist.playlistId),
+                    errorDiagnostics: controller.diagnosticsForPlaylist(
+                      playlist.playlistId,
+                    ),
                     progress:
                         playlist.playlistId ==
                                 controller.refreshingPlaylistId &&

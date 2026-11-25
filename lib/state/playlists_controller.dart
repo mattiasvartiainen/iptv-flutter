@@ -7,6 +7,7 @@ import '../services/catalog/catalog_query_service.dart';
 import '../services/catalog/catalog_repository.dart';
 import '../services/errors/app_issue.dart';
 import '../services/errors/exception_diagnostics.dart';
+import '../services/errors/playlist_issue_mapper.dart';
 import '../services/logging/app_logger.dart';
 import '../services/security/url_redaction.dart';
 import '../services/settings/app_preferences.dart';
@@ -99,6 +100,7 @@ class PlaylistsController extends ChangeNotifier {
           }
         }
         await _settingsRepository.upsertPlaylist(config);
+        if (config.playlistId case final id?) _clearPlaylistIssue(id);
         await refreshPlaylists();
         errorMessage = null;
         activeIssue = null;
@@ -119,6 +121,17 @@ class PlaylistsController extends ChangeNotifier {
   CatalogImportProgress? importProgress;
   AppIssue? activeIssue;
   String? _errorDiagnostics;
+  String? _issuePlaylistId;
+  final _playlistFailures = <String, ({AppIssue issue, String diagnostics})>{};
+  final _playlistIssueOperations = <String, Object>{};
+
+  String? get issuePlaylistId => _issuePlaylistId;
+
+  AppIssue? issueForPlaylist(String playlistId) =>
+      _playlistFailures[playlistId]?.issue;
+
+  String? diagnosticsForPlaylist(String playlistId) =>
+      verboseErrorsEnabled ? _playlistFailures[playlistId]?.diagnostics : null;
 
   bool get verboseErrorsEnabled => _preferencesController.verboseRefreshInfo;
 
@@ -141,6 +154,10 @@ class PlaylistsController extends ChangeNotifier {
 
   Future<void> refreshPlaylists() async {
     playlists = await _settingsRepository.listPlaylists();
+    final savedIds = playlists.map((playlist) => playlist.playlistId).toSet();
+    for (final id in _playlistFailures.keys.toList()) {
+      if (!savedIds.contains(id)) _clearPlaylistIssue(id);
+    }
     if (playlists.isEmpty) {
       activePlaylistId = null;
       if (!_catalogView.hasContent) {
@@ -158,9 +175,15 @@ class PlaylistsController extends ChangeNotifier {
     final normalized = url.trim();
     final uri = Uri.tryParse(normalized);
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      errorMessage = 'Enter a valid playlist URL.';
-      playlistStatus = LoadStatus.error;
-      notifyListeners();
+      _errorDiagnostics = null;
+      _applyIssue(
+        const AppIssue(
+          kind: AppIssueKind.invalidUrl,
+          source: AppIssueSource.setup,
+          title: 'Invalid playlist URL',
+          message: 'Enter a valid playlist URL.',
+        ),
+      );
       return false;
     }
 
@@ -175,6 +198,7 @@ class PlaylistsController extends ChangeNotifier {
             url: normalized,
           ),
         );
+        if (playlistId != null) _clearPlaylistIssue(playlistId);
         await refreshPlaylists();
         errorMessage = null;
         activeIssue = null;
@@ -195,9 +219,15 @@ class PlaylistsController extends ChangeNotifier {
     if (normalizedServer.isEmpty ||
         username.trim().isEmpty ||
         password.isEmpty) {
-      errorMessage = 'Enter the server, username, and password.';
-      playlistStatus = LoadStatus.error;
-      notifyListeners();
+      _errorDiagnostics = null;
+      _applyIssue(
+        const AppIssue(
+          kind: AppIssueKind.invalidUrl,
+          source: AppIssueSource.setup,
+          title: 'Connection details missing',
+          message: 'Enter the server, username, and password.',
+        ),
+      );
       return false;
     }
 
@@ -215,6 +245,7 @@ class PlaylistsController extends ChangeNotifier {
             password: password,
           ),
         );
+        if (playlistId != null) _clearPlaylistIssue(playlistId);
         await refreshPlaylists();
         errorMessage = null;
         activeIssue = null;
@@ -248,24 +279,7 @@ class PlaylistsController extends ChangeNotifier {
         intent == PlaylistLoadIntent.activate ||
         intent == PlaylistLoadIntent.activateNext ||
         intent == PlaylistLoadIntent.setup;
-    final playlist = await _settingsRepository.getPlaylist(playlistId);
-    if (playlist == null) {
-      errorMessage = 'Playlist settings could not be found.';
-      playlistStatus = LoadStatus.error;
-      notifyListeners();
-      return false;
-    }
-
-    final resolvedUrl = await _settingsRepository.resolvePlaylistUrl(
-      playlistId,
-    );
-    if (resolvedUrl == null || resolvedUrl.isEmpty) {
-      errorMessage = 'Playlist source is missing.';
-      playlistStatus = LoadStatus.error;
-      notifyListeners();
-      return false;
-    }
-
+    _clearPlaylistIssue(playlistId);
     playlistStatus = LoadStatus.loading;
     errorMessage = null;
     activeIssue = null;
@@ -280,10 +294,35 @@ class PlaylistsController extends ChangeNotifier {
     try {
       return await _runPlaylistOperation(
         'playlist_import',
-        host: Uri.tryParse(resolvedUrl)?.host ?? '',
+        host: '',
+        playlistId: playlistId,
         source: AppIssueSource.playlistImport,
         context: context,
         body: () async {
+          final playlist = await _settingsRepository.getPlaylist(playlistId);
+          if (playlist == null) {
+            throw const AppIssueException(
+              AppIssue(
+                kind: AppIssueKind.storageUnavailable,
+                source: AppIssueSource.playlistImport,
+                title: 'Playlist unavailable',
+                message: 'Playlist settings could not be found.',
+              ),
+            );
+          }
+          final resolvedUrl = await _settingsRepository.resolvePlaylistUrl(
+            playlistId,
+          );
+          if (resolvedUrl == null || resolvedUrl.isEmpty) {
+            throw const AppIssueException(
+              AppIssue(
+                kind: AppIssueKind.invalidUrl,
+                source: AppIssueSource.playlistImport,
+                title: 'Playlist source missing',
+                message: 'Playlist source is missing.',
+              ),
+            );
+          }
           final result = await _catalogRepository.load(
             playlistUrl: resolvedUrl,
             playlistId: playlistId,
@@ -337,32 +376,23 @@ class PlaylistsController extends ChangeNotifier {
     activeIssue = null;
     notifyListeners();
     try {
-      var refreshed = false;
-      final completed = await _runPlaylistOperation(
-        'playlist_import',
-        host: '',
-        source: AppIssueSource.playlistImport,
-        context: {'playlistId': playlistId, 'source': 'manual_refresh'},
-        body: () async {
-          refreshed = await loadPlaylist(
-            playlistId,
-            intent: refreshesActivePlaylist
-                ? PlaylistLoadIntent.refreshActive
-                : PlaylistLoadIntent.refreshInactive,
-            logContext: {'source': 'manual_refresh'},
-          );
-          if (refreshed &&
-              !refreshesActivePlaylist &&
-              activePlaylistId == playlistId) {
-            await loadPlaylist(
-              playlistId,
-              intent: PlaylistLoadIntent.refreshCompleted,
-              logContext: {'source': 'manual_refresh_completed'},
-            );
-          }
-        },
+      final refreshed = await loadPlaylist(
+        playlistId,
+        intent: refreshesActivePlaylist
+            ? PlaylistLoadIntent.refreshActive
+            : PlaylistLoadIntent.refreshInactive,
+        logContext: {'source': 'manual_refresh'},
       );
-      return completed && refreshed;
+      if (refreshed &&
+          !refreshesActivePlaylist &&
+          activePlaylistId == playlistId) {
+        return await loadPlaylist(
+          playlistId,
+          intent: PlaylistLoadIntent.refreshCompleted,
+          logContext: {'source': 'manual_refresh_completed'},
+        );
+      }
+      return refreshed;
     } finally {
       refreshingPlaylistId = null;
       notifyListeners();
@@ -384,6 +414,7 @@ class PlaylistsController extends ChangeNotifier {
   Future<bool> deletePlaylist(String playlistId) async {
     final deletesActivePlaylist = activePlaylistId == playlistId;
     await _settingsRepository.deletePlaylist(playlistId);
+    _clearPlaylistIssue(playlistId);
     await refreshPlaylists();
     if (!deletesActivePlaylist) return true;
 
@@ -421,7 +452,18 @@ class PlaylistsController extends ChangeNotifier {
     await _catalogView.bind(service: service, playlistId: playlistId);
   }
 
-  void _applyIssue(AppIssue issue) {
+  void _clearPlaylistIssue(String playlistId) {
+    _playlistIssueOperations.remove(playlistId);
+    _playlistFailures.remove(playlistId);
+    if (_issuePlaylistId == playlistId) {
+      activeIssue = null;
+      errorMessage = null;
+      _errorDiagnostics = null;
+      _issuePlaylistId = null;
+    }
+  }
+
+  void _applyIssue(AppIssue issue, {String? playlistId}) {
     activeIssue = AppIssue(
       kind: issue.kind,
       source: issue.source,
@@ -433,6 +475,13 @@ class PlaylistsController extends ChangeNotifier {
       retryable: issue.retryable,
     );
     errorMessage = activeIssue!.message;
+    _issuePlaylistId = playlistId;
+    if (playlistId != null) {
+      _playlistFailures[playlistId] = (
+        issue: activeIssue!,
+        diagnostics: _errorDiagnostics!,
+      );
+    }
     playlistStatus = LoadStatus.error;
     notifyListeners();
   }
@@ -442,35 +491,24 @@ class PlaylistsController extends ChangeNotifier {
     required String host,
     required Future<void> Function() body,
     AppIssueSource source = AppIssueSource.setup,
+    String? playlistId,
     Map<String, Object?> context = const {},
   }) async {
     _errorDiagnostics = null;
+    _issuePlaylistId = null;
+    final issueOperation = Object();
+    if (playlistId != null) {
+      _playlistIssueOperations[playlistId] = issueOperation;
+    }
     try {
       await body();
       return true;
     } catch (error, stackTrace) {
-      _errorDiagnostics = formatExceptionDiagnostics(error, stackTrace);
       final isImport = source == AppIssueSource.playlistImport;
       final workerError = isImport && error is CatalogImportWorkerException
           ? error
           : null;
-      final issue = error is AppIssueException
-          ? error.issue
-          : workerError != null
-          ? _workerIssue(workerError)
-          : AppIssue(
-              kind: isImport && error is FormatException
-                  ? AppIssueKind.playlistFormatInvalid
-                  : AppIssueKind.unknown,
-              source: source,
-              title: isImport && error is FormatException
-                  ? 'Playlist format invalid'
-                  : 'Import failed',
-              message: isImport && error is FormatException
-                  ? 'The playlist could not be parsed.'
-                  : 'Could not load that playlist. Try again.',
-              details: isImport ? redactSensitiveText(error.toString()) : null,
-            );
+      final issue = playlistIssueFor(error, source: source);
       final loggedError = error is AppIssueException
           ? (error.cause ?? error).toString()
           : isImport && workerError == null
@@ -483,7 +521,11 @@ class PlaylistsController extends ChangeNotifier {
           : isImport
           ? stackTrace
           : null;
-      _applyIssue(issue);
+      if (playlistId == null ||
+          identical(_playlistIssueOperations[playlistId], issueOperation)) {
+        _errorDiagnostics = formatExceptionDiagnostics(error, stackTrace);
+        _applyIssue(issue, playlistId: playlistId);
+      }
       _logger.error(
         '${op}_failed',
         error: loggedError == null ? null : redactSensitiveText(loggedError),
@@ -502,37 +544,11 @@ class PlaylistsController extends ChangeNotifier {
         },
       );
       return false;
+    } finally {
+      if (playlistId != null &&
+          identical(_playlistIssueOperations[playlistId], issueOperation)) {
+        _playlistIssueOperations.remove(playlistId);
+      }
     }
-  }
-
-  AppIssue _workerIssue(CatalogImportWorkerException error) {
-    final authorizationFailure =
-        error.errorType == 'HttpException' &&
-        RegExp(r'\b(?:401|403)\b').hasMatch(error.message);
-    final kind = switch (error.errorType) {
-      'TimeoutException' => AppIssueKind.timeout,
-      'SocketException' => AppIssueKind.networkUnavailable,
-      'HttpException' when authorizationFailure =>
-        AppIssueKind.authorizationFailure,
-      _ => AppIssueKind.unknown,
-    };
-    return AppIssue(
-      kind: kind,
-      source: AppIssueSource.playlistImport,
-      title: switch (kind) {
-        AppIssueKind.timeout => 'Playlist request timed out',
-        AppIssueKind.networkUnavailable => 'Network unavailable',
-        AppIssueKind.authorizationFailure => 'Access denied',
-        _ => 'Import failed',
-      },
-      message: switch (kind) {
-        AppIssueKind.timeout => 'The playlist server took too long to respond.',
-        AppIssueKind.networkUnavailable =>
-          'Could not connect to the playlist server.',
-        AppIssueKind.authorizationFailure =>
-          'The playlist server rejected the request.',
-        _ => 'Could not load that playlist. Try again.',
-      },
-    );
   }
 }

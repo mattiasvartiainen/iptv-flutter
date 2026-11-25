@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/features/settings/widgets/playlist_card.dart';
 import 'package:iptv_flutter/services/catalog/catalog_import_progress.dart';
+import 'package:iptv_flutter/services/catalog/catalog_import_worker.dart';
+import 'package:iptv_flutter/services/errors/playlist_issue_mapper.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/ui/theme/app_theme.dart';
 
@@ -54,6 +56,14 @@ void main() {
                     ),
                     isActive: true,
                     isRefreshing: true,
+                    issue: playlistIssueFor(
+                      const CatalogImportWorkerException(
+                        errorType: 'HttpException',
+                        message: 'HTTP 511',
+                        workerStackTrace: '',
+                        diagnostics: {'http.response.status_code': 511},
+                      ),
+                    ),
                     progress: CatalogImportProgress(
                       phase: CatalogImportPhase.importing,
                       startedAt: DateTime.now(),

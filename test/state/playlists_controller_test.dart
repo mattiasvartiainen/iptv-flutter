@@ -191,6 +191,10 @@ void main() {
           errorType: worker.$1,
           message: worker.$2,
           workerStackTrace: 'worker stack $sensitiveUrl',
+          diagnostics: {
+            if (worker.$1 == 'HttpException')
+              'http.response.status_code': int.parse(worker.$2.split(' ').last),
+          },
         ),
         worker.$3,
         worker.$4,
@@ -276,6 +280,168 @@ void main() {
       ));
     },
   );
+
+  test(
+    'playlist failures survive another playlist refresh and retry',
+    () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.preferences.setVerboseRefreshInfo(true);
+      fixture.repository.failure = const CatalogImportWorkerException(
+        errorType: 'HttpException',
+        message: 'HTTP 511',
+        workerStackTrace: 'worker stack $sensitiveUrl',
+        diagnostics: {'http.response.status_code': 511},
+      );
+
+      expect(await fixture.playlists.refreshPlaylist('first'), isFalse);
+      final firstIssue = fixture.playlists.issueForPlaylist('first');
+      expect(firstIssue?.kind, AppIssueKind.networkAuthenticationRequired);
+      expect(fixture.playlists.issuePlaylistId, 'first');
+      expect(
+        fixture.playlists.diagnosticsForPlaylist('first'),
+        isNot(contains('private-pass')),
+      );
+      expect(await fixture.playlists.refreshPlaylist('second'), isFalse);
+      expect(fixture.playlists.issueForPlaylist('second'), isNotNull);
+      expect(fixture.playlists.issueForPlaylist('first'), same(firstIssue));
+
+      fixture.repository.failure = null;
+      fixture.repository.gate = Completer<void>();
+      fixture.repository.started = Completer<void>();
+      final retry = fixture.playlists.refreshPlaylist('second');
+      await fixture.repository.started!.future;
+      expect(fixture.playlists.issueForPlaylist('second'), isNull);
+      expect(fixture.playlists.diagnosticsForPlaylist('second'), isNull);
+      expect(fixture.playlists.issueForPlaylist('first'), same(firstIssue));
+      fixture.repository.gate!.complete();
+      expect(await retry, isTrue);
+      expect(fixture.playlists.issueForPlaylist('first'), same(firstIssue));
+      expect(fixture.playlists.issueForPlaylist('second'), isNull);
+
+      await fixture.preferences.setVerboseRefreshInfo(false);
+      expect(fixture.playlists.diagnosticsForPlaylist('first'), isNull);
+      expect(fixture.playlists.issueForPlaylist('first'), same(firstIssue));
+    },
+  );
+
+  for (final save in ['config', 'url', 'xtream', 'delete']) {
+    test('$save clears only the affected playlist failure', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.preferences.setVerboseRefreshInfo(true);
+      fixture.repository.failure = const FormatException('Invalid playlist');
+      await fixture.playlists.refreshPlaylist('first');
+      await fixture.playlists.refreshPlaylist('second');
+      final otherIssue = fixture.playlists.issueForPlaylist('second');
+      switch (save) {
+        case 'config':
+          await fixture.playlists.savePlaylistConfig(
+            const PlaylistSourceConfig.url(
+              playlistId: 'first',
+              name: 'Updated',
+              url: 'https://fixture.test/changed.m3u',
+            ),
+          );
+        case 'url':
+          await fixture.playlists.savePlaylistUrl(
+            playlistId: 'first',
+            name: 'Updated',
+            url: 'https://fixture.test/changed.m3u',
+          );
+        case 'xtream':
+          await fixture.playlists.saveXtreamPlaylist(
+            playlistId: 'first',
+            name: 'Updated',
+            server: 'https://fixture.test',
+            username: 'fixture',
+            password: 'fixture',
+          );
+        case 'delete':
+          await fixture.playlists.deletePlaylist('first');
+      }
+      expect(fixture.playlists.issueForPlaylist('first'), isNull);
+      expect(fixture.playlists.diagnosticsForPlaylist('first'), isNull);
+      expect(fixture.playlists.issueForPlaylist('second'), same(otherIssue));
+    });
+  }
+
+  test(
+    'deleting the last failed playlist clears its section-level state',
+    () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.preferences.setVerboseRefreshInfo(true);
+      fixture.repository.failure = const FormatException('Invalid playlist');
+      await fixture.playlists.refreshPlaylist('first');
+      expect(fixture.playlists.issuePlaylistId, 'first');
+
+      await fixture.playlists.deletePlaylist('first');
+
+      expect(fixture.playlists.issueForPlaylist('first'), isNull);
+      expect(fixture.playlists.issuePlaylistId, isNull);
+      expect(fixture.playlists.activeIssue, isNull);
+      expect(fixture.playlists.errorMessage, isNull);
+      expect(fixture.playlists.errorDiagnostics, isNull);
+    },
+  );
+
+  for (final change in ['edit', 'delete']) {
+    test('$change ignores a late refresh error but still logs it', () async {
+      final logger = _RecordingLogger();
+      final fixture = await _Fixture.create(logger: logger);
+      addTearDown(fixture.dispose);
+      await fixture.preferences.setVerboseRefreshInfo(true);
+      fixture.repository.failure = const FormatException('Invalid playlist');
+      fixture.repository.gate = Completer<void>();
+      fixture.repository.started = Completer<void>();
+      final pending = fixture.playlists.refreshPlaylist('second');
+      await fixture.repository.started!.future;
+
+      if (change == 'edit') {
+        expect(
+          await fixture.playlists.savePlaylistConfig(
+            const PlaylistSourceConfig.url(
+              playlistId: 'second',
+              name: 'Updated',
+              url: 'https://fixture.test/changed.m3u',
+            ),
+          ),
+          isTrue,
+        );
+      } else {
+        expect(await fixture.playlists.deletePlaylist('second'), isTrue);
+      }
+      fixture.repository.gate!.complete();
+      expect(await pending, isFalse);
+
+      expect(fixture.playlists.issueForPlaylist('second'), isNull);
+      expect(fixture.playlists.diagnosticsForPlaylist('second'), isNull);
+      expect(fixture.playlists.issuePlaylistId, isNull);
+      expect(fixture.playlists.activeIssue, isNull);
+      expect(fixture.playlists.errorMessage, isNull);
+      expect(fixture.playlists.errorDiagnostics, isNull);
+      expect(logger.errors.single.message, 'playlist_import_failed');
+    });
+  }
+
+  test('direct load lookup errors belong to the requested playlist', () async {
+    final settings = _FailingSettingsRepository();
+    final fixture = await _Fixture.create(settings: settings);
+    addTearDown(fixture.dispose);
+    settings.lookupFailure = StateError('lookup failed');
+
+    expect(
+      await fixture.playlists.loadPlaylist(
+        'first',
+        intent: PlaylistLoadIntent.activate,
+      ),
+      isFalse,
+    );
+    expect(fixture.playlists.issueForPlaylist('first'), isNotNull);
+    expect(fixture.playlists.issueForPlaylist('second'), isNull);
+    expect(fixture.playlists.issuePlaylistId, 'first');
+  });
 
   test(
     'loading a playlist activates it and binds the catalog query view',
