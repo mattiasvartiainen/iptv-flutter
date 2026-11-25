@@ -33,6 +33,24 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-DB-migration-tests validates real persisted upgrades from every historical
+schema through the production adapter, including schema parity, preserved
+settings/catalog/metadata, SQLite integrity and failed-upgrade rollback/retry.
+Dependencies: WP-XM-medium. Touches: storage migration tests and this plan only.
+Skills: dart-add-unit-test, dart-run-static-analysis. Use temporary databases;
+never open a user's application database.
+
+Run the persisted migration matrix explicitly with
+`flutter test test\services\storage\database_migrations_test.dart`; it also runs
+in the normal test suite. Historical fixtures use the real append-only migrations,
+not schema downgrades/drop-table reconstruction. The matrix requires updating
+when a new production migration is registered. Settings survive every upgrade;
+v9+ catalog and v14/v15+ metadata are preserved. Intentional legacy-cache removal
+and v7 search-index invalidation remain migration behavior, not data-loss failures.
+SQLite integrity/foreign-key/FTS checks and fresh-schema parity complement the
+focused trigger/index tests. These are desktop SQLite tests, not native device
+certification or snapshots of every previously shipped application database.
+
 WP-XM-medium combines the three approved medium metadata findings. Dependencies:
 WP-XM-hardening. Touches: Series membership/cache repository and append-only
 lookup-index migration, movie cache decoding/recovery, Xtream response buffering/
@@ -63,6 +81,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-DB-migration-tests | Persisted SQL migration regression matrix | Storage | WP-XM-medium | S | DONE (2026-11-25): 18 real persisted-upgrade/rollback tests cover v1-v17, seeded data, schema/ledger parity, SQLite/FTS/FK integrity and reopen/retry; 25 focused storage tests pass. Broad regression: 755 passes with two existing Settings/editor focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos. |
 | WP-XM-medium | Efficient membership, recoverable movie cache and bounded decoding | Metadata | WP-XM-hardening | M | DONE (2026-11-25): Atomic 100-row keyset membership with partial v17 index, scoped corrupt-cache recovery and typed/transferable response buffers with pre-allocation JSON budgets. 119 focused tests pass; final broad regression has 737 passes and the two existing Settings/editor focus failures, excluding only the reproduced telemetry stall. Analyzer retains two baseline infos. Isolated 20k-item cold/identical/churn/reorder benchmark passes (refreshes 1,147/1,416/1,266 ms). TV memory/provider validation remains pending. |
 | WP-XM-hardening | Import-safe metadata invalidation and guarded activation | Metadata | WP-XM-series, WP-3.1 | S | DONE (2026-11-25): Indexed/scoped v16 invalidation and guarded/deduplicated activation; 88 focused tests pass, final broad regression has 714 passes with the two existing Settings/editor focus failures. Full run reproduced the existing telemetry-section stall; completed regression excludes only that file. Analyzer retains its two baseline infos. A 30k-episode/3k-cache SQLite probe improved 4,428 ms to 96 ms; the 20k-item cold/identical/churn/reorder import benchmark passes. |
 | WP-0.1 | Add `AGENTS.md` with project rules | 0 Guardrails | – | S | DONE (2026-10-03): Added concise root rules; detailed references linked. |
