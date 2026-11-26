@@ -22,6 +22,13 @@ const episode = ContentItem(
   streamUrl: 'https://fixture.test/series/episode.mkv',
   group: 'Series',
 );
+const live = ContentItem(
+  id: 'live',
+  title: 'Live channel',
+  type: ContentType.live,
+  streamUrl: 'https://fixture.test/channel.m3u8',
+  group: 'Live',
+);
 
 void main() {
   late CatalogViewState catalog;
@@ -50,6 +57,74 @@ void main() {
     await Future.wait([first, second]);
     expect(navigation.stack.whereType<DetailsRoute>(), hasLength(1));
   });
+  test(
+    'Live activation plays once without an intermediate Details route',
+    () async {
+      app.openLiveTv();
+      final played = <ContentItem>[];
+      Future<void> play(ContentItem item) async {
+        played.add(item);
+        navigation.push(PlayerRoute(item));
+      }
+
+      final first = app.activateItemById(live.id, playLive: play);
+      final second = app.activateItemById(live.id, playLive: play);
+      expect(second, same(first));
+      queries.requests.single.complete(live);
+      await Future.wait([first, second]);
+      expect(played, [live]);
+      expect(navigation.currentRoute, isA<PlayerRoute>());
+      expect(navigation.stack.whereType<DetailsRoute>(), isEmpty);
+      await app.activateItemById(live.id, playLive: play);
+      expect(queries.requests, hasLength(1));
+      expect(played, [live]);
+      app.goBack();
+      expect(navigation.currentRoute, isA<CatalogRoute>());
+    },
+  );
+
+  for (final item in [movie, episode]) {
+    test('activation keeps Details for ${item.id}', () async {
+      final activation = app.activateItemById(
+        item.id,
+        playLive: (_) async => fail('VOD must not play directly'),
+      );
+      queries.requests.single.complete(item);
+      await activation;
+      expect((navigation.currentRoute as DetailsRoute).item, item);
+    });
+  }
+
+  for (final invalidate in ['Back', 'new selection', 'playlist rebind']) {
+    test('pending Live activation cannot play after $invalidate', () async {
+      app.openLiveTv();
+      var plays = 0;
+      final activation = app.activateItemById(
+        live.id,
+        playLive: (_) async {
+          plays++;
+        },
+      );
+      if (invalidate == 'Back') {
+        app.goBack();
+      } else if (invalidate == 'new selection') {
+        final replacement = app.activateItemById(
+          movie.id,
+          playLive: (_) async {
+            fail('Movie must not play directly');
+          },
+        );
+        queries.requests.last.complete(movie);
+        await replacement;
+      } else {
+        await catalog.bind(service: queries, playlistId: 'q');
+      }
+      queries.requests.first.complete(live);
+      await activation;
+      expect(plays, 0);
+      expect(navigation.stack.whereType<PlayerRoute>(), isEmpty);
+    });
+  }
   test(
     'Back invalidates lookup even if originating route is restored',
     () async {
@@ -143,7 +218,7 @@ void main() {
 }
 
 class _Queries extends InMemoryCatalogQueryService {
-  _Queries() : super('p', [movie, episode]);
+  _Queries() : super('p', [movie, episode, live]);
   final requests = <Completer<ContentItem?>>[];
   @override
   Future<ContentItem?> itemById(String itemId) {

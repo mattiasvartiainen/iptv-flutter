@@ -142,6 +142,16 @@ unchanged and uses only the verified playlist's provider, not TMDB or other
 external services. Preserve original streams and local identity, fetch metadata
 only for selected movies, and keep Play usable independently of enrichment.
 
+### Direct Live activation (2026-11-26)
+
+The follow-up explicitly approves immediate playback on channel activation
+without channel Details, only for Live TV. WP-live-activation applies this
+across catalog, Home and Search using the resolved item's classification and
+the existing PlayerController entry point. Movies and series episodes keep
+Details -> Player. Opening the Live section does not autoplay. Existing player
+controls/Back, lookup cancellation and paged browsing remain unchanged; no
+metadata/API request is needed to start a channel.
+
 ### Series overview and enrichment (2026-11-25)
 The follow-up "now enrich series" approves WP-XM-series's selected-show Xtream
 metadata and local inline overview. Exact category/title candidates are only

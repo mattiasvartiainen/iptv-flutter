@@ -126,10 +126,18 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
     expect(
-      (controllers.app.navigationController.currentRoute as DetailsRoute)
+      (controllers.app.navigationController.currentRoute as PlayerRoute)
           .item
           .id,
       'news-24',
+    );
+    expect(
+      controllers.app.navigationController.stack.whereType<DetailsRoute>(),
+      isEmpty,
+    );
+    expect(
+      controllers.player.playbackAdapter.state.status,
+      PlaybackStatus.playing,
     );
 
     controllers.app.goBack();

@@ -38,6 +38,15 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-live-activation starts selected Live channels without intermediate Details.
+Dependencies: WP-player-guardrails, WP-XM-series. Touches: shared item activation,
+AppScope/catalog/Home/Search callbacks, activation/navigation tests and docs.
+Skills: dart-add-unit-test, dart-run-static-analysis. This approved behavioral
+change applies only to resolved ContentType.live items. Movies/series episodes
+retain Details; opening a section never auto-plays. Reuse PlayerController
+and existing lookup generation/binding guards, remote/Back/focus and paging.
+No metadata, import, migration, native backend or extra player-screen work.
+
 WP-player-guardrails updates boundary checks and documentation authority.
 Dependencies: WP-player-updates. Touches: architecture tests/helpers, playback
 barrel/import consumers, docs index/current architecture and historical plans.
@@ -266,6 +275,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-live-activation | Direct Live channel activation | Navigation | WP-player-guardrails, WP-XM-series | S | DONE (2026-11-26): Catalog/Home/Search share type-aware activation; Live skips Details, movies/episodes unchanged. 173 focused tests pass; broad regression has 930 passes and the two existing Settings focus failures, excluding the known telemetry stall. Analyzer retains only two baseline infos. Native backends/import pipeline unchanged. |
 | WP-player-guardrails | Architecture guardrails and documentation authority | Player | WP-player-updates | M | DONE (2026-11-26): Export-aware boundary checks, contract-only playback barrel and historical-doc labels; 120 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-updates | Narrow playback updates and metadata remapping | Player | WP-player-presentation | M | DONE (2026-11-25): Selected-value rebuilds and native metadata reuse; 130 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-presentation | Adaptive player layout/theme policy | Player | WP-player-contract | M | DONE (2026-11-25): Constraint-based geometry and inherited player theme; 114 focused tests and Windows build pass; baseline analyzer/test caveats above. |

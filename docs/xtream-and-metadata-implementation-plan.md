@@ -1,6 +1,6 @@
 # Xtream API And Metadata Implementation Plan
 
-Created: 2026-10-15. Updated: 2026-11-25. Status: XM-01 through XM-03, selected-movie enrichment/Details, and selected-show enrichment/inline Series browsing implemented. Direct Live activation remains planned.
+Created: 2026-10-15. Updated: 2026-11-26. Status: XM-01 through XM-03, selected-movie enrichment/Details, selected-show enrichment/inline Series browsing, and direct Live activation implemented.
 Audience: developers and coding agents implementing source-aware catalogs and richer movie/series details.
 
 ## 1. Purpose And Authority
@@ -13,7 +13,7 @@ This plan extends source, metadata, and the content-selection flows requested on
 
 ### Requested Experience (2026-11-25)
 
-| Selected Content | Planned Destination | Works Without Metadata/API |
+| Selected Content | Implemented Destination | Works Without Metadata/API |
 |---|---|---|
 | Live channel | Existing fullscreen player immediately; no intermediate Details page. | Yes, using the imported stream. |
 | Movie | Scrollable movie details with artwork, synopsis and real available fields, then Play. | Yes, using imported metadata and placeholders for absent artwork. |
@@ -104,8 +104,8 @@ XM-04's broader provider identity/catalog-membership work, external providers an
 | [Classifier](../lib/services/catalog/catalog_classifier.dart) | URL path, extension, group/provider hints and episode-title inference. | Verified API kinds take precedence for positively mapped records. Never classify a bare numeric URL by ID alone. |
 | [Read API](../lib/services/catalog/catalog_query_service.dart) | Bounded summaries; full item lookup only for selected content; series/seasons/episodes queries. | Selected-entity provider identity and metadata lookup without per-card requests. |
 | [Catalog storage design](catalog-import-and-browsing-redesign.md) | Local item keys derive from stream URLs; series keys are derived from playlist/group/title. | Separate provider identifiers and metadata bindings; do not replace local identity. |
-| [Details](../lib/features/details/details_screen.dart) | Adaptive local Details, async Xtream movie enrichment/cache, and inline enriched Series overview are implemented. Live/episode activation remains Details; asynchronous item activation is guarded and deduplicated. | Direct live playback remains a separate step. |
-| [Activation facade](../lib/state/app_controller.dart) | Home, catalog and Search items all use `openDetailsById`; series/season activation pushes separate routes. | One type-aware activation command and an inline season-selection command without a route push. |
+| [Details](../lib/features/details/details_screen.dart) | Adaptive local Details, async Xtream movie enrichment/cache, and inline enriched Series overview are implemented. Movie/episode activation retains Details; Live goes directly to Player. | Further metadata providers remain gated. |
+| [Activation facade](../lib/state/app_controller.dart) | Home, catalog, Search and episode tiles share `activateItemById`, injected with existing playback through AppScope. Guarded item lookup dispatches Live to Player, other items to Details. Series uses its overview with inline season selection. | Direct episode playback remains a separate decision. |
 
 The presence of credentials or `PlaylistSourceKind.xtream` is not evidence that API authentication has succeeded. Conversely, a URL source can support Xtream metadata while continuing to import its original M3U.
 
@@ -263,6 +263,9 @@ On credential/server edits, increment connection revision, cancel old requests, 
 ## 9. Details And Interaction
 
 ### Live: Activate To Play
+
+Implemented by WP-live-activation (2026-11-26). The requirements below are the
+contract for the shared activation command; no import or metadata changes.
 
 Route: `Live catalog / Home live row / live Search result -> Player -> originating screen`.
 

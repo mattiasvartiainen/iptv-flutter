@@ -49,6 +49,14 @@ class AppScope extends InheritedWidget {
   static PlayerController playerControllerOf(BuildContext context) =>
       _scopeOf(context).playerController;
 
+  static Future<void> activateItemById(BuildContext context, String itemId) {
+    final scope = _scopeOf(context);
+    return scope.appController.activateItemById(
+      itemId,
+      playLive: scope.playerController.openPlayer,
+    );
+  }
+
   static PlaylistsController playlistsControllerOf(BuildContext context) =>
       _scopeOf(context).playlistsController;
 

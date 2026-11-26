@@ -16,7 +16,13 @@ class AppController {
   final NavigationController navigationController;
   final AppLogger logger;
   int _activationGeneration = 0;
-  ({String itemId, AppRoute route, int binding, Future<void> future})?
+  ({
+    String itemId,
+    AppRoute route,
+    int binding,
+    bool directLive,
+    Future<void> future,
+  })?
   _pendingActivation;
 
   int get catalogItemCount => catalogView.itemCount;
@@ -63,8 +69,21 @@ class AppController {
   }
 
   Future<void> openDetailsById(String itemId) {
+    return _activateById(itemId);
+  }
+
+  Future<void> activateItemById(
+    String itemId, {
+    required Future<void> Function(ContentItem) playLive,
+  }) => _activateById(itemId, playLive: playLive);
+
+  Future<void> _activateById(
+    String itemId, {
+    Future<void> Function(ContentItem)? playLive,
+  }) {
     final route = navigationController.currentRoute;
-    if (route is DetailsRoute && route.item.id == itemId) {
+    if ((route is DetailsRoute && route.item.id == itemId) ||
+        (playLive != null && route is PlayerRoute && route.item.id == itemId)) {
       return Future<void>.value();
     }
     final binding = catalogView.bindingGeneration;
@@ -72,25 +91,34 @@ class AppController {
     if (pending != null &&
         pending.itemId == itemId &&
         identical(pending.route, route) &&
-        pending.binding == binding) {
+        pending.binding == binding &&
+        pending.directLive == (playLive != null)) {
       return pending.future;
     }
     final generation = ++_activationGeneration;
-    final future = _resolveDetails(itemId, route, binding, generation);
+    final future = _resolveActivation(
+      itemId,
+      route,
+      binding,
+      generation,
+      playLive,
+    );
     _pendingActivation = (
       itemId: itemId,
       route: route,
       binding: binding,
+      directLive: playLive != null,
       future: future,
     );
     return future;
   }
 
-  Future<void> _resolveDetails(
+  Future<void> _resolveActivation(
     String itemId,
     AppRoute route,
     int binding,
     int generation,
+    Future<void> Function(ContentItem)? playLive,
   ) async {
     var routeChanged = false;
     void invalidate() {
@@ -122,7 +150,11 @@ class AppController {
         catalogView.activationFailure.value = ItemActivationFailure.notFound;
         return;
       }
-      openDetails(item);
+      if (item.type == ContentType.live && playLive != null) {
+        await playLive(item);
+      } else {
+        openDetails(item);
+      }
     } finally {
       navigationController.removeListener(invalidate);
       if (generation == _activationGeneration) _pendingActivation = null;

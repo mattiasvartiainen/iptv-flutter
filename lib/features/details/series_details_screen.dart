@@ -345,9 +345,10 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
                                   'Episode ${episode.episodeNumber ?? '-'}',
                               focusNode: index == 0 ? _firstEpisode : null,
                               icon: Icons.play_circle_outline,
-                              onActivate: () => AppScope.appControllerOf(
+                              onActivate: () => AppScope.activateItemById(
                                 context,
-                              ).openDetailsById(episode.id),
+                                episode.id,
+                              ),
                             ),
                       );
                     }, childCount: controller.episodes.items.length),

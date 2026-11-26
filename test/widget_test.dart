@@ -274,7 +274,7 @@ void main() {
     expect(appDisposed, isFalse);
   });
 
-  testWidgets('selecting a grid tile loads the full item for details', (
+  testWidgets('selecting a Live grid tile loads the full item for playback', (
     tester,
   ) async {
     final (controllers, _) = await pumpLoadedApp(tester);
@@ -285,16 +285,20 @@ void main() {
     await tester.pumpAndSettle();
 
     final route = controllers.app.navigationController.currentRoute;
-    expect(route, isA<DetailsRoute>());
-    expect((route as DetailsRoute).item.id, 'news-24');
+    expect(route, isA<PlayerRoute>());
+    expect((route as PlayerRoute).item.id, 'news-24');
     expect((route).item.streamUrl, 'https://example.invalid/live/news-24.m3u8');
+    expect(
+      controllers.app.navigationController.stack.whereType<DetailsRoute>(),
+      isEmpty,
+    );
     expect(
       find.text('https://example.invalid/live/news-24.m3u8'),
       findsNothing,
     );
   });
 
-  testWidgets('catalog scroll position is preserved after Details Back', (
+  testWidgets('Live player Back preserves catalog scroll position', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -358,8 +362,20 @@ void main() {
         .pixels;
     expect(scrollOffset, greaterThan(0));
 
-    controllers.app.openDetails(items.first);
+    final activation = controllers.app.activateItemById(
+      items.first.id,
+      playLive: controllers.player.openPlayer,
+    );
     await tester.pumpAndSettle();
+    await activation;
+    expect(
+      controllers.app.navigationController.currentRoute,
+      isA<PlayerRoute>(),
+    );
+    expect(
+      controllers.app.navigationController.stack.whereType<DetailsRoute>(),
+      isEmpty,
+    );
     controllers.app.goBack();
     await tester.pumpAndSettle();
 
@@ -440,8 +456,8 @@ void main() {
     await tester.tap(find.text('News 24'));
     await tester.pumpAndSettle();
     final route = controllers.app.navigationController.currentRoute;
-    expect(route, isA<DetailsRoute>());
-    expect((route as DetailsRoute).item.id, 'news-24');
+    expect(route, isA<PlayerRoute>());
+    expect((route as PlayerRoute).item.id, 'news-24');
   });
 
   testWidgets('search index polling stops when pending items reach zero', (

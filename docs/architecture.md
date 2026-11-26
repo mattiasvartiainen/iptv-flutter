@@ -125,13 +125,16 @@ Ownership is split, not a single god controller:
 
 Flutter widgets should be repeatable from state. A screen may own ephemeral widget state, but it should not own the application source of truth.
 
-### Planned content-selection flows (2026-11-25)
+### Content-selection flows (2026-11-26)
 
 The [Xtream and metadata plan](xtream-and-metadata-implementation-plan.md#9-details-and-interaction)
-defines the requested flows. Movie and Series details are implemented; direct
-Live activation remains planned:
+defines the requested flows. Movie and Series details and direct Live
+activation are implemented:
 
 - Live channel activation opens the existing player directly, without Details.
+  Catalog, Home and Search share a type-aware, guarded selected-item lookup.
+  Opening the Live section does not autoplay; player Back returns to the
+  originating route without adding a channel information screen.
 - Movies retain Details and Play, with immediate local data and on-demand,
   provider-first metadata through an injected provider-neutral repository.
   The selected-movie Xtream provider and scoped v14 metadata cache are implemented.

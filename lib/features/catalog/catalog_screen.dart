@@ -122,7 +122,8 @@ class _ContentGrid extends StatelessWidget {
                       subtitle: item.group,
                       icon: item.kind.icon,
                       imageUrl: item.artworkUrl ?? item.logoUrl,
-                      onActivate: () => controller.openDetailsById(item.id),
+                      onActivate: () =>
+                          AppScope.activateItemById(context, item.id),
                     ),
                   ),
                 ),
@@ -266,7 +267,6 @@ class _EpisodeGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.appControllerOf(context);
     final selectedSeries = series;
     final selectedSeason = season;
     return AppShellScaffold(
@@ -300,7 +300,8 @@ class _EpisodeGrid extends StatelessWidget {
                       'Episode ${episode.episodeNumber ?? '-'}${episode.group == null || episode.group!.isEmpty ? '' : ' · ${episode.group}'}',
                   icon: Icons.play_circle_outline,
                   imageUrl: episode.artworkUrl ?? episode.logoUrl,
-                  onActivate: () => controller.openDetailsById(episode.id),
+                  onActivate: () =>
+                      AppScope.activateItemById(context, episode.id),
                 ),
               ),
       ),

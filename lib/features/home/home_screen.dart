@@ -52,7 +52,8 @@ class HomeScreen extends StatelessWidget {
                   _ContentStrip(
                     items: c.catalogView.homeLive,
                     emptyText: 'No live channels found yet.',
-                    onTap: (item) => c.openDetailsById(item.id),
+                    onTap: (item) =>
+                        AppScope.activateItemById(context, item.id),
                     autofocusFirst: focusLive,
                   ),
                   const SizedBox(height: AppTokens.sectionGap),
@@ -66,7 +67,8 @@ class HomeScreen extends StatelessWidget {
                   _ContentStrip(
                     items: c.catalogView.homeMovies,
                     emptyText: 'No movies found yet.',
-                    onTap: (item) => c.openDetailsById(item.id),
+                    onTap: (item) =>
+                        AppScope.activateItemById(context, item.id),
                     autofocusFirst: focusMovies,
                   ),
                   const SizedBox(height: AppTokens.sectionGap),
