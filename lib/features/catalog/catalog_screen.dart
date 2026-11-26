@@ -110,7 +110,9 @@ class _ContentGrid extends StatelessWidget {
                   child: PagedGridView<CatalogItemSummary>(
                     resetScrollOnLoad: true,
                     collection: collection,
-                    emptyMessage: controller.catalogView.awaitingGroupSelection
+                    emptyMessage: controller.catalogView.favoriteGroupSelected
+                        ? 'No favourites in this section yet.'
+                        : controller.catalogView.awaitingGroupSelection
                         ? 'No automatically selected group. Choose a group to browse.'
                         : emptyText,
                     gridDelegate: _viewGrid(context, _cardGrid),
@@ -172,7 +174,9 @@ class _SeriesGrid extends StatelessWidget {
                   child: PagedGridView<SeriesSummary>(
                     resetScrollOnLoad: true,
                     collection: collection,
-                    emptyMessage: controller.catalogView.awaitingGroupSelection
+                    emptyMessage: controller.catalogView.favoriteGroupSelected
+                        ? 'No favourites in this section yet.'
+                        : controller.catalogView.awaitingGroupSelection
                         ? 'No automatically selected group. Choose a group to browse.'
                         : 'No series episodes recognized yet.',
                     gridDelegate: _viewGrid(context, _cardGrid),

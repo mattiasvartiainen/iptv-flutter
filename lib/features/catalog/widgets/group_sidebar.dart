@@ -57,12 +57,14 @@ class GroupSidebarLayout extends StatelessWidget {
                     kind: kind,
                     groups: view.browseGroups,
                     selectedGroupId: view.selectedGroupId,
+                    favoriteGroupSelected: view.favoriteGroupSelected,
                     awaitingGroupSelection: view.awaitingGroupSelection,
                     loading: view.isLoadingGroups,
                     error: view.groupsFailure,
                     totalItems:
                         collection?.total ?? seriesCollection?.total ?? 0,
                     onSelected: view.selectBrowseGroup,
+                    onFavoritesSelected: view.selectFavorites,
                     onRetry: () => unawaited(view.retryBrowseGroups()),
                   ),
                 ),
@@ -127,24 +129,33 @@ class _CompactGroupSelectorState extends State<_CompactGroupSelector> {
                   width: 420,
                   height: constraints.maxHeight * 0.6,
                   child: ListView.builder(
-                    itemCount: view.browseGroups.length + 1,
+                    itemCount: view.browseGroups.length + 2,
                     itemBuilder: (context, index) {
-                      final group = index == 0
+                      final isFavorite = index == 0;
+                      final group = index < 2
                           ? null
-                          : view.browseGroups[index - 1];
+                          : view.browseGroups[index - 2];
                       return ListTile(
                         autofocus: index == 0,
-                        selected:
-                            group?.id == view.selectedGroupId &&
-                            !view.awaitingGroupSelection,
+                        selected: isFavorite
+                            ? view.favoriteGroupSelected
+                            : !view.favoriteGroupSelected &&
+                                  group?.id == view.selectedGroupId &&
+                                  !view.awaitingGroupSelection,
                         title: Text(
-                          group?.title ?? 'All groups',
+                          isFavorite
+                              ? 'Favourites'
+                              : group?.title ?? 'All groups',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         onTap: () {
                           Navigator.of(dialogContext).pop();
-                          unawaited(view.selectBrowseGroup(group?.id));
+                          if (isFavorite) {
+                            unawaited(view.selectFavorites());
+                          } else {
+                            unawaited(view.selectBrowseGroup(group?.id));
+                          }
                         },
                       );
                     },
@@ -163,7 +174,7 @@ class _CompactGroupSelectorState extends State<_CompactGroupSelector> {
         },
         icon: const Icon(Icons.filter_list),
         label: Text(
-          'Groups: ${selected?.title ?? (view.awaitingGroupSelection ? 'Choose a group' : 'All groups')}',
+          'Groups: ${view.favoriteGroupSelected ? 'Favourites' : selected?.title ?? (view.awaitingGroupSelection ? 'Choose a group' : 'All groups')}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -177,22 +188,26 @@ class _GroupFilterMenu extends StatelessWidget {
     required this.kind,
     required this.groups,
     required this.selectedGroupId,
+    required this.favoriteGroupSelected,
     required this.awaitingGroupSelection,
     required this.loading,
     required this.error,
     required this.totalItems,
     required this.onSelected,
+    required this.onFavoritesSelected,
     required this.onRetry,
   });
 
   final CatalogGroupKind kind;
   final List<GroupSummary> groups;
   final int? selectedGroupId;
+  final bool favoriteGroupSelected;
   final bool awaitingGroupSelection;
   final bool loading;
   final CatalogFailure? error;
   final int totalItems;
   final ValueChanged<int?> onSelected;
+  final VoidCallback onFavoritesSelected;
   final VoidCallback onRetry;
 
   @override
@@ -218,13 +233,23 @@ class _GroupFilterMenu extends StatelessWidget {
                   child: ListView(
                     children: [
                       _GroupChoice(
+                        label: 'Favourites',
+                        count: favoriteGroupSelected ? totalItems : null,
+                        selected: favoriteGroupSelected,
+                        onTap: onFavoritesSelected,
+                      ),
+                      _GroupChoice(
                         label: 'All groups',
                         count:
-                            selectedGroupId == null && !awaitingGroupSelection
+                            selectedGroupId == null &&
+                                !awaitingGroupSelection &&
+                                !favoriteGroupSelected
                             ? totalItems
                             : null,
                         selected:
-                            selectedGroupId == null && !awaitingGroupSelection,
+                            selectedGroupId == null &&
+                            !awaitingGroupSelection &&
+                            !favoriteGroupSelected,
                         onTap: () => onSelected(null),
                       ),
                       for (final group in groups)

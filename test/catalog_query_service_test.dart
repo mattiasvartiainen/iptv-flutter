@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
+import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
@@ -7,6 +11,8 @@ import 'package:iptv_flutter/services/catalog/catalog_search_indexer.dart';
 import 'package:iptv_flutter/services/catalog/m3u_parser.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
+import 'package:iptv_flutter/services/catalog/user_library_repository.dart';
+import 'package:iptv_flutter/services/playback/fake_playback.dart';
 import 'package:iptv_flutter/services/storage/catalog_sort_v13_migration.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';
@@ -38,6 +44,7 @@ https://provider.test/series/user/pass/pine-s02e01.mkv
 ''';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('buildFtsPrefixQuery', () {
     test('quotes every token and appends a prefix wildcard', () {
       expect(buildFtsPrefixQuery('pine gap'), '"pine"* "gap"*');
@@ -213,6 +220,230 @@ void main() {
         policy: CatalogLoadPolicy.networkOnly,
       );
       await searchIndexer.processQueue(playlistId: playlistId);
+    });
+
+    test(
+      'favourite pages use persisted items, kind, profile and hidden groups',
+      () async {
+        final db = await adapter.database;
+        final rows = await db.query(
+          'items',
+          columns: ['item_key', 'title'],
+          where: 'playlist_id = ?',
+          whereArgs: [playlistId],
+        );
+        final keys = {
+          for (final row in rows)
+            row['title'] as String: row['item_key'] as int,
+        };
+        final library = SqliteUserLibraryRepository(databaseAdapter: adapter);
+        for (final title in [
+          'Alpha News',
+          'Beta Sports',
+          'Zebra Crossing',
+          'Pine Gap S01 E01',
+          'Pine Gap S01 E02',
+        ]) {
+          await library.setFavorite(
+            playlistId: playlistId,
+            itemKey: keys[title]!,
+            favorite: true,
+          );
+        }
+        await library.setFavorite(
+          playlistId: playlistId,
+          itemKey: keys['Gamma News']!,
+          favorite: true,
+          profileId: 'other',
+        );
+        final first = await queries.favoriteItemsPage(
+          playlistId,
+          kind: CatalogItemKind.live,
+          limit: 1,
+          sort: CatalogSort.playlistOrder,
+        );
+        final next = await queries.favoriteItemsPage(
+          playlistId,
+          kind: CatalogItemKind.live,
+          limit: 1,
+          offset: first.nextOffset,
+          sort: CatalogSort.playlistOrder,
+        );
+        expect(first.total, 2);
+        expect([...first.items, ...next.items].map((e) => e.title), [
+          'Alpha News',
+          'Beta Sports',
+        ]);
+        expect(
+          (await queries.favoriteItemsPage(
+            playlistId,
+            kind: CatalogItemKind.movie,
+          )).items.single.title,
+          'Zebra Crossing',
+        );
+        expect(
+          (await queries.favoriteSeriesPage(playlistId)).items.single.title,
+          'Pine Gap',
+        );
+        expect((await queries.favoriteSeriesPage(playlistId)).total, 1);
+        expect(
+          (await queries.favoriteItemsPage(
+            'other',
+            kind: CatalogItemKind.live,
+          )).total,
+          0,
+        );
+
+        await db.insert('hidden_groups_v8', {
+          'playlist_id': playlistId,
+          'kind': 1,
+          'group_title': 'News',
+          'profile_id': 'default',
+        });
+        expect(
+          (await queries.favoriteItemsPage(
+            playlistId,
+            kind: CatalogItemKind.live,
+          )).items.single.title,
+          'Beta Sports',
+        );
+        await library.setFavorite(
+          playlistId: playlistId,
+          itemKey: keys['Pine Gap S01 E01']!,
+          favorite: false,
+        );
+        expect((await queries.favoriteSeriesPage(playlistId)).total, 1);
+        await library.setFavorite(
+          playlistId: playlistId,
+          itemKey: keys['Pine Gap S01 E02']!,
+          favorite: false,
+        );
+        expect((await queries.favoriteSeriesPage(playlistId)).total, 0);
+      },
+    );
+
+    test(
+      'player favourite removal refreshes the selected SQLite page',
+      () async {
+        final library = SqliteUserLibraryRepository(databaseAdapter: adapter);
+        final db = await adapter.database;
+        final row = (await db.query(
+          'items',
+          columns: ['item_key'],
+          where: 'playlist_id = ? AND title = ?',
+          whereArgs: [playlistId, 'Alpha News'],
+        )).single;
+        await library.setFavorite(
+          playlistId: playlistId,
+          itemKey: row['item_key'] as int,
+          favorite: true,
+        );
+        final view = CatalogViewState();
+        final navigation = NavigationController();
+        final player = PlayerController(
+          playbackAdapter: FakePlaybackAdapter(transitionDelay: Duration.zero),
+          navigationController: navigation,
+          favorites: library,
+          onFavoriteChanged: view.favoriteChanged,
+        );
+        addTearDown(() {
+          player.dispose();
+          navigation.dispose();
+          view.dispose();
+        });
+        await view.bind(service: queries, playlistId: playlistId);
+        await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+        await view.selectFavorites();
+        final item = await queries.itemById(view.items.items.single.id);
+        await player.openPlayer(item!);
+        if (player.favoriteBusy) {
+          final loaded = Completer<void>();
+          void onLoaded() {
+            if (!player.favoriteBusy && !loaded.isCompleted) loaded.complete();
+          }
+
+          player.addListener(onLoaded);
+          await loaded.future.timeout(const Duration(seconds: 5));
+          player.removeListener(onLoaded);
+        }
+        expect(player.favorite, isTrue);
+        final refreshed = Completer<void>();
+        void listener() {
+          if (!view.items.isLoading &&
+              view.items.total == 0 &&
+              !refreshed.isCompleted) {
+            refreshed.complete();
+          }
+        }
+
+        view.items.addListener(listener);
+        await player.toggleFavorite();
+        await refreshed.future.timeout(const Duration(seconds: 5));
+        view.items.removeListener(listener);
+        expect(view.favoriteGroupSelected, isTrue);
+        expect(view.items.items, isEmpty);
+        expect(
+          await library.isFavorite(
+            playlistId: playlistId,
+            itemKey: row['item_key'] as int,
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test('favourite results page across many items and distinct series', () async {
+      const id = 'favourite-pages';
+      server.responses['/favorite-pages.m3u'] =
+          '#EXTM3U\n${List.generate(125, (i) => '#EXTINF:-1 group-title="Movies",Movie ${i.toString().padLeft(3, '0')}\nhttps://example.invalid/movie/$i.mp4\n').join()}'
+          '${List.generate(3, (show) => List.generate(2, (episode) => '#EXTINF:-1 group-title="Series",Show $show S01 E0${episode + 1}\nhttps://example.invalid/series/$show/$episode.mkv\n').join()).join()}';
+      await createCatalogSyncService(
+        adapter,
+        searchIndexer: SqliteCatalogSearchIndexer(
+          databaseAdapter: adapter,
+          autoStartWorker: false,
+        ),
+      ).load(
+        playlistId: id,
+        playlistUrl: server.url('/favorite-pages.m3u'),
+        policy: CatalogLoadPolicy.networkOnly,
+      );
+      final db = await adapter.database;
+      await db.rawInsert(
+        "INSERT INTO favorites_v8(profile_id, playlist_id, item_key, created_at) "
+        "SELECT 'default', playlist_id, item_key, 0 FROM items WHERE playlist_id = ?",
+        [id],
+      );
+      final titles = <String>[];
+      var offset = 0;
+      while (true) {
+        final page = await queries.favoriteItemsPage(
+          id,
+          kind: CatalogItemKind.movie,
+          offset: offset,
+          limit: 23,
+          sort: CatalogSort.playlistOrder,
+        );
+        expect(page.total, 125);
+        titles.addAll(page.items.map((item) => item.title));
+        if (!page.hasMore) break;
+        offset = page.nextOffset;
+      }
+      expect(titles, [
+        for (var i = 0; i < 125; i++) 'Movie ${i.toString().padLeft(3, '0')}',
+      ]);
+      final first = await queries.favoriteSeriesPage(id, limit: 2);
+      final second = await queries.favoriteSeriesPage(
+        id,
+        offset: first.nextOffset,
+        limit: 2,
+      );
+      expect(first.total, 3);
+      expect([...first.items, ...second.items].map((s) => s.title), [
+        'Show 0',
+        'Show 1',
+        'Show 2',
+      ]);
     });
 
     test(

@@ -13,13 +13,16 @@ void main() {
   late NavigationController navigation;
   late _Library library;
   late PlayerController player;
+  late List<String> changedPlaylists;
   setUp(() {
     navigation = NavigationController();
     library = _Library();
+    changedPlaylists = [];
     player = PlayerController(
       playbackAdapter: _Tracks(),
       navigationController: navigation,
       favorites: library,
+      onFavoriteChanged: changedPlaylists.add,
     );
   });
   tearDown(() {
@@ -33,10 +36,12 @@ void main() {
       await player.openPlayer(_item('row1', 'one', 42));
       await player.toggleFavorite();
       expect(library.values[('one', 42)], isTrue);
+      expect(changedPlaylists, ['one']);
       await player.openPlayer(_item('row9', 'one', 42));
       expect(player.favorite, isTrue);
       await player.toggleFavorite();
       expect(library.values[('one', 42)], isFalse);
+      expect(changedPlaylists, ['one', 'one']);
     },
   );
 
@@ -52,6 +57,7 @@ void main() {
       library.writeGate!.complete();
       await write;
       expect(library.values[('one', 42)], isTrue);
+      expect(changedPlaylists, ['one']);
       expect(player.favorite, isFalse);
       expect(player.favoriteBusy, isFalse);
       expect(library.values[('two', 43)], isNull);
@@ -76,6 +82,7 @@ void main() {
       library.failWrite = true;
       await player.toggleFavorite();
       expect(player.controlError, contains('Could not update'));
+      expect(changedPlaylists, isEmpty);
       expect(player.playbackState.value.status, PlaybackStatus.playing);
       library.failWrite = false;
       await player.toggleFavorite();

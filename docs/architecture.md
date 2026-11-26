@@ -138,6 +138,11 @@ Groups, All groups and Search remain deliberately accessible; selecting a
 group explicitly removes this automatic-only filter. If no eligible group
 exists, the user must choose one rather than implicitly seeing All groups.
 Any future automatic recent/recommendation surface must apply the same policy.
+The Favourites group is the first picker option in each section, but is not
+selected automatically. Its paged results use the current playlist, profile,
+hidden-group rules and section sort. A series appears once when at least one
+of its episodes is a favourite. As an explicit choice, Favourites may include
+marked content; changing a favourite in the player refreshes the selected list.
 The compact selector and wide sidebar retain access to All groups and other
 groups. Item sort preferences remain separate from group ordering. Home shows
 the selected group name; its Live preview follows playlist item order, while

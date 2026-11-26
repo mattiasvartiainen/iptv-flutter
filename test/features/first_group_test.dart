@@ -144,7 +144,9 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
     final otherGroup = find.text('Alpha Live');
     expect(otherGroup, findsOneWidget);
-    expect(Focus.of(tester.element(find.text('All groups'))).hasFocus, isTrue);
+    expect(Focus.of(tester.element(find.text('Favourites'))).hasFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -165,5 +167,58 @@ void main() {
     expect(find.text('Welcome channel'), findsOneWidget);
     expect(harness.controllers.app.catalogView.selectedGroupId, isNull);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Favourites is first in wide and compact group pickers', (
+    tester,
+  ) async {
+    final items = const M3uParser().parse(firstGroupsPlaylistText);
+    final ids = {items.firstWhere((item) => item.title == 'A channel').id};
+    final service = InMemoryCatalogQueryService(
+      'test-fixture-playlist',
+      items,
+      favoriteItemIds: ids,
+    );
+    final harness = await pumpIptvApp(
+      tester,
+      catalogQueryService: service,
+      size: const Size(1440, 900),
+    );
+    harness.controllers.app.openLiveTv();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('Favourites')).dy,
+      lessThan(tester.getTopLeft(find.text('All groups')).dy),
+    );
+    await tester.tap(find.widgetWithText(ListTile, 'Favourites'));
+    await tester.pumpAndSettle();
+    expect(find.text('A channel'), findsOneWidget);
+    expect(find.text('Welcome channel'), findsNothing);
+    expect(harness.controllers.app.catalogView.favoriteGroupSelected, isTrue);
+    harness.controllers.app.openMovies();
+    await tester.pumpAndSettle();
+    expect(find.text('Z movie'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ListTile, 'Favourites'));
+    await tester.pumpAndSettle();
+    expect(find.text('No favourites in this section yet.'), findsOneWidget);
+
+    tester.view.physicalSize = const Size(360, 800);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Groups: Favourites'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('Favourites')).dy,
+      lessThan(tester.getTopLeft(find.text('All groups')).dy),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Groups: Favourites'), findsOneWidget);
+    await tester.tap(find.text('Groups: Favourites'));
+    await tester.pumpAndSettle();
+    expect(Focus.of(tester.element(find.text('Favourites'))).hasFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('Groups: Favourites'), findsOneWidget);
+    expect(find.text('No favourites in this section yet.'), findsOneWidget);
   });
 }

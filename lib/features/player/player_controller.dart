@@ -19,6 +19,7 @@ class PlayerController extends ChangeNotifier {
     required this.navigationController,
     AppLogger logger = const DebugAppLogger(),
     this.favorites,
+    this.onFavoriteChanged,
   }) : playbackAdapter = PlaybackSession(playbackAdapter, logger: logger),
        _logger = logger,
        _playbackState = ValueNotifier<PlaybackState>(playbackAdapter.state) {
@@ -46,6 +47,7 @@ class PlayerController extends ChangeNotifier {
   final NavigationController navigationController;
   final AppLogger _logger;
   final FavoriteRepository? favorites;
+  final void Function(String playlistId)? onFavoriteChanged;
   bool? _favorite;
   bool _favoriteBusy = false;
   bool _favoriteLoading = false;
@@ -229,6 +231,7 @@ class PlayerController extends ChangeNotifier {
         itemKey: item.catalogItemKey!,
         favorite: !current,
       );
+      onFavoriteChanged?.call(item.catalogPlaylistId!);
       if (!_disposed && generation == _playbackLoadGeneration) {
         _favorite = !current;
       }

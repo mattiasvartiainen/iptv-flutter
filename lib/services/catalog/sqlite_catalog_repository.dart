@@ -106,6 +106,34 @@ class SqliteCatalogRepository
       queries.queryItems(query);
 
   @override
+  Future<CatalogPage<CatalogItemSummary>> favoriteItemsPage(
+    String playlistId, {
+    required CatalogItemKind kind,
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) => queries.favoriteItemsPage(
+    playlistId,
+    kind: kind,
+    offset: offset,
+    limit: limit,
+    sort: sort,
+  );
+
+  @override
+  Future<CatalogPage<SeriesSummary>> favoriteSeriesPage(
+    String playlistId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) => queries.favoriteSeriesPage(
+    playlistId,
+    offset: offset,
+    limit: limit,
+    sort: sort,
+  );
+
+  @override
   Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId) =>
       queries.searchIndexStatus(playlistId);
 

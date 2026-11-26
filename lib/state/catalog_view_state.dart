@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/content_item.dart';
@@ -72,6 +74,11 @@ class PagedCollection<T> extends ChangeNotifier {
       return Future<void>.value();
     }
     return _items.isEmpty ? load(fetcher) : loadMore();
+  }
+
+  Future<void> refresh() {
+    final fetcher = _fetcher;
+    return fetcher == null ? Future<void>.value() : load(fetcher);
   }
 
   void clear() {
@@ -173,6 +180,7 @@ class CatalogViewState extends ChangeNotifier {
   int _bindingGeneration = 0;
   bool _selectFirstGroupOnRetry = false;
   bool _automaticGroup = false;
+  bool favoriteGroupSelected = false;
   final Map<CatalogGroupKind, CatalogSort> _sorts = {};
   final Map<CatalogGroupKind, CatalogFailure> _sortFailures = {};
   bool isSavingSort = false;
@@ -216,6 +224,7 @@ class CatalogViewState extends ChangeNotifier {
     selectedGroupId = null;
     _selectFirstGroupOnRetry = false;
     _automaticGroup = false;
+    favoriteGroupSelected = false;
     groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
@@ -261,6 +270,7 @@ class CatalogViewState extends ChangeNotifier {
     selectedGroupId = null;
     _selectFirstGroupOnRetry = false;
     _automaticGroup = false;
+    favoriteGroupSelected = false;
     groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
@@ -425,6 +435,7 @@ class CatalogViewState extends ChangeNotifier {
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     if (kindChanged) browseGroups = const [];
+    if (kindChanged || selectFirstGroup) favoriteGroupSelected = false;
     if (kindChanged && !selectFirstGroup) _automaticGroup = false;
     selectedGroupId = kindChanged ? null : groupId;
     if (selectFirstGroup) items.clear();
@@ -442,8 +453,17 @@ class CatalogViewState extends ChangeNotifier {
     }
     final selectedGroup = selectedGroupId;
     final automatic = _automaticGroup;
+    final favorites = favoriteGroupSelected;
     await items.load(
-      (offset, limit) => selectedGroup == null
+      (offset, limit) => favorites
+          ? service.favoriteItemsPage(
+              playlistId,
+              kind: kind,
+              offset: offset,
+              limit: limit,
+              sort: sort,
+            )
+          : selectedGroup == null
           ? automatic
                 ? Future.value(
                     CatalogPage<CatalogItemSummary>(
@@ -548,6 +568,7 @@ class CatalogViewState extends ChangeNotifier {
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     if (kindChanged) browseGroups = const [];
+    if (kindChanged || selectFirstGroup) favoriteGroupSelected = false;
     if (kindChanged && !selectFirstGroup) _automaticGroup = false;
     selectedGroupId = kindChanged ? null : groupId;
     if (selectFirstGroup) series.clear();
@@ -565,8 +586,16 @@ class CatalogViewState extends ChangeNotifier {
     }
     final selectedGroup = selectedGroupId;
     final automatic = _automaticGroup;
+    final favorites = favoriteGroupSelected;
     await series.load(
-      (offset, limit) => selectedGroup == null
+      (offset, limit) => favorites
+          ? service.favoriteSeriesPage(
+              playlistId,
+              offset: offset,
+              limit: limit,
+              sort: sort,
+            )
+          : selectedGroup == null
           ? automatic
                 ? Future.value(
                     CatalogPage<SeriesSummary>(
@@ -595,7 +624,13 @@ class CatalogViewState extends ChangeNotifier {
   Future<void> selectBrowseGroup(int? groupId) async {
     final kind = browseGroupKind;
     if (kind == null) return;
+    if (kind == CatalogGroupKind.series) {
+      series.clear();
+    } else {
+      items.clear();
+    }
     _automaticGroup = false;
+    favoriteGroupSelected = false;
     selectedGroupId = groupId;
     _notify();
     switch (kind) {
@@ -605,6 +640,46 @@ class CatalogViewState extends ChangeNotifier {
         await showItems(CatalogItemKind.movie, groupId: groupId);
       case CatalogGroupKind.series:
         await showSeries(groupId: groupId);
+    }
+  }
+
+  Future<void> selectFavorites() async {
+    final kind = browseGroupKind;
+    if (kind == null) return;
+    if (kind == CatalogGroupKind.series) {
+      series.clear();
+    } else {
+      items.clear();
+    }
+    _automaticGroup = false;
+    favoriteGroupSelected = true;
+    selectedGroupId = null;
+    _notify();
+    switch (kind) {
+      case CatalogGroupKind.live:
+        await showItems(CatalogItemKind.live);
+      case CatalogGroupKind.movie:
+        await showItems(CatalogItemKind.movie);
+      case CatalogGroupKind.series:
+        await showSeries();
+    }
+  }
+
+  void favoriteChanged(String playlistId) {
+    if (_disposed ||
+        _playlistId != playlistId ||
+        !favoriteGroupSelected ||
+        isLoadingGroups) {
+      return;
+    }
+    switch (browseGroupKind) {
+      case CatalogGroupKind.live:
+      case CatalogGroupKind.movie:
+        unawaited(items.refresh());
+      case CatalogGroupKind.series:
+        unawaited(series.refresh());
+      case null:
+        break;
     }
   }
 

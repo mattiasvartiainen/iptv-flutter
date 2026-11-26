@@ -9,6 +9,21 @@ abstract interface class CatalogQueryService {
   /// Applies kind/group/search filters and returns a single page.
   Future<CatalogPage<CatalogItemSummary>> queryItems(CatalogQuery query);
 
+  Future<CatalogPage<CatalogItemSummary>> favoriteItemsPage(
+    String playlistId, {
+    required CatalogItemKind kind,
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  });
+
+  Future<CatalogPage<SeriesSummary>> favoriteSeriesPage(
+    String playlistId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  });
+
   Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId);
 
   Future<List<GroupSummary>> queryGroups(
@@ -86,11 +101,16 @@ String? buildFtsPrefixQuery(String term) {
 /// List-backed implementation for fixtures and tests. Series structure is
 /// derived once up front rather than on every query.
 class InMemoryCatalogQueryService implements CatalogQueryService {
-  InMemoryCatalogQueryService(this.playlistId, List<ContentItem> items) {
+  InMemoryCatalogQueryService(
+    this.playlistId,
+    List<ContentItem> items, {
+    Set<String>? favoriteItemIds,
+  }) : _favoriteItemIds = favoriteItemIds ?? <String>{} {
     _index(items);
   }
 
   final String playlistId;
+  final Set<String> _favoriteItemIds;
 
   final Map<String, ContentItem> _itemsById = {};
   final Map<String, CatalogItemKind> _kindById = {};
@@ -222,6 +242,52 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
 
     _sort(matches, query.sort);
     return _paginate(matches, offset: query.offset, limit: query.limit);
+  }
+
+  @override
+  Future<CatalogPage<CatalogItemSummary>> favoriteItemsPage(
+    String playlistId, {
+    required CatalogItemKind kind,
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) async {
+    if (playlistId != this.playlistId) return const CatalogPage.empty();
+    final matches = _summaries
+        .where(
+          (item) => item.kind == kind && _favoriteItemIds.contains(item.id),
+        )
+        .toList();
+    _sort(matches, sort);
+    return _paginate(matches, offset: offset, limit: limit);
+  }
+
+  @override
+  Future<CatalogPage<SeriesSummary>> favoriteSeriesPage(
+    String playlistId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) async {
+    if (playlistId != this.playlistId) return const CatalogPage.empty();
+    final ids = <String>{};
+    for (final entry in _seasonsBySeries.entries) {
+      if (entry.value.any(
+        (season) => _episodesBySeason[season.id]!.any(
+          (episode) => _favoriteItemIds.contains(episode.id),
+        ),
+      )) {
+        ids.add(entry.key);
+      }
+    }
+    final matches = _seriesById.values.where((s) => ids.contains(s.id)).toList()
+      ..sort((a, b) {
+        final order = sort == CatalogSort.title
+            ? a.sortTitle.compareTo(b.sortTitle)
+            : _seriesOrdinals[a.id]!.compareTo(_seriesOrdinals[b.id]!);
+        return order != 0 ? order : a.id.compareTo(b.id);
+      });
+    return _paginate(matches, offset: offset, limit: limit);
   }
 
   @override

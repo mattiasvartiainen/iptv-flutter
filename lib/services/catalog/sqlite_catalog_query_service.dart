@@ -32,6 +32,46 @@ class SqliteCatalogQueryService implements CatalogQueryService {
       });
 
   @override
+  Future<CatalogPage<CatalogItemSummary>> favoriteItemsPage(
+    String playlistId, {
+    required CatalogItemKind kind,
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) => telemetry.measure('db.query.favorite_items', () async {
+    final db = await _databaseAdapter.database;
+    return _queryItems(
+      db,
+      CatalogQuery(
+        playlistId: playlistId,
+        kinds: [kind],
+        offset: offset,
+        limit: limit,
+        sort: sort,
+      ),
+      favoritesOnly: true,
+    );
+  });
+
+  @override
+  Future<CatalogPage<SeriesSummary>> favoriteSeriesPage(
+    String playlistId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+    CatalogSort sort = CatalogSort.title,
+  }) => telemetry.measure('db.query.favorite_series', () async {
+    final db = await _databaseAdapter.database;
+    return _querySeries(
+      db,
+      playlistId,
+      offset: offset,
+      limit: limit,
+      sort: sort,
+      favoritesOnly: true,
+    );
+  });
+
+  @override
   Future<CatalogSearchIndexStatus> searchIndexStatus(String playlistId) =>
       telemetry.measure(
         'db.query.search_index_status',
@@ -318,8 +358,9 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
 
   Future<CatalogPage<CatalogItemSummary>> _queryItems(
     DatabaseExecutor db,
-    CatalogQuery query,
-  ) async {
+    CatalogQuery query, {
+    bool favoritesOnly = false,
+  }) async {
     final fts = query.hasSearchTerm
         ? buildFtsPrefixQuery(query.searchTerm!)
         : null;
@@ -339,6 +380,9 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
       )''',
     ];
     final args = <Object?>[query.playlistId];
+    if (favoritesOnly) {
+      clauses.add("f.profile_id = 'default'");
+    }
     if (fts != null) {
       clauses.add('items_fts MATCH ?');
       args.add(fts);
@@ -365,7 +409,10 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
         _excludesMarkers('m.title', AutomaticContentPolicy.titleMarkers, args),
       );
     }
-    final from = fts == null
+    final from = favoritesOnly
+        ? 'favorites_v8 f JOIN items m ON m.playlist_id = f.playlist_id '
+              'AND m.item_key = f.item_key JOIN groups g ON g.id = m.group_id'
+        : fts == null
         ? 'items m JOIN groups g ON g.id = m.group_id'
         : 'items_fts JOIN items m ON m.id = items_fts.rowid '
               'JOIN groups g ON g.id = m.group_id';
@@ -405,6 +452,7 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
     int? groupId,
     CatalogSort sort = CatalogSort.title,
     bool excludeMarkedAdult = false,
+    bool favoritesOnly = false,
   }) async {
     final clauses = <String>[
       's.playlist_id = ?',
@@ -415,6 +463,15 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
       )''',
     ];
     final args = <Object?>[playlistId];
+    if (favoritesOnly) {
+      clauses.add('''s.series_key IN (
+        SELECT i.series_key FROM favorites_v8 f JOIN items i
+          ON f.playlist_id = i.playlist_id AND f.item_key = i.item_key
+        WHERE f.playlist_id = ? AND f.profile_id = 'default'
+          AND i.series_key IS NOT NULL
+      )''');
+      args.add(playlistId);
+    }
     if (groupId != null) {
       clauses.add('s.group_id = ?');
       args.add(groupId);

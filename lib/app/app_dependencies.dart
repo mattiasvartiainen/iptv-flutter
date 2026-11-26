@@ -138,6 +138,7 @@ class AppDependencies {
     );
     final playerController = PlayerController(
       favorites: SqliteUserLibraryRepository(databaseAdapter: databaseAdapter),
+      onFavoriteChanged: catalogView.favoriteChanged,
       playbackAdapter: playbackAdapter,
       navigationController: navigationController,
       logger: logger,
