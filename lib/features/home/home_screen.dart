@@ -52,7 +52,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   _ContentStrip(
                     items: c.catalogView.homeLive,
-                    emptyText: 'No live channels found yet.',
+                    emptyText: 'No live channels to preview.',
                     onTap: (item) =>
                         AppScope.activateItemById(context, item.id),
                     autofocusFirst: focusLive,
@@ -68,7 +68,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   _ContentStrip(
                     items: c.catalogView.homeMovies,
-                    emptyText: 'No movies found yet.',
+                    emptyText: 'No movies to preview.',
                     onTap: (item) =>
                         AppScope.activateItemById(context, item.id),
                     autofocusFirst: focusMovies,
@@ -223,7 +223,7 @@ class _SeriesStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = AppScope.appControllerOf(context);
     if (series.isEmpty) {
-      return const _EmptyTile(text: 'No series episodes recognized yet.');
+      return const _EmptyTile(text: 'No series to preview.');
     }
 
     if (AppScope.preferencesControllerOf(context).useListView) {

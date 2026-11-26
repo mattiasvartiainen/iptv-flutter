@@ -1,4 +1,5 @@
 import '../../models/content_item.dart';
+import 'automatic_content_policy.dart';
 import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
 
@@ -22,6 +23,7 @@ abstract interface class CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   });
 
   Future<CatalogPage<SeriesSummary>> seriesInGroup(
@@ -31,6 +33,7 @@ abstract interface class CatalogQueryService {
     int limit = kCatalogPageSize,
     String? searchTerm,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   });
 
   /// Small unpaged slice used by the home rows.
@@ -96,6 +99,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
   final List<CatalogItemSummary> _summaries = [];
   final Map<String, SeriesSummary> _seriesById = {};
   final Map<String, int> _seriesOrdinals = {};
+  final Set<String> _adultSeries = {};
   final Map<String, List<SeasonSummary>> _seasonsBySeries = {};
   final Map<String, List<CatalogItemSummary>> _episodesBySeason = {};
 
@@ -142,6 +146,9 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
       if (!isEpisode) continue;
 
       final seriesId = 'series|$playlistId|${match.seriesTitle}';
+      if (AutomaticContentPolicy.excludesTitle(item.title)) {
+        _adultSeries.add(seriesId);
+      }
       final previousOrdinal = _seriesOrdinals[seriesId];
       if (previousOrdinal == null || item.sourceIndex < previousOrdinal) {
         _seriesOrdinals[seriesId] = item.sourceIndex;
@@ -202,6 +209,11 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
       if (query.groupId != null && summary.groupId != query.groupId) {
         return false;
       }
+      if (query.excludeMarkedAdult &&
+          (AutomaticContentPolicy.excludesGroup(summary.group ?? '') ||
+              AutomaticContentPolicy.excludesTitle(summary.title))) {
+        return false;
+      }
       if (term != null && term.isNotEmpty) {
         return summary.sortTitle.contains(term);
       }
@@ -240,6 +252,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     String? searchTerm,
     int? groupId,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) async {
     if (playlistId != this.playlistId) return const CatalogPage.empty();
 
@@ -253,6 +266,15 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
                   series.sortTitle.contains(term),
             )
             .where((series) => groupId == null || series.groupId == groupId)
+            .where(
+              (series) =>
+                  !excludeMarkedAdult ||
+                  (!_adultSeries.contains(series.id) &&
+                      !AutomaticContentPolicy.excludesTitle(series.title) &&
+                      !AutomaticContentPolicy.excludesGroup(
+                        _groupById[series.groupId]?.$2 ?? '',
+                      )),
+            )
             .toList()
           ..sort((a, b) {
             final order = sort == CatalogSort.title
@@ -344,6 +366,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     int offset = 0,
     int limit = kCatalogPageSize,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) => queryItems(
     CatalogQuery(
       playlistId: playlistId,
@@ -351,6 +374,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
       offset: offset,
       limit: limit,
       sort: sort,
+      excludeMarkedAdult: excludeMarkedAdult,
     ),
   );
 
@@ -362,6 +386,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     int limit = kCatalogPageSize,
     String? searchTerm,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) => querySeries(
     playlistId,
     offset: offset,
@@ -369,6 +394,7 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
     searchTerm: searchTerm,
     groupId: groupId,
     sort: sort,
+    excludeMarkedAdult: excludeMarkedAdult,
   );
 
   @override

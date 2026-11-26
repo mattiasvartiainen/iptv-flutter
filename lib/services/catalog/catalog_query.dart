@@ -263,6 +263,7 @@ class CatalogQuery {
     this.offset = 0,
     this.limit = kCatalogPageSize,
     this.sort = CatalogSort.title,
+    this.excludeMarkedAdult = false,
   }) : assert(limit > 0, 'limit must be positive'),
        assert(offset >= 0, 'offset must not be negative');
 
@@ -276,6 +277,7 @@ class CatalogQuery {
   final int offset;
   final int limit;
   final CatalogSort sort;
+  final bool excludeMarkedAdult;
 
   bool get hasSearchTerm => (searchTerm?.trim().isNotEmpty) ?? false;
 
@@ -293,6 +295,7 @@ class CatalogQuery {
     int? offset,
     int? limit,
     CatalogSort? sort,
+    bool? excludeMarkedAdult,
   }) => CatalogQuery(
     playlistId: playlistId ?? this.playlistId,
     kinds: kinds ?? this.kinds,
@@ -304,12 +307,13 @@ class CatalogQuery {
     offset: offset ?? this.offset,
     limit: limit ?? this.limit,
     sort: sort ?? this.sort,
+    excludeMarkedAdult: excludeMarkedAdult ?? this.excludeMarkedAdult,
   );
 
   /// Identity of the result set, ignoring paging position.
   String get resultSetKey =>
       '$playlistId|${kinds.map((k) => k.name).join(",")}|'
-      '${group ?? ""}|${groupId ?? ""}|${searchTerm?.trim() ?? ""}|${sort.name}';
+      '${group ?? ""}|${groupId ?? ""}|${searchTerm?.trim() ?? ""}|${sort.name}|$excludeMarkedAdult';
 
   @override
   bool operator ==(Object other) =>

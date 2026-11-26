@@ -123,12 +123,14 @@ class SqliteCatalogRepository
     int offset = 0,
     int limit = kCatalogPageSize,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) => queries.itemsInGroup(
     playlistId,
     groupId,
     offset: offset,
     limit: limit,
     sort: sort,
+    excludeMarkedAdult: excludeMarkedAdult,
   );
 
   @override
@@ -139,6 +141,7 @@ class SqliteCatalogRepository
     int limit = kCatalogPageSize,
     String? searchTerm,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) => queries.seriesInGroup(
     playlistId,
     groupId,
@@ -146,6 +149,7 @@ class SqliteCatalogRepository
     limit: limit,
     searchTerm: searchTerm,
     sort: sort,
+    excludeMarkedAdult: excludeMarkedAdult,
   );
 
   @override

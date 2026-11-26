@@ -51,6 +51,17 @@ void main() {
       expect(filtered.resultSetKey, isNot(base.resultSetKey));
     });
 
+    test(
+      'automatic content filter participates in query identity and paging',
+      () {
+        final filtered = base.copyWith(excludeMarkedAdult: true);
+        expect(filtered.resultSetKey, isNot(base.resultSetKey));
+        expect(filtered.nextPage().excludeMarkedAdult, isTrue);
+        expect(filtered.nextPage().reset().excludeMarkedAdult, isTrue);
+        expect(filtered.copyWith(excludeMarkedAdult: false), base);
+      },
+    );
+
     test('copyWith can clear nullable filters', () {
       final filtered = base.copyWith(group: 'Sports', searchTerm: 'news');
       final cleared = filtered.copyWith(group: null, searchTerm: null);

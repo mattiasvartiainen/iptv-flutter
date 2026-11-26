@@ -57,6 +57,7 @@ class GroupSidebarLayout extends StatelessWidget {
                     kind: kind,
                     groups: view.browseGroups,
                     selectedGroupId: view.selectedGroupId,
+                    awaitingGroupSelection: view.awaitingGroupSelection,
                     loading: view.isLoadingGroups,
                     error: view.groupsFailure,
                     totalItems:
@@ -133,7 +134,9 @@ class _CompactGroupSelectorState extends State<_CompactGroupSelector> {
                           : view.browseGroups[index - 1];
                       return ListTile(
                         autofocus: index == 0,
-                        selected: group?.id == view.selectedGroupId,
+                        selected:
+                            group?.id == view.selectedGroupId &&
+                            !view.awaitingGroupSelection,
                         title: Text(
                           group?.title ?? 'All groups',
                           maxLines: 1,
@@ -160,7 +163,7 @@ class _CompactGroupSelectorState extends State<_CompactGroupSelector> {
         },
         icon: const Icon(Icons.filter_list),
         label: Text(
-          'Groups: ${selected?.title ?? 'All groups'}',
+          'Groups: ${selected?.title ?? (view.awaitingGroupSelection ? 'Choose a group' : 'All groups')}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -174,6 +177,7 @@ class _GroupFilterMenu extends StatelessWidget {
     required this.kind,
     required this.groups,
     required this.selectedGroupId,
+    required this.awaitingGroupSelection,
     required this.loading,
     required this.error,
     required this.totalItems,
@@ -184,6 +188,7 @@ class _GroupFilterMenu extends StatelessWidget {
   final CatalogGroupKind kind;
   final List<GroupSummary> groups;
   final int? selectedGroupId;
+  final bool awaitingGroupSelection;
   final bool loading;
   final CatalogFailure? error;
   final int totalItems;
@@ -214,8 +219,12 @@ class _GroupFilterMenu extends StatelessWidget {
                     children: [
                       _GroupChoice(
                         label: 'All groups',
-                        count: selectedGroupId == null ? totalItems : null,
-                        selected: selectedGroupId == null,
+                        count:
+                            selectedGroupId == null && !awaitingGroupSelection
+                            ? totalItems
+                            : null,
+                        selected:
+                            selectedGroupId == null && !awaitingGroupSelection,
                         onTap: () => onSelected(null),
                       ),
                       for (final group in groups)

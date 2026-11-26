@@ -152,6 +152,15 @@ Details -> Player. Opening the Live section does not autoplay. Existing player
 controls/Back, lookup cancellation and paged browsing remain unchanged; no
 metadata/API request is needed to start a channel.
 
+### Automatic adult-label exclusion (2026-11-26)
+
+The user chose automatic-only filtering: skip adult-labeled groups and
+explicitly marked items on Home and initial catalog views; keep explicit group
+selection, All and Search available. Future automatic Recently Viewed lists
+must use the same policy. This is a conservative label heuristic, not a
+complete content classifier or PIN-based parental lock. It does not modify
+imported data, hide groups globally, or process playlist URLs.
+
 ### Series overview and enrichment (2026-11-25)
 The follow-up "now enrich series" approves WP-XM-series's selected-show Xtream
 metadata and local inline overview. Exact category/title candidates are only

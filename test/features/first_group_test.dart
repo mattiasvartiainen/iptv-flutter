@@ -8,6 +8,69 @@ import '../support/app_harness.dart';
 import '../support/catalog_fixtures.dart';
 
 void main() {
+  testWidgets(
+    'automatic sections hide markers until an explicit group choice',
+    (tester) async {
+      final service = InMemoryCatalogQueryService(
+        'test-fixture-playlist',
+        const M3uParser().parse(adultLabelsPlaylistText),
+      );
+      final harness = await pumpIptvApp(
+        tester,
+        catalogQueryService: service,
+        size: const Size(1440, 900),
+      );
+      expect(find.text('Restricted film [XXX]'), findsNothing);
+      expect(find.text('Marked film [xXx]'), findsNothing);
+      expect(find.text('Ordinary channel'), findsOneWidget);
+      harness.controllers.app.openMovies();
+      await tester.pumpAndSettle();
+      expect(find.text('Ordinary film'), findsOneWidget);
+      expect(find.text('Marked film [xXx]'), findsNothing);
+      await tester.tap(find.widgetWithText(ListTile, 'Family Movies'));
+      await tester.pumpAndSettle();
+      expect(find.text('Marked film [xXx]'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'Adults (VOD)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Restricted film [XXX]'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('adult-only automatic view offers deliberate group selection', (
+    tester,
+  ) async {
+    final onlyAdult = const M3uParser()
+        .parse(adultLabelsPlaylistText)
+        .where(
+          (item) => item.group.contains('Adults') || item.group.contains('XXX'),
+        )
+        .toList();
+    final service = InMemoryCatalogQueryService(
+      'test-fixture-playlist',
+      onlyAdult,
+    );
+    final harness = await pumpIptvApp(
+      tester,
+      catalogQueryService: service,
+      size: const Size(360, 800),
+    );
+    expect(find.text('Restricted channel'), findsNothing);
+    harness.controllers.app.openLiveTv();
+    await tester.pumpAndSettle();
+    expect(find.text('Restricted channel'), findsNothing);
+    expect(
+      find.text('No automatically selected group. Choose a group to browse.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Groups: Choose a group'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All groups'));
+    await tester.pumpAndSettle();
+    expect(find.text('Restricted channel'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Home previews and section entry follow playlist group order', (
     tester,
   ) async {

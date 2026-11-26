@@ -216,6 +216,146 @@ void main() {
     });
 
     test(
+      'automatic filtering keeps SQLite paging totals and offsets correct',
+      () async {
+        const id = 'adult-paging';
+        server.responses['/adult-paging.m3u'] =
+            '#EXTM3U\n${List.generate(135, (index) {
+              final marker = index % 4 == 0 ? ' [XXX]' : '';
+              return '#EXTINF:-1 group-title="Movies",Movie $index$marker\n'
+                  'https://example.invalid/movie/$index.mp4\n';
+            }).join()}';
+        await createCatalogSyncService(
+          adapter,
+          searchIndexer: SqliteCatalogSearchIndexer(
+            databaseAdapter: adapter,
+            autoStartWorker: false,
+          ),
+        ).load(
+          playlistId: id,
+          playlistUrl: server.url('/adult-paging.m3u'),
+          policy: CatalogLoadPolicy.networkOnly,
+        );
+        final group = (await queries.queryGroups(
+          id,
+          kind: CatalogGroupKind.movie,
+        )).single;
+        final titles = <String>[];
+        var offset = 0;
+        while (true) {
+          final page = await queries.itemsInGroup(
+            id,
+            group.id,
+            sort: CatalogSort.playlistOrder,
+            excludeMarkedAdult: true,
+            offset: offset,
+            limit: 17,
+          );
+          expect(page.total, 101);
+          titles.addAll(page.items.map((item) => item.title));
+          if (!page.hasMore) break;
+          offset = page.nextOffset;
+        }
+        expect(titles, [
+          for (var index = 0; index < 135; index++)
+            if (index % 4 != 0) 'Movie $index',
+        ]);
+        expect((await queries.itemsInGroup(id, group.id)).total, 135);
+      },
+    );
+
+    test(
+      'automatic views filter marked groups and items across pages',
+      () async {
+        const id = 'adult-labels';
+        server.responses['/adult-labels.m3u'] = adultLabelsPlaylistText;
+        await createCatalogSyncService(
+          adapter,
+          searchIndexer: SqliteCatalogSearchIndexer(
+            databaseAdapter: adapter,
+            autoStartWorker: false,
+          ),
+        ).load(
+          playlistId: id,
+          playlistUrl: server.url('/adult-labels.m3u'),
+          policy: CatalogLoadPolicy.networkOnly,
+        );
+        final view = CatalogViewState();
+        addTearDown(view.dispose);
+        await view.bind(service: queries, playlistId: id);
+        expect(view.homeLiveGroup?.title, 'Sweden');
+        expect(view.homeMoviesGroup?.title, 'Family Movies');
+        expect(view.homeSeriesGroup?.title, 'Family Series');
+        expect(view.homeLive.map((item) => item.title), ['Ordinary channel']);
+        expect(view.homeMovies.map((item) => item.title), [
+          'Another film',
+          'Ordinary film',
+        ]);
+        expect(view.homeSeries.map((item) => item.title), ['Ordinary Show']);
+        final db = await adapter.database;
+        final plan = await db.rawQuery(
+          '''
+EXPLAIN QUERY PLAN SELECT s.series_key FROM series_v8 s
+WHERE s.group_id = ? AND NOT EXISTS (
+  SELECT 1 FROM items i WHERE i.series_key = s.series_key
+    AND instr(lower(i.title), ?) > 0
+)
+''',
+          [view.homeSeriesGroup!.id, '[xxx]'],
+        );
+        expect(
+          plan.map((row) => row['detail'].toString()).join(' '),
+          contains('idx_items_series_episode'),
+        );
+        final movieGroup = view.homeMoviesGroup!;
+        final first = await queries.itemsInGroup(
+          id,
+          movieGroup.id,
+          sort: CatalogSort.playlistOrder,
+          excludeMarkedAdult: true,
+          limit: 1,
+        );
+        final next = await queries.itemsInGroup(
+          id,
+          movieGroup.id,
+          sort: CatalogSort.playlistOrder,
+          excludeMarkedAdult: true,
+          limit: 1,
+          offset: first.nextOffset,
+        );
+        expect(first.total, 2);
+        expect([...first.items, ...next.items].map((e) => e.title), [
+          'Ordinary film',
+          'Another film',
+        ]);
+        await view.showItems(CatalogItemKind.movie, selectFirstGroup: true);
+        await view.setCatalogSort(
+          CatalogGroupKind.movie,
+          CatalogSort.playlistOrder,
+        );
+        expect(view.items.items.map((e) => e.title), [
+          'Ordinary film',
+          'Another film',
+        ]);
+        await view.selectBrowseGroup(view.selectedGroupId);
+        expect(view.items.total, 3);
+        await view.selectBrowseGroup(null);
+        expect(view.items.total, 4);
+        final indexer = SqliteCatalogSearchIndexer(
+          databaseAdapter: adapter,
+          autoStartWorker: false,
+        );
+        await indexer.processQueue(playlistId: id);
+        await view.search('Marked film');
+        expect(view.searchResults.items.single.title, 'Marked film [xXx]');
+        await view.showSeries(selectFirstGroup: true);
+        expect(view.series.items.single.title, 'Ordinary Show');
+        await view.selectBrowseGroup(view.selectedGroupId);
+        expect(view.series.total, 2);
+      },
+    );
+
+    test(
       'Home and browse follow first visible group after refresh reorders it',
       () async {
         const id = 'first-groups';

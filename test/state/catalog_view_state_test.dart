@@ -491,6 +491,7 @@ class _GatedSeriesPageService extends InMemoryCatalogQueryService {
     String? searchTerm,
     int? groupId,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) async {
     final page = await super.querySeries(
       playlistId,
@@ -499,6 +500,7 @@ class _GatedSeriesPageService extends InMemoryCatalogQueryService {
       searchTerm: searchTerm,
       groupId: groupId,
       sort: sort,
+      excludeMarkedAdult: excludeMarkedAdult,
     );
     if (offset > 0 && sort == CatalogSort.title) {
       oldPage = page;

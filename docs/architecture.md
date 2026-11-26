@@ -129,6 +129,15 @@ Flutter widgets should be repeatable from state. A screen may own ephemeral widg
 
 Home previews and initial Live, Movies and Series catalog views use the first
 visible group for that kind in playlist order, not alphabetical group order.
+Automatic selection skips groups containing `adult`, `xxx`, `18+` or `porn`
+(case-insensitive), and automatic item/series pages exclude titles with
+`[xxx]`, `(xxx)`, `[adult]`, `(adult)`, `[18+]` or `(18+)`. Marked
+episode titles also exclude their series from automatic lists. Detection is
+label-based and incomplete, not a parental-control or security feature.
+Groups, All groups and Search remain deliberately accessible; selecting a
+group explicitly removes this automatic-only filter. If no eligible group
+exists, the user must choose one rather than implicitly seeing All groups.
+Any future automatic recent/recommendation surface must apply the same policy.
 The compact selector and wide sidebar retain access to All groups and other
 groups. Item sort preferences remain separate from group ordering. Home shows
 the selected group name; its Live preview follows playlist item order, while

@@ -110,7 +110,9 @@ class _ContentGrid extends StatelessWidget {
                   child: PagedGridView<CatalogItemSummary>(
                     resetScrollOnLoad: true,
                     collection: collection,
-                    emptyMessage: emptyText,
+                    emptyMessage: controller.catalogView.awaitingGroupSelection
+                        ? 'No automatically selected group. Choose a group to browse.'
+                        : emptyText,
                     gridDelegate: _viewGrid(context, _cardGrid),
                     itemBuilder: (context, item, autofocus) => MediaTile(
                       listView: AppScope.preferencesControllerOf(
@@ -170,7 +172,9 @@ class _SeriesGrid extends StatelessWidget {
                   child: PagedGridView<SeriesSummary>(
                     resetScrollOnLoad: true,
                     collection: collection,
-                    emptyMessage: 'No series episodes recognized yet.',
+                    emptyMessage: controller.catalogView.awaitingGroupSelection
+                        ? 'No automatically selected group. Choose a group to browse.'
+                        : 'No series episodes recognized yet.',
                     gridDelegate: _viewGrid(context, _cardGrid),
                     itemBuilder: (context, item, autofocus) => MediaTile(
                       listView: AppScope.preferencesControllerOf(

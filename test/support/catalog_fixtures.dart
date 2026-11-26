@@ -47,6 +47,29 @@ https://example.invalid/series/z.mkv
 https://example.invalid/series/a.mkv
 ''';
 
+const adultLabelsPlaylistText = '''#EXTM3U
+#EXTINF:-1 group-title="Adults (VOD)",Restricted film [XXX]
+https://example.invalid/movie/restricted.mp4
+#EXTINF:-1 group-title="Family Movies",Ordinary film
+https://example.invalid/movie/ordinary.mp4
+#EXTINF:-1 group-title="Family Movies",Marked film [xXx]
+https://example.invalid/movie/marked.mp4
+#EXTINF:-1 group-title="Family Movies",Another film
+https://example.invalid/movie/another.mp4
+#EXTINF:-1 group-title="XXX Live",Restricted channel
+https://example.invalid/live/restricted.m3u8
+#EXTINF:-1 group-title="Sweden",Ordinary channel
+https://example.invalid/live/ordinary.m3u8
+#EXTINF:-1 group-title="Sweden",Marked channel (18+)
+https://example.invalid/live/marked.m3u8
+#EXTINF:-1 group-title="Adults Series",Restricted Show S01 E01
+https://example.invalid/series/restricted.mkv
+#EXTINF:-1 group-title="Family Series",Ordinary Show S01 E01
+https://example.invalid/series/ordinary.mkv
+#EXTINF:-1 group-title="Family Series",Marked Show S01 E01 [XXX]
+https://example.invalid/series/marked.mkv
+''';
+
 String swedishPlaylistText(Iterable<String> names) =>
     '#EXTM3U\n${names.map((name) => '#EXTINF:-1 group-title="Sweden",$name\n'
         'https://example.invalid/live/${Uri.encodeComponent(name)}.m3u8\n').join()}';

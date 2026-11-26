@@ -3,6 +3,7 @@ import 'package:sqflite_common/sqlite_api.dart';
 import '../../models/content_item.dart';
 import '../storage/storage_contracts.dart';
 import '../telemetry/app_telemetry.dart';
+import 'automatic_content_policy.dart';
 import 'catalog_item_sql.dart';
 import 'catalog_normalizer.dart';
 import 'catalog_query.dart';
@@ -186,6 +187,7 @@ ORDER BY g.ord, g.sort_title, g.id
     int offset = 0,
     int limit = kCatalogPageSize,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) => telemetry.measure('db.query.items_in_group', () async {
     final db = await _databaseAdapter.database;
     final groupRows = await db.query(
@@ -212,6 +214,7 @@ ORDER BY g.ord, g.sort_title, g.id
         offset: offset,
         limit: limit,
         sort: sort,
+        excludeMarkedAdult: excludeMarkedAdult,
       ),
     );
   });
@@ -224,6 +227,7 @@ ORDER BY g.ord, g.sort_title, g.id
     int limit = kCatalogPageSize,
     String? searchTerm,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) => telemetry.measure('db.query.series_in_group', () async {
     final db = await _databaseAdapter.database;
     final groupRows = await db.query(
@@ -260,6 +264,7 @@ ORDER BY g.ord, g.sort_title, g.id
       searchTerm: searchTerm,
       groupId: groupId,
       sort: sort,
+      excludeMarkedAdult: excludeMarkedAdult,
     );
   });
 
@@ -297,6 +302,18 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
       [groupId, playlistId, profileId],
     );
     return rows.isNotEmpty;
+  }
+
+  String _excludesMarkers(
+    String column,
+    List<String> markers,
+    List<Object?> args,
+  ) {
+    final clauses = markers.map((marker) {
+      args.add(marker);
+      return 'instr(lower($column), ?) = 0';
+    });
+    return '(${clauses.join(' AND ')})';
   }
 
   Future<CatalogPage<CatalogItemSummary>> _queryItems(
@@ -340,6 +357,14 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
       clauses.add('m.group_id = ?');
       args.add(query.groupId);
     }
+    if (query.excludeMarkedAdult) {
+      clauses.add(
+        _excludesMarkers('g.title', AutomaticContentPolicy.groupMarkers, args),
+      );
+      clauses.add(
+        _excludesMarkers('m.title', AutomaticContentPolicy.titleMarkers, args),
+      );
+    }
     final from = fts == null
         ? 'items m JOIN groups g ON g.id = m.group_id'
         : 'items_fts JOIN items m ON m.id = items_fts.rowid '
@@ -379,6 +404,7 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
     String? searchTerm,
     int? groupId,
     CatalogSort sort = CatalogSort.title,
+    bool excludeMarkedAdult = false,
   }) async {
     final clauses = <String>[
       's.playlist_id = ?',
@@ -392,6 +418,24 @@ WHERE g.id = ? AND g.playlist_id = ? AND h.profile_id = ? LIMIT 1
     if (groupId != null) {
       clauses.add('s.group_id = ?');
       args.add(groupId);
+    }
+    if (excludeMarkedAdult) {
+      clauses.add(
+        _excludesMarkers('g.title', AutomaticContentPolicy.groupMarkers, args),
+      );
+      clauses.add(
+        _excludesMarkers('s.title', AutomaticContentPolicy.titleMarkers, args),
+      );
+      final episodeClauses = AutomaticContentPolicy.titleMarkers
+          .map((marker) {
+            args.add(marker);
+            return 'instr(lower(i.title), ?) > 0';
+          })
+          .join(' OR ');
+      clauses.add(
+        'NOT EXISTS (SELECT 1 FROM items i WHERE i.series_key = s.series_key '
+        'AND ($episodeClauses))',
+      );
     }
     final term = searchTerm?.trim();
     if (term != null && term.isNotEmpty) {

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/content_item.dart';
+import '../services/catalog/automatic_content_policy.dart';
 import '../services/catalog/catalog_query.dart';
 import '../services/catalog/catalog_query_service.dart';
 import '../services/logging/app_logger.dart';
@@ -171,6 +172,7 @@ class CatalogViewState extends ChangeNotifier {
   int _browseGeneration = 0;
   int _bindingGeneration = 0;
   bool _selectFirstGroupOnRetry = false;
+  bool _automaticGroup = false;
   final Map<CatalogGroupKind, CatalogSort> _sorts = {};
   final Map<CatalogGroupKind, CatalogFailure> _sortFailures = {};
   bool isSavingSort = false;
@@ -192,6 +194,8 @@ class CatalogViewState extends ChangeNotifier {
   String? get playlistId => _playlistId;
   CatalogQueryService? get queryService => _service;
   int get bindingGeneration => _bindingGeneration;
+  bool get awaitingGroupSelection =>
+      _automaticGroup && selectedGroupId == null && !isLoadingGroups;
   final activationFailure = ValueNotifier<ItemActivationFailure?>(null);
 
   Future<void> bind({
@@ -211,6 +215,7 @@ class CatalogViewState extends ChangeNotifier {
     browseGroupKind = null;
     selectedGroupId = null;
     _selectFirstGroupOnRetry = false;
+    _automaticGroup = false;
     groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
@@ -255,6 +260,7 @@ class CatalogViewState extends ChangeNotifier {
     browseGroupKind = null;
     selectedGroupId = null;
     _selectFirstGroupOnRetry = false;
+    _automaticGroup = false;
     groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
@@ -350,9 +356,13 @@ class CatalogViewState extends ChangeNotifier {
       ),
     );
     if (binding != _bindingGeneration || _disposed) return;
-    final liveGroup = groups[CatalogGroupKind.live.index].firstOrNull;
-    final movieGroup = groups[CatalogGroupKind.movie.index].firstOrNull;
-    final seriesGroup = groups[CatalogGroupKind.series.index].firstOrNull;
+    final liveGroup = _firstAutomaticGroup(groups[CatalogGroupKind.live.index]);
+    final movieGroup = _firstAutomaticGroup(
+      groups[CatalogGroupKind.movie.index],
+    );
+    final seriesGroup = _firstAutomaticGroup(
+      groups[CatalogGroupKind.series.index],
+    );
     final results = await (
       liveGroup == null
           ? Future.value(const CatalogPage<CatalogItemSummary>.empty())
@@ -361,6 +371,7 @@ class CatalogViewState extends ChangeNotifier {
               liveGroup.id,
               limit: kHomePreviewCount,
               sort: CatalogSort.playlistOrder,
+              excludeMarkedAdult: true,
             ),
       movieGroup == null
           ? Future.value(const CatalogPage<CatalogItemSummary>.empty())
@@ -369,6 +380,7 @@ class CatalogViewState extends ChangeNotifier {
               movieGroup.id,
               limit: kHomePreviewCount,
               sort: CatalogSort.title,
+              excludeMarkedAdult: true,
             ),
       seriesGroup == null
           ? Future.value(const CatalogPage<SeriesSummary>.empty())
@@ -377,6 +389,7 @@ class CatalogViewState extends ChangeNotifier {
               seriesGroup.id,
               limit: kHomePreviewCount,
               sort: CatalogSort.title,
+              excludeMarkedAdult: true,
             ),
       service.queryItems(CatalogQuery(playlistId: playlistId, limit: 1)),
     ).wait;
@@ -412,8 +425,10 @@ class CatalogViewState extends ChangeNotifier {
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     if (kindChanged) browseGroups = const [];
+    if (kindChanged && !selectFirstGroup) _automaticGroup = false;
     selectedGroupId = kindChanged ? null : groupId;
     if (selectFirstGroup) items.clear();
+    if (selectFirstGroup) _automaticGroup = true;
     await _loadBrowseGroups(
       service,
       playlistId,
@@ -426,23 +441,33 @@ class CatalogViewState extends ChangeNotifier {
       return;
     }
     final selectedGroup = selectedGroupId;
+    final automatic = _automaticGroup;
     await items.load(
       (offset, limit) => selectedGroup == null
-          ? service.queryItems(
-              CatalogQuery(
-                playlistId: playlistId,
-                kinds: [kind],
-                offset: offset,
-                limit: limit,
-                sort: sort,
-              ),
-            )
+          ? automatic
+                ? Future.value(
+                    CatalogPage<CatalogItemSummary>(
+                      items: const [],
+                      offset: offset,
+                      total: 0,
+                    ),
+                  )
+                : service.queryItems(
+                    CatalogQuery(
+                      playlistId: playlistId,
+                      kinds: [kind],
+                      offset: offset,
+                      limit: limit,
+                      sort: sort,
+                    ),
+                  )
           : service.itemsInGroup(
               playlistId,
               selectedGroup,
               offset: offset,
               limit: limit,
               sort: sort,
+              excludeMarkedAdult: automatic,
             ),
     );
   }
@@ -523,8 +548,10 @@ class CatalogViewState extends ChangeNotifier {
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
     if (kindChanged) browseGroups = const [];
+    if (kindChanged && !selectFirstGroup) _automaticGroup = false;
     selectedGroupId = kindChanged ? null : groupId;
     if (selectFirstGroup) series.clear();
+    if (selectFirstGroup) _automaticGroup = true;
     await _loadBrowseGroups(
       service,
       playlistId,
@@ -537,20 +564,30 @@ class CatalogViewState extends ChangeNotifier {
       return;
     }
     final selectedGroup = selectedGroupId;
+    final automatic = _automaticGroup;
     await series.load(
       (offset, limit) => selectedGroup == null
-          ? service.querySeries(
-              playlistId,
-              offset: offset,
-              limit: limit,
-              sort: sort,
-            )
+          ? automatic
+                ? Future.value(
+                    CatalogPage<SeriesSummary>(
+                      items: const [],
+                      offset: offset,
+                      total: 0,
+                    ),
+                  )
+                : service.querySeries(
+                    playlistId,
+                    offset: offset,
+                    limit: limit,
+                    sort: sort,
+                  )
           : service.seriesInGroup(
               playlistId,
               selectedGroup,
               offset: offset,
               limit: limit,
               sort: sort,
+              excludeMarkedAdult: automatic,
             ),
     );
   }
@@ -558,6 +595,7 @@ class CatalogViewState extends ChangeNotifier {
   Future<void> selectBrowseGroup(int? groupId) async {
     final kind = browseGroupKind;
     if (kind == null) return;
+    _automaticGroup = false;
     selectedGroupId = groupId;
     _notify();
     switch (kind) {
@@ -591,7 +629,7 @@ class CatalogViewState extends ChangeNotifier {
       }
       browseGroups = loaded;
       if (selectFirstGroup) {
-        selectedGroupId = loaded.firstOrNull?.id;
+        selectedGroupId = _firstAutomaticGroup(loaded)?.id;
       } else if (selectedGroupId != null &&
           !loaded.any((group) => group.id == selectedGroupId)) {
         selectedGroupId = null;
@@ -648,6 +686,10 @@ class CatalogViewState extends ChangeNotifier {
         return;
     }
   }
+
+  GroupSummary? _firstAutomaticGroup(List<GroupSummary> groups) => groups
+      .where((group) => !AutomaticContentPolicy.excludesGroup(group.title))
+      .firstOrNull;
 
   Future<void> showSeasons(SeriesSummary value) async {
     final service = _service;
