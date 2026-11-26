@@ -1,6 +1,12 @@
 # Catalog Import & Browsing Redesign
 
-**Status:** proposed design — supersedes the open items in
+**Status:** design lineage for the implemented production v9 catalog pipeline,
+with some goals/proposals still requiring verification. The original design's
+v8 schema number was applied as migration v9. Read the
+[implementation steps](implementation-steps-2026-09-28.md) and
+[work-package status](architecture-code-improvements.md) for delivery;
+[migrations](../lib/services/storage/storage_migrations.dart) define the latest schema.
+This design supersedes the open items in
 [`import-performance.md`](import-performance.md) §8, [`improvements-1.md`](improvements-1.md)
 and [`implementation-plan4.md`](implementation-plan4.md) where they conflict.
 Everything measured and learned in those documents still applies; this plan builds on it.

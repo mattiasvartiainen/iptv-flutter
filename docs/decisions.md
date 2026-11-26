@@ -6,6 +6,12 @@ resolved, and reflect the resolution in the affected document.
 
 Legend: ✅ resolved · 🔶 open · 🔬 needs a hardware/tooling spike
 
+**Authority:** This log mixes original design questions with later verified
+decisions. Current implementation and boundaries are documented in
+[architecture.md](architecture.md); [work-package status](architecture-code-improvements.md)
+records delivery. The [docs index](README.md) identifies superseded scaffold
+plans. A resolved design choice is not proof of hardware validation.
+
 ## Verified facts
 
 - **Target baseline:** webOS 26 "Re:New" or newer. ✅
@@ -57,14 +63,20 @@ legacy file only after the secure write succeeds. Settings and last navigation c
 separate preferences. Never log or render the credential-bearing URL.
 - Affects: [architecture.md](architecture.md) §7, PRD non-functional requirements.
 
-### D4 — Catalog cache strategy 🔶
-Decide whether to re-parse the playlist on every launch or cache the normalized catalog in
-`sqflite_webos`. Drives the data model and the startup refresh-vs-last-good behavior (Phase 7).
+### D4 — Catalog cache strategy (historical question; implementation superseded)
+Historical initial-MVP question, superseded for engineering implementation by
+the production v9 cached catalog and paged browsing. See the
+[catalog pipeline](architecture.md#5-playlist-pipeline) and work-package status.
+The old question is not a gate to reintroduce full-playlist parsing/UI state.
+Any new startup/refresh product policy still needs separately approved work.
 - Affects: [architecture.md](architecture.md) §4/§7, [implementation-plan.md](implementation-plan.md) Phase 7.
 
-### D5 — Off-main-thread parsing 🔶
-Run M3U fetch + parse on an `Isolate` (`compute`) so large playlists never block the UI. The
-playlist service API must be async and cancellable.
+### D5 — Off-main-thread parsing (historical proposal; implemented)
+Historical initial-MVP proposal, implemented as worker download/incremental
+parsing with bounded backpressure and application-owned staging/reconciliation.
+Database access from a worker isolate is not assumed. Cancellation/recovery
+and last-good-catalog behavior are covered by the production pipeline tests;
+real TV memory/frame responsiveness still need measurement.
 - Affects: [architecture.md](architecture.md) §5.
 
 ### D6 — Remote key & focus validation 🔬

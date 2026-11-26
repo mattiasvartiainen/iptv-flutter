@@ -1,3 +1,7 @@
+> **Historical import analysis/plan.** "Current" below means the snapshot at
+> authoring, not today's importer. Superseded by the [catalog redesign](catalog-import-and-browsing-redesign.md),
+> [v9 steps](implementation-steps-2026-09-28.md) and [work-package status](architecture-code-improvements.md).
+
  - The current load() is asynchronous, but the expensive work still runs on the UI isolate:
       - Entire response is accumulated into a String in HttpPlaylistSource.fetch() (lib/services/catalog/
         catalog_repository.dart:46).

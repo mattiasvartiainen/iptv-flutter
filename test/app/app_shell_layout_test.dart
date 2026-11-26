@@ -8,7 +8,7 @@ import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
-import 'package:iptv_flutter/services/playback/playback_adapter.dart';
+import 'package:iptv_flutter/services/playback/fake_playback.dart';
 import 'package:iptv_flutter/state/app_controller.dart';
 import 'package:iptv_flutter/state/app_preferences_controller.dart';
 import 'package:iptv_flutter/state/catalog_view_state.dart';

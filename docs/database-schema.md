@@ -1,3 +1,8 @@
+> **Historical reference SQL, not the application's schema or a migration.**
+> Do not apply these statements to production. The schema is defined by
+> [append-only migrations](../lib/services/storage/storage_migrations.dart) and
+> [persisted migration tests](../test/services/storage/database_migrations_test.dart).
+
 -- grp --
 CREATE TABLE grp (id INTEGER PRIMARY KEY, ord INTEGER NOT NULL, category_id INTEGER NOT NULL, title TEXT NOT NULL, type TEXT NOT NULL);
 
@@ -18,4 +23,3 @@ CREATE TABLE 'video_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB);
 
 -- video_fts_idx --
 CREATE TABLE 'video_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID;
-

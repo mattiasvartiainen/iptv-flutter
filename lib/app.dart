@@ -17,7 +17,7 @@ import 'features/player/player_screen.dart';
 import 'features/search/search_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'platform/app_environment.dart';
-import 'services/playback/playback_adapter.dart';
+import 'services/playback/playback_contract.dart';
 import 'state/app_controller.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/widgets/app_scope.dart';

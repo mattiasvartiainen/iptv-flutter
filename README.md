@@ -1,23 +1,26 @@
 # iptv_flutter
 
-Flutter IPTV application for LG webOS, Linux desktop, and Windows desktop.
+TV-first Flutter IPTV for Android (phone and TV), Windows and LG webOS.
+Linux desktop is a development/testing target. See the
+[documentation index](docs/README.md) for current architecture, work packages
+and historical reference documents.
 
 ## Project layout
 
-Platform-specific code stays behind the playback adapter in `lib/services/playback/`:
+Platform detection and backend selection stay in `lib/platform/`.
+Shared presentation depends on injected interfaces and available constraints:
 
 ```text
 lib/
   app.dart
   main.dart
   models/
-  screens/
+  app/                 composition, navigation and shortcuts
+  features/            screens, widgets and feature controllers
+  platform/            identity, profiles and platform-specific adapters
+  ui/                  shared widgets, theme and layout tokens
   services/
-    playback/
-      playback_adapter.dart
-      linux_playback.dart
-      windows_playback.dart
-      webos_playback.dart
+    playback/          contracts, session boundary and backend implementations
   state/
 linux/
 windows/
@@ -75,5 +78,8 @@ bash tool/deploy-webos.sh --device tv --no-launch
 ```
 
 Use the VS Code tasks for Linux release builds, Windows release builds, webOS debug/release
-packaging, and webOS deployment. The WebOS target still uses the intentionally isolated
-adapter stub until hardware playback validation is completed.
+packaging, and webOS deployment. The webOS target uses the dedicated LG `video_player_drm` adapter.
+The supported wrapper verifies and patches pinned native logging before enabling
+playback; do not bypass it or manually set the safe-build marker. Real TV
+playback, track selection and native-plane compositing still require hardware
+validation; a desktop build or mocked-plugin test does not establish them.

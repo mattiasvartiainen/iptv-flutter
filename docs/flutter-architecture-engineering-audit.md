@@ -1,5 +1,10 @@
 # Flutter Application — Architecture & Engineering Audit
 
+> **Reusable audit checklist, not current findings.** This file is an analysis
+> prompt. Executed historical findings and delivery status live in the
+> [architecture improvement plan](architecture-code-improvements.md); implemented
+> boundaries are checked by the [architecture tests](../test/architecture/architecture_rules_test.dart).
+
 You are performing a **read-only architecture, code-quality, Flutter best-practices and maintainability audit** of the existing Flutter application.
 
 **Do not modify any files.**

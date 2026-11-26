@@ -11,6 +11,7 @@ import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
+import 'package:iptv_flutter/services/playback/fake_playback.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';
 import 'package:iptv_flutter/state/app_controller.dart';

@@ -1,5 +1,9 @@
 # Phase 0 Baseline
 
+> **Historical benchmark evidence.** Environment/results below apply to that
+> measurement only, not current performance or TV certification. See the
+> [documentation index](README.md) and [work-package verification](architecture-code-improvements.md).
+
 This document records measurements for the pre-redesign catalog import pipeline.
 The benchmark deliberately uses the real repository and database adapter rather
 than a parser-only microbenchmark.

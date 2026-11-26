@@ -1,5 +1,10 @@
 # Playlist Import Performance
 
+> **Dated measurements and optimization history.** Bottlenecks and platform
+> assumptions below refer to their recorded snapshots. The production v9 pipeline
+> and later [work packages](architecture-code-improvements.md) supersede old
+> recommendations; remeasure before optimizing. Desktop results do not certify TV performance.
+
 This document records how playlist import performs, why it used to be slow, what was
 changed, and what is worth attacking next. It covers both the historical work
 (captured previously in [`improvements-1.md`](improvements-1.md)) and the most recent

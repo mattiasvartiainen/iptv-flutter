@@ -9,7 +9,9 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../services/logging/app_logger.dart';
 import '../services/playback/desktop_media_kit_playback.dart';
+import '../services/playback/fake_playback.dart';
 import '../services/playback/playback_adapter.dart';
+import '../services/playback/video_player_playback.dart';
 import '../services/storage/secure_storage_service.dart';
 import 'app_platform.dart';
 import 'build_flags.dart' as build_flags;

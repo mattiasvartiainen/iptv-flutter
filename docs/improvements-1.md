@@ -1,4 +1,8 @@
- 
+> **Historical audit notes.** Findings and "current" descriptions refer to an
+> earlier snapshot. Preserve the evidence but reverify before acting; use the
+> [catalog redesign](catalog-import-and-browsing-redesign.md) and
+> [work-package status](architecture-code-improvements.md) for subsequent fixes.
+
 • I need a final concise yet thorough overview, including an overall verdict. The MVP is okay, but it’s not ready for
   huge playlists. I should quantify the complexity: fetching and joining creates a whole string that uses O(B) memory;
   using text.split generates a list of all lines, plus raw strings. I’ll also need to parse a list of ContentItem with

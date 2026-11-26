@@ -1,5 +1,10 @@
 # Coding Agent Handoff
 
+> **Historical first-scaffold handoff.** Its MVP exclusions and first tasks are
+> not current instructions. Follow the [agent guide](../AGENTS.md),
+> [documentation index](README.md) and [work-package status](architecture-code-improvements.md).
+> Approved Xtream/Series work supersedes the initial exclusions below.
+
 ## Mission
 
 Build the first vertical slice of the IPTV webOS app: installable shell, playlist URL setup, M3U parsing, catalog browsing, and HLS playback.

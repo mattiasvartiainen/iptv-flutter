@@ -10,6 +10,7 @@ import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/catalog_repository.dart';
 import 'package:iptv_flutter/services/metadata/movie_metadata.dart';
 import 'package:iptv_flutter/services/metadata/series_metadata.dart';
+import 'package:iptv_flutter/services/playback/fake_playback.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 import 'package:iptv_flutter/services/settings/app_preferences.dart';
 import 'package:iptv_flutter/services/settings/settings_repository.dart';

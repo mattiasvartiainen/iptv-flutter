@@ -1,5 +1,11 @@
 **Recommended Approach**
 
+> **Dated v9 implementation sequence.** Retained for catalog pipeline rationale,
+> not as the current backlog or latest database schema. Consult
+> [work-package status](architecture-code-improvements.md),
+> [migrations](../lib/services/storage/storage_migrations.dart) and their
+> [tests](../test/services/storage/database_migrations_test.dart).
+
 Implement this as a sequence of independently testable vertical slices. Keep the current importer usable until the new catalog importer has passed the benchmark and recovery tests. The target schema described as v8 in the design is applied by migration v9 because v8 was already used for import-session tracking.
 
 ## Step 0 — Establish Baselines

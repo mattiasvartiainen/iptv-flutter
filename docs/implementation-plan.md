@@ -1,5 +1,10 @@
 # High-Level Implementation Plan
 
+> **Historical initial MVP plan.** This is the original scaffold sequence, not
+> current implementation status. Use the [documentation index](README.md),
+> [current architecture](architecture.md) and [work packages](architecture-code-improvements.md)
+> before coding. Hardware exit criteria remain evidence to verify, not completed claims.
+
 ## Phase 0 — Confirm the hardware baseline
 
 ### Deliverables
@@ -149,4 +154,3 @@ The MVP acceptance criteria in `product-requirements.md` pass on the target TV, 
 - At least one supported HLS stream plays on hardware.
 - Failure states are actionable and do not strand the user.
 - No credentials are committed to the repository or emitted in normal logs.
-

@@ -3,6 +3,11 @@
 > **Audience:** AI coding agents first, humans second.
 > **Source:** Audit performed against [flutter-architecture-engineering-audit.md](flutter-architecture-engineering-audit.md) on 2026-10-03 (commit `357bb4a`, "Add search").
 > **Targets:** Android (phone + Android TV), Windows, LG webOS (TV). Linux desktop is a development target only.
+> **Authority:** Section 1 tracks current delivery; section 5 and the
+> [architecture tests](../test/architecture/architecture_rules_test.dart) define
+> guardrails. Sections 2-4 retain the 2026-10-03 audit snapshot with later
+> annotations, not a current defect list. Use [current architecture](architecture.md)
+> and the [documentation index](README.md) when old descriptions disagree.
 
 ---
 
@@ -32,6 +37,37 @@ Known toolchain gotchas (from repo memory, keep in mind):
 ---
 
 ## 1. Work package status
+
+WP-player-guardrails updates boundary checks and documentation authority.
+Dependencies: WP-player-updates. Touches: architecture tests/helpers, playback
+barrel/import consumers, docs index/current architecture and historical plans.
+Skills: dart-add-unit-test, dart-use-path-package, dart-run-static-analysis.
+Check direct directives and local re-export chains, including conditional
+targets; keep playback contracts separate from native/fake implementations.
+Label dated plans/audits as historical without discarding measurement evidence.
+No playback behavior, dependencies, schema, import pipeline or product changes.
+
+Implemented source-level direct/export/part checks with self-package URI
+resolution, conditional-branch coverage and cycle-safe traversal. Shared UI
+cannot expose native media, SQL, HTTP/storage packages or platform
+implementations; only injected environment/capability surfaces are allowed.
+Playback compatibility exports contain contracts/errors only; native/fake
+consumers import their implementations explicitly. Presentation/behavior
+separation and Material boundaries also check local re-exports.
+
+The docs index separates current authority, active plans and historical
+evidence. Original scaffold/import plans, MVP exclusions, audit snapshot and
+reference SQL are labeled without removing old measurements. Current
+architecture/root README now describe actual ownership, paging, persistence,
+platform selection and implemented playback; native relaunch/hardware work
+remains explicitly pending. Private imports of allowed libraries are not
+traversed by these source-level checks; interface-type leaks still need review.
+
+Verification: 15 architecture/fixture tests and 120 focused app/contract tests
+pass. Broad regression: 918 passes and the two known Settings focus failures,
+excluding the previously stalled telemetry file. Analyzer retains only two
+baseline infos; Windows debug build passes. Changed local documentation links
+resolve and the whitespace check passes.
 
 WP-player-updates narrows position-driven rebuilds and metadata remapping.
 Dependencies: WP-player-presentation. Touches: player screen/controls/dialog,
@@ -230,6 +266,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-guardrails | Architecture guardrails and documentation authority | Player | WP-player-updates | M | DONE (2026-11-26): Export-aware boundary checks, contract-only playback barrel and historical-doc labels; 120 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-updates | Narrow playback updates and metadata remapping | Player | WP-player-presentation | M | DONE (2026-11-25): Selected-value rebuilds and native metadata reuse; 130 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-presentation | Adaptive player layout/theme policy | Player | WP-player-contract | M | DONE (2026-11-25): Constraint-based geometry and inherited player theme; 114 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-contract | Capabilities, surface lifetime and typed errors | Player | WP-player-widgets | M | DONE (2026-11-25) - capability gates, resource-owned reactive surfaces and safe typed failures; 127 focused tests and Windows build pass; baseline analyzer/test caveats above |
@@ -312,6 +349,9 @@ Size guide: XS < 30 min of agent work, S = one focused change, M = several files
 
 ## 2. Executive summary
 
+> **Historical audit summary.** The defects below describe the original
+> snapshot; completed work packages supersede them.
+
 The app is a working IPTV client with a **genuinely strong data/import core** (isolate-based streaming import, durable import sessions, set-based SQL reconcile, external-content FTS, paged queries, generation-guarded pagination) and a **thin, under-structured UI/app layer** that was built as scaffolding and has not yet been shaped for a TV-first, multi-platform product.
 
 The main problems, in order of impact:
@@ -333,6 +373,10 @@ The fix is **not** a new framework. The current choices — `ChangeNotifier` + `
 ---
 
 ## 3. Current architecture
+
+> **Historical audit dependency map, partially annotated.** "Current" refers to
+> the audit snapshot, not today's source. The maintained map is in
+> [architecture.md](architecture.md#2-layers-and-ownership).
 
 ### 3.1 Actual dependency flow
 
@@ -407,6 +451,10 @@ Note: Flutter webOS reports a Linux-like `TargetPlatform`, so `defaultTargetPlat
 ---
 
 ## 4. Findings
+
+> **Historical findings.** Check section 1 for fixes and reverify against current
+> source before treating an entry as an active issue. Hardware caveats remain
+> verification gates, not evidence of an existing software defect.
 
 Format: **ID — title** · Severity · Confidence · Category. Each finding is referenced by the work package that fixes it.
 
@@ -545,6 +593,24 @@ lib/
 | `platform/` | anything it adapts | `features/`, `ui/` |
 | `app/` | everything (composition root) | – |
 
+The executable rules inspect direct imports/exports/parts and follow local
+export/part chains, resolving relative and self-package URIs and checking every
+conditional branch. Barrels must not hide native media, SQL, HTTP or storage
+packages/implementations from shared UI. `lib/app.dart` is UI, not the service
+composition root; `lib/app/app_dependencies.dart` and platform profiles compose
+implementations. UI may use only the injected `AppEnvironment` and
+`PlatformCapabilities` surfaces from `lib/platform/`.
+
+`playback_adapter.dart` is a compatibility export of contracts/errors only.
+Native/fake adapters are imported explicitly by profiles or tests. Player
+layout/theme policy must not import playback behavior (even via an export
+chain), and the controller/session must not import presentation policy.
+These are source-level guards with tested comment/string/conditional/cycle
+handling, not whole-program type resolution: private imports of otherwise
+allowed interfaces are not traversed. Review interface signatures separately
+for leaked implementation types. Keep the platform exception allowlist exact
+and empty unless a separately reviewed exception is necessary.
+
 ### 5.2 Platform rule (the "no `if (platform == Windows)`" rule)
 
 Only files under `lib/platform/` may reference `defaultTargetPlatform`, `TargetPlatform`, `Platform.` (from `dart:io`), `kIsWeb`, or `bool/String.fromEnvironment` for platform/backend selection.
@@ -554,10 +620,12 @@ Everything else receives what it needs through one of three channels, which must
 | Question | Answer comes from | Example |
 |----------|------------------|---------|
 | *Which implementation do I construct?* | `PlatformProfile` factories, called once in the composition root | playback backend, database factory, secret store, key map |
-| *What can this device/input do?* | `PlatformCapabilities` (injected, read via `AppEnvironment.of(context)`) and `FocusManager.instance.highlightMode` | show focus rings, has hardware Back, supports pointer hover, supports DRM |
+| *What can this device/input do?* | `PlatformCapabilities` (injected, read via `AppEnvironment.of(context)`) and `FocusManager.instance.highlightMode` | show focus rings, has hardware Back, supports pointer hover |
 | *How much room do I have?* | `LayoutBuilder` constraints / `MediaQuery.sizeOf(context)` | sidebar vs no sidebar, grid columns |
 
 Never infer form factor from OS ("Android == phone", "Windows == desktop"). Android covers phones and TVs; Windows can be a small window.
+Media operations (seek, pause, tracks, DRM and native-plane rendering) come
+from `PlaybackCapabilities`, not input capabilities or layout size.
 
 ### 5.3 State and navigation
 

@@ -1,3 +1,7 @@
+> **Historical intermediate import analysis.** Remaining issues below describe
+> an earlier implementation. Use the [catalog redesign](catalog-import-and-browsing-redesign.md),
+> [v9 steps](implementation-steps-2026-09-28.md) and [work-package status](architecture-code-improvements.md).
+
  We addressed the largest UI-isolate problem, but there are still important performance considerations.
 
   Addressed

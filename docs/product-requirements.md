@@ -1,5 +1,10 @@
 # Product Requirements
 
+> **Historical original webOS MVP scope.** Retained as product lineage.
+> Later approved Android/Windows, Series and Xtream work is tracked in the
+> [documentation index](README.md), [decisions](decisions.md) and [work packages](architecture-code-improvements.md).
+> Initial exclusions below do not revoke that scope.
+
 ## 1. Product goal
 
 Provide a simple, reliable IPTV player for recent LG TVs. A user should be able to install the app, add an M3U/M3U8 URL, browse the imported catalog, and play a Live TV stream with only the TV remote.

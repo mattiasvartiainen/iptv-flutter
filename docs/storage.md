@@ -1,3 +1,8 @@
+> **Historical storage research.** Platform suggestions below are not current
+> backend selection. Use [current architecture](architecture.md#7-persistence),
+> [platform profiles](../lib/platform/platform_profile.dart) and
+> [append-only migrations](../lib/services/storage/storage_migrations.dart).
+
 Yes — SQLite is a very good choice for your IPTV app across the platforms you're targeting, with one important caveat: webOS needs its own Flutter SQLite implementation, and you should hide that behind your own database/repository abstraction.
 
 SQLite itself is extremely portable and is explicitly designed for embedded devices, TVs, Windows, Linux, etc.

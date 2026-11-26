@@ -7,6 +7,7 @@ import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/logging/app_logger.dart';
+import 'package:iptv_flutter/services/playback/fake_playback.dart';
 import 'package:iptv_flutter/services/playback/playback_adapter.dart';
 
 import '../support/catalog_fixtures.dart';

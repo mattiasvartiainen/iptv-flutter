@@ -1,3 +1,7 @@
+> **Historical import-session proposal.** Superseded by the [catalog redesign](catalog-import-and-browsing-redesign.md),
+> [v9 steps](implementation-steps-2026-09-28.md) and later [work packages](architecture-code-improvements.md).
+> The platform assumptions and proposed tasks below are not current product scope or completion status.
+
 We should design around webOS and Android first, treating Windows/Linux as development and benchmarking conveniences rather
   than architectural constraints.
 

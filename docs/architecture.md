@@ -1,44 +1,50 @@
 # Architecture Notes
 
+> **Current architecture and intent (updated 2026-11-26).** Source, tests and
+> migrations establish implemented behavior. [Architecture tests](../test/architecture/architecture_rules_test.dart)
+> enforce boundaries; [work packages](architecture-code-improvements.md) track
+> completed versus planned work. [Decisions](decisions.md) reserve human choices.
+> Older scaffold plans and audit snapshots are identified in the [docs index](README.md).
+
 ## 1. Guiding principle
 
 Separate product behavior from presentation. The first release should make it cheap to replace a row-based catalog with a grid, hero layout, or compact TV guide without changing playlist parsing or playback.
 
-## 2. Suggested layers
+## 2. Layers and ownership
 
 ```text
-webOS project metadata (`webos/meta/appinfo.json`)
-        |
-UI shell and view components
-        |
-Application state + navigation
-        |
-Domain services
-  - playlist service
-  - catalog service
-  - search service
-  - playback service
-  - settings service
-        |
-Platform adapters
-  - fetch/network
-  - platform storage / persistence adapter
-  - Flutter media adapter / webOS media APIs
+main.dart -> PlatformProfile -> AppDependencies
+                              | constructs/owns injected services + controllers
+                              v
+IptvApp / AppShell -> AppScope -> features + shared UI
+                                | commands / narrow state listeners
+                                v
+feature/cross-feature controllers -> service interfaces
+                                    | injected implementations
+                                    v
+catalog/import/metadata/storage services + playback session/adapters
 ```
 
 Keep the layers lightweight. This is not a requirement to introduce a framework or dependency container.
+`AppDependencies` is the existing composition root. Profiles select native
+implementations; shared UI selects geometry from constraints and input behavior
+from injected capabilities. UI does not construct native media/database/HTTP
+implementations. Imports and local re-exports are checked by the architecture
+tests, including conditional branches. The checks are source-level guards,
+not a complete type-resolved dependency graph.
 
-## 3. Proposed source layout
+## 3. Current source layout
 
 ```text
 lib/
   main.dart
   app.dart
+  app/              composition, startup, shortcuts and typed navigation
+  platform/         platform identity, profiles, flags and native selection
+  features/         screens, focused widgets and feature controllers
+  ui/               shared widgets, formatters and theme
   models/
-  state/
-  navigation/
-  screens/
-  widgets/
+  state/            cross-feature state and paged collections
   services/
     playlist/
     catalog/
@@ -52,16 +58,20 @@ webos/
   meta/appinfo.json
 ```
 
-The exact structure may be adjusted after the first scaffold, but services should not import screen-specific code.
+Services do not import screen-specific code or Material widgets. The pragmatic
+`PlaybackAdapter.buildVideoView()` contract can expose a Flutter `Widget` for
+native surfaces without exposing the native player implementation. The
+`playback_adapter.dart` compatibility barrel exports contracts/errors only;
+profiles/tests import native/fake implementations explicitly.
 
 ## 4. Internal content model
 
-Use a normalized item shape similar to:
+`ContentItem` carries the selected playable item's imported data:
 
 ```text
 {
   id,
-  type: 'live' | 'vod' | 'unknown',
+  type: 'live' | 'vod',
   title,
   streamUrl,
   group,
@@ -69,40 +79,49 @@ Use a normalized item shape similar to:
   posterUrl,
   description,
   metadata,
-  sourceIndex
+  sourceIndex,
+  catalogPlaylistId,
+  catalogItemKey
 }
 ```
 
 `metadata` may retain provider-specific attributes without forcing the UI model to understand every provider extension. `id` must be deterministic for a playlist item and must not expose credentials in rendered text or logs.
+Paged catalog projections represent groups, series, seasons and episodes.
+Descriptive enrichment is separate from playable identity and local streams.
 
 ## 5. Playlist pipeline
 
 ```text
-URL input
-  → validate and normalize
-  → fetch text
-  → parse M3U records
-  → normalize metadata
-  → classify Live/VOD
-  → build groups and search index
-  → publish catalog snapshot
-  → persist playlist configuration
+Configured playlist / verified source
+  → worker download + incremental parse/normalize
+  → bounded batches with backpressure
+  → short, import-session-scoped SQLite staging transactions
+  → set-based reconciliation + search indexing
+  → committed catalog revision
+  → paged queries through CatalogQueryService
 ```
 
-Run fetch + parse off the UI isolate (`compute`/`Isolate`) so large playlists do not freeze the main thread. The service API should therefore be async and cancellable. Only publish a new catalog after the pipeline succeeds. Retain the previous catalog until then so a transient refresh failure does not destroy a working setup.
+The production v9 pipeline downloads/parses in a worker isolate; the application
+owns database writes, without holding a transaction during network download.
+Cancellation/recovery use durable import sessions. Keep the last successful
+catalog visible until reconciliation commits. Never load the full production
+playlist into UI state or fetch descriptive movie/series metadata during import.
+The [catalog design](catalog-import-and-browsing-redesign.md) and
+[v9 implementation sequence](implementation-steps-2026-09-28.md) document the
+pipeline lineage; later append-only migrations extend it.
 
 ## 6. State and navigation
 
-Use one application state owner with explicit transitions. Avoid screen-local mutable state and event handlers that independently mutate application state.
+Ownership is split, not a single god controller:
 
-Minimum state areas:
-
-- `app`: startup and current screen.
-- `playlist`: configured URL, loading status, last successful load, error.
-- `catalog`: normalized items, groups, counts, loading status.
-- `search`: query, active type, results.
-- `player`: selected item, media status, error.
-- `settings`: user preferences and UI experiment flags.
+- `NavigationController`: typed `AppRoute` stack, rendered by `Navigator.pages`.
+- `AppController`: thin cross-feature command facade.
+- `PlaylistsController`: configured sources, refresh/cancellation and friendly errors.
+- `CatalogViewState` / `PagedCollection`: bounded browsing windows and stale-query guards.
+- `AppPreferencesController`: settings state.
+- Feature controllers: search and selected-movie/series enrichment/selection.
+- `PlayerController` / `PlaybackSession`: latest-request-wins playback/lifecycle.
+- `TelemetryController`: opt-in diagnostics configuration and delivery status.
 
 Flutter widgets should be repeatable from state. A screen may own ephemeral widget state, but it should not own the application source of truth.
 
@@ -147,14 +166,24 @@ fresh metadata.
 
 ## 7. Persistence
 
-Use a small persistence adapter backed by the verified webOS plugins for MVP local persistence. Store only what is needed, and split by sensitivity:
+Production composition injects database/settings/catalog and secret-store
+interfaces. Split persistence by sensitivity:
 
-- **Playlist URL (contains credentials): `flutter_secure_storage_webos`.** Never write the credential-bearing URL to plain shared preferences, logs, or analytics.
-- **User settings and last navigation context: `shared_preferences_webos`.**
-- **Cached catalog (optional, for large playlists): `sqflite_webos`.** See the catalog-cache decision in [`decisions.md`](decisions.md).
-- Use `path_provider_webos` for any file paths needed.
+- **Credential-bearing playlist URLs:** behind `PlaylistSecretStore`, selected
+  by the platform profile. Never put them in logs, UI, analytics or plaintext preferences.
+- **Settings/source configuration:** `SettingsRepository`; production uses the
+  injected SQLite database and secret store. Separate telemetry settings also
+  use an injected store with secrets kept behind the secret-store interface.
+- **Catalog, user library and metadata caches:** SQLite repositories; browsing
+  stays paged. Schema changes are append-only migrations, never edits to an old
+  migration. WAL stays disabled due to measured import regression.
+- **Database factory and directory resolution:** selected inside platform profiles.
 
 Treat stored data as untrusted and version the storage schema. Never assume a stored playlist remains valid; validate and refresh it at startup according to the chosen product behavior.
+The executable schema record is [storage migrations](../lib/services/storage/storage_migrations.dart)
+and the [persisted migration matrix](../test/services/storage/database_migrations_test.dart).
+Historical SQL in `database-schema.md` / `schema_v1.sql` is reference material,
+not a schema to apply.
 
 ## 8. Playback abstraction
 
@@ -302,17 +331,24 @@ new migration, metadata fetch or import-time work is introduced.
 
 ## 10. webOS lifecycle integration
 
-The app must model platform lifecycle explicitly rather than treating every entry as a cold start. Flutter lifecycle callbacks should be used for app visibility, with a small webOS platform adapter for launch/relaunch behavior:
+Implemented playback visibility uses Flutter `AppLifecycleListener`, with the
+session guarantees in section 8. Do not map web-app DOM `visibilitychange` /
+`webkitvisibilitychange` events directly into this native Flutter app.
+Native launch/relaunch parameter handling remains a separate platform/hardware
+integration task; it is not implemented merely because an older plan lists
+`webOSLaunch` or `webOSRelaunch`.
 
-- webOSLaunch: initialize the app and inspect launch parameters.
-- webOSRelaunch: restore or update the existing app without duplicating expensive initialization; only use handlesRelaunch when there is a concrete background-before-foreground need.
-- visibilitychange (and the backward-compatible webkit variant if required by the selected TV baseline): pause polling, abort nonessential work, and release or pause playback resources when hidden; restore state when visible.
-- Termination: do not depend on a termination callback. Persist important settings at mutation time and when the app is backgrounded.
-- Root Back/close behavior: do not implement a custom close button. Keep the app’s internal navigation stack separate from the platform’s app-exit behavior.
+- `handlesRelaunch` policy is still reserved by D8 in [decisions](decisions.md).
+  Do not change the manifest based on the old MVP recommendation alone.
+- Do not depend on a termination callback; persist important mutations promptly.
+- Keep internal Back/navigation separate from platform app-exit behavior.
+- Validate foreground/background, native-plane rendering and real remote Back
+  on LG hardware. Mocked interfaces and Windows builds are not that evidence.
 
-Recommended MVP policy: use the simplest relaunch configuration, restore the last stable UI state, do not auto-refresh while hidden, and refresh the playlist only from an explicit user action or a documented foreground-start policy.
+New refresh/restore policy requires separately approved work; this documentation
+does not authorize auto-refresh or change current playlist activation behavior.
 
-## 10. Error taxonomy
+## 11. Error taxonomy
 
 Represent errors with user-safe categories rather than raw exceptions:
 

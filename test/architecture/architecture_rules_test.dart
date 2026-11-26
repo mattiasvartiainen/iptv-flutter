@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+import 'source_dependencies.dart';
+
 const _knownPlatformViolations = <String, Set<String>>{};
 
 final _platformPatterns = <String, RegExp>{
@@ -12,16 +14,6 @@ final _platformPatterns = <String, RegExp>{
   'kIsWeb': RegExp(r'\bkIsWeb\b'),
   'fromEnvironment': RegExp(r'\b(?:bool|int|String)\.fromEnvironment\s*\('),
 };
-
-final _forbiddenUiImport = RegExp(
-  r'''^\s*import\s+['"](?:dart:io|package:(?:sqflite(?:_[^/]+)?|sqlite3|media_kit(?:_[^/]+)?|video_player(?:_[^/]+)?)/|[^'"]*(?:sqlite_catalog_repository|storage_bootstrap)\.dart)['"]''',
-  multiLine: true,
-);
-
-final _forbiddenMaterialImport = RegExp(
-  r'''^\s*import\s+['"]package:flutter/material\.dart['"]''',
-  multiLine: true,
-);
 
 void main() {
   final sources = _readDartSources();
@@ -51,15 +43,20 @@ void main() {
     }
   });
 
-  test('UI files do not import platform or persistence implementations', () {
+  test('UI does not expose native/data implementations through barrels', () {
     final violations = <String>[];
     for (final entry in sources.entries) {
-      final isUiFile = const [
-        'lib/features',
-        'lib/ui',
-      ].any((directory) => p.posix.isWithin(directory, entry.key));
-      if (isUiFile && _forbiddenUiImport.hasMatch(entry.value)) {
-        violations.add(entry.key);
+      final isUiFile =
+          entry.key == 'lib/app.dart' ||
+          const [
+            'lib/features',
+            'lib/ui',
+          ].any((directory) => p.posix.isWithin(directory, entry.key));
+      if (!isUiFile) continue;
+      for (final target in exposedDependencies(sources, entry.key)) {
+        if (isForbiddenUiDependency(target)) {
+          violations.add('${entry.key} -> $target');
+        }
       }
     }
 
@@ -73,7 +70,11 @@ void main() {
         'lib/state',
         'lib/services',
       ].any((directory) => p.posix.isWithin(directory, entry.key));
-      if (isLogicFile && _forbiddenMaterialImport.hasMatch(entry.value)) {
+      if (isLogicFile &&
+          exposedDependencies(
+            sources,
+            entry.key,
+          ).contains('package:flutter/material.dart')) {
         violations.add(entry.key);
       }
     }
@@ -87,10 +88,11 @@ void main() {
       'lib/ui/theme/player_theme.dart',
     ]) {
       expect(
-        RegExp(
-          r'''^\s*import\s+['"][^'"]*(?:services/[^'"]*|player_controller\.dart)['"]''',
-          multiLine: true,
-        ).hasMatch(sources[path]!),
+        exposedDependencies(sources, path).any(
+          (target) =>
+              p.posix.isWithin('lib/services', target) ||
+              target == 'lib/features/player/player_controller.dart',
+        ),
         isFalse,
         reason: '$path must not depend on playback behavior.',
       );
@@ -100,14 +102,30 @@ void main() {
       'lib/services/playback/playback_session.dart',
     ]) {
       expect(
-        RegExp(
-          r'''^\s*import\s+['"][^'"]*(?:player_layout|player_theme|app_theme)\.dart['"]''',
-          multiLine: true,
-        ).hasMatch(sources[path]!),
+        exposedDependencies(sources, path).any(
+          (target) => const [
+            'lib/features/player/player_layout.dart',
+            'lib/ui/theme/player_theme.dart',
+            'lib/ui/theme/app_theme.dart',
+          ].contains(target),
+        ),
         isFalse,
         reason: '$path must not depend on presentation policy.',
       );
     }
+  });
+
+  test('playback compatibility barrel exposes only contracts and errors', () {
+    expect(
+      exposedDependencies(
+        sources,
+        'lib/services/playback/playback_adapter.dart',
+      ),
+      {
+        'lib/services/playback/playback_contract.dart',
+        'lib/services/playback/playback_error.dart',
+      },
+    );
   });
 }
 
