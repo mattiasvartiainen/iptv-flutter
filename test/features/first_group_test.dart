@@ -63,9 +63,15 @@ void main() {
       find.text('No automatically selected group. Choose a group to browse.'),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'All groups'))
+          .selected,
+      isFalse,
+    );
     await tester.tap(find.text('Groups: Choose a group'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('All groups'));
+    await tester.tap(find.widgetWithText(ListTile, 'All groups'));
     await tester.pumpAndSettle();
     expect(find.text('Restricted channel'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -144,7 +150,17 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
     final otherGroup = find.text('Alpha Live');
     expect(otherGroup, findsOneWidget);
-    expect(Focus.of(tester.element(find.text('Favourites'))).hasFocus, isTrue);
+    expect(
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.text('Favourites'),
+          ),
+        ),
+      ).hasFocus,
+      isTrue,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -187,8 +203,10 @@ void main() {
     harness.controllers.app.openLiveTv();
     await tester.pumpAndSettle();
     expect(
-      tester.getTopLeft(find.text('Favourites')).dy,
-      lessThan(tester.getTopLeft(find.text('All groups')).dy),
+      tester.getTopLeft(find.widgetWithText(ListTile, 'Favourites')).dy,
+      lessThan(
+        tester.getTopLeft(find.widgetWithText(ListTile, 'All groups')).dy,
+      ),
     );
     await tester.tap(find.widgetWithText(ListTile, 'Favourites'));
     await tester.pumpAndSettle();
@@ -207,15 +225,27 @@ void main() {
     await tester.tap(find.text('Groups: Favourites'));
     await tester.pumpAndSettle();
     expect(
-      tester.getTopLeft(find.text('Favourites')).dy,
-      lessThan(tester.getTopLeft(find.text('All groups')).dy),
+      tester.getTopLeft(find.widgetWithText(ListTile, 'Favourites')).dy,
+      lessThan(
+        tester.getTopLeft(find.widgetWithText(ListTile, 'All groups')).dy,
+      ),
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.text('Groups: Favourites'), findsOneWidget);
     await tester.tap(find.text('Groups: Favourites'));
     await tester.pumpAndSettle();
-    expect(Focus.of(tester.element(find.text('Favourites'))).hasFocus, isTrue);
+    expect(
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.text('Favourites'),
+          ),
+        ),
+      ).hasFocus,
+      isTrue,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(find.text('Groups: Favourites'), findsOneWidget);

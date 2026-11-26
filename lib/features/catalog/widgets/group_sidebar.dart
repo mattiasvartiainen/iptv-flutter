@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../../../services/catalog/catalog_query.dart';
 import '../../../state/catalog_view_state.dart';
+import '../../../ui/theme/app_tokens.dart';
 import '../../../ui/widgets/app_scope.dart';
 import '../../../ui/widgets/state_views.dart';
+import 'compact_group_strip.dart';
 
 class GroupSidebarLayout extends StatelessWidget {
   const GroupSidebarLayout({
@@ -37,6 +39,12 @@ class GroupSidebarLayout extends StatelessWidget {
                 listenable: view,
                 builder: (context, _) => _CompactGroupSelector(view: view),
               ),
+              if (constraints.maxWidth < AppTokens.compactBreakpoint)
+                ListenableBuilder(
+                  listenable: view,
+                  builder: (context, _) =>
+                      CompactGroupStrip(key: ValueKey(kind), view: view),
+                ),
               Expanded(child: FocusTraversalGroup(child: child)),
             ],
           );

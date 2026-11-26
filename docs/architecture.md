@@ -144,7 +144,10 @@ hidden-group rules and section sort. A series appears once when at least one
 of its episodes is a favourite. As an explicit choice, Favourites may include
 marked content; changing a favourite in the player refreshes the selected list.
 The compact selector and wide sidebar retain access to All groups and other
-groups. Item sort preferences remain separate from group ordering. Home shows
+groups. Compact catalog layouts also offer a horizontally scrolling row of
+group choices; the full picker remains available for long lists and keyboard
+navigation. Both controls share the same selection and paging state.
+Item sort preferences remain separate from group ordering. Home shows
 the selected group name; its Live preview follows playlist item order, while
 movie and series previews remain alphabetical.
 

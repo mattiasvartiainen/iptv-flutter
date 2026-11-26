@@ -14,6 +14,13 @@ Use this plan when implementing selected ideas from the [Kanal concept](Kanal_%2
 
 Creating this plan authorizes planning, not silently deciding its gated product choices. Presentation steps below retain current activation destinations and catalog defaults.
 
+2026-11-26 reconciliation: current Live activation immediately opens playback,
+and initial catalog views select the first eligible playlist-ordered group.
+Favourites and All remain explicit choices. Older DE step descriptions that
+mention Details activation or an All-groups default are historical; preserve
+the current behavior when implementing them. The compact group row is tracked
+as WP-compact-group-strip in the architecture work-package status.
+
 ### Preserve
 
 - Material 3, app-owned tokens, constructor injection, existing controllers, and typed navigation.

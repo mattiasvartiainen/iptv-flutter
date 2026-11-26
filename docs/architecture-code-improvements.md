@@ -38,6 +38,15 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-compact-group-strip adds a responsive, horizontally scrollable group row
+above compact Live, Movies and Series results, retaining the existing picker
+and wide sidebar. Dependencies: WP-first-playlist-group, WP-safe-automatic-catalog.
+Touches: group sidebar/compact strip, compact group widget tests and current
+architecture/design-plan docs. Skills: flutter-build-responsive-layout,
+dart-add-unit-test, dart-run-static-analysis. Preserve playlist-first defaults,
+Favourites/All and explicit selection, adult filtering, paging, sorting, focus,
+Back and current activation. No playback, import, data or schema changes.
+
 WP-favourite-group adds a paged, explicitly selected Favourites group before
 All groups in Live, Movies and Series. Dependencies: WP-safe-automatic-catalog.
 Touches: catalog query contract/implementations, catalog view state, player
@@ -303,6 +312,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-compact-group-strip | Responsive compact group row | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | S | IN PROGRESS (2026-11-26): Compact group row implemented; 50 focused tests passed. Broad run has 955 passes and two known Settings focus failures; full suite stalled in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-favourite-group | Favourite group in catalog browsing | Catalog | WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Implemented and 65 focused tests pass. Broad run has 952 passes and two known Settings focus failures; full suite stalls in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-safe-automatic-catalog | Adult labels in automatic catalog views | Catalog | WP-first-playlist-group | M | DONE (2026-11-26): Automatic views exclude best-effort adult labels; explicit group browsing and Search remain available. 46 focused tests pass; broad regression has 946 passes and two known Settings focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos; 20k-item import benchmark passes (cold 5,107 ms, 5% churn refresh 3,243 ms). |
 | WP-first-playlist-group | First playlist group on Home and browsing | Catalog | WP-live-activation, WP-3.1 | M | DONE (2026-11-26): First visible source-ordered group per kind on Home and catalog entry; compact keyboard/Back-accessible picker preserves All and other groups. 102 focused tests pass; broad regression has 938 passes and two known Settings focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos; 20k-item import benchmark passes (cold 3,140 ms, 5% churn refresh 1,487 ms). |
