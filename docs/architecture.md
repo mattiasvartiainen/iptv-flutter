@@ -10,6 +10,11 @@
 
 Separate product behavior from presentation. The first release should make it cheap to replace a row-based catalog with a grid, hero layout, or compact TV guide without changing playlist parsing or playback.
 
+Live catalog browsing defaults to lazy, logo/name/group rows and retains an
+independently persisted card-view option. Other sections keep the shared view
+preference. Rows reuse the catalog's paged grid and activation/focus handling;
+they do not start playback until activated.
+
 ## 2. Layers and ownership
 
 ```text

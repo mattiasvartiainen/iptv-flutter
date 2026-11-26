@@ -13,6 +13,45 @@ import '../support/app_harness.dart';
 import '../support/catalog_fixtures.dart';
 
 void main() {
+  testWidgets('Live defaults to rows and its toggle is independent', (
+    tester,
+  ) async {
+    final harness = await pumpIptvApp(
+      tester,
+      size: const Size(1440, 900),
+      catalogQueryService: InMemoryCatalogQueryService(
+        'test-fixture-playlist',
+        fixtureCatalog,
+      ),
+    );
+    final app = harness.controllers.app;
+    app.openLiveTv();
+    await tester.pumpAndSettle();
+    var tile = tester.widget<MediaTile>(find.byType(MediaTile).first);
+    expect(tile.listView, isTrue);
+    expect(tile.showListArtwork, isTrue);
+    expect(find.byTooltip('Show card view'), findsOneWidget);
+    await tester.tap(find.byTooltip('Show card view'));
+    await tester.pumpAndSettle();
+    tile = tester.widget<MediaTile>(find.byType(MediaTile).first);
+    expect(tile.listView, isFalse);
+    expect(harness.controllers.preferences.useListView, isFalse);
+    app.openMovies();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Show list view'), findsOneWidget);
+    await tester.tap(find.byTooltip('Show list view'));
+    await tester.pumpAndSettle();
+    expect(harness.controllers.preferences.useListView, isTrue);
+    app.openLiveTv();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Show list view'), findsOneWidget);
+    expect(
+      tester.widget<MediaTile>(find.byType(MediaTile).first).listView,
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   test('Home widths fit two compact cards and use smaller landscape cards', () {
     for (final width in [288.0, 328.0, 358.0, 752.0]) {
       final cardWidth = AppTokens.homeTileWidthFor(width);
@@ -135,14 +174,20 @@ void main() {
           );
           await tester.tap(find.byType(MediaTile).first);
           await tester.pumpAndSettle();
-          expect(app.navigationController.currentRoute, isA<SeriesDetailsRoute>());
+          expect(
+            app.navigationController.currentRoute,
+            isA<SeriesDetailsRoute>(),
+          );
           await tester.ensureVisible(find.text('Season 1'));
           await tester.pumpAndSettle();
           expect(find.text('Select a season to see episodes.'), findsOneWidget);
           await tester.ensureVisible(find.text('Season 1'));
           await tester.tap(find.text('Season 1'));
           await tester.pumpAndSettle();
-          expect(app.navigationController.currentRoute, isA<SeriesDetailsRoute>());
+          expect(
+            app.navigationController.currentRoute,
+            isA<SeriesDetailsRoute>(),
+          );
           expect(
             tester.widget<MediaTile>(find.byType(MediaTile).first).listView,
             isTrue,

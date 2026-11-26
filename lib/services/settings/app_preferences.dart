@@ -13,6 +13,7 @@ class AppPreferences {
   static const _verboseRefreshInfoKey = 'verbose_refresh_info';
   static const _activePlaylistIdKey = 'active_playlist_id';
   static const _useListViewKey = 'use_list_view';
+  static const _liveUseListViewKey = 'live_use_list_view';
 
   Future<CatalogSort> liveTvSort(String playlistId) =>
       catalogSort(playlistId, CatalogGroupKind.live);
@@ -55,6 +56,12 @@ class AppPreferences {
 
   Future<void> setUseListView(bool enabled) =>
       _writeBool(_useListViewKey, enabled);
+
+  Future<bool> liveUseListView() =>
+      _readBool(_liveUseListViewKey, defaultValue: true);
+
+  Future<void> setLiveUseListView(bool enabled) =>
+      _writeBool(_liveUseListViewKey, enabled);
 
   Future<String?> activePlaylistId() =>
       _settingsRepository.getAppSetting(_activePlaylistIdKey);

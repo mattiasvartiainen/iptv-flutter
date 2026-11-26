@@ -340,14 +340,23 @@ class _AppShellScaffoldState extends State<AppShellScaffold>
 
   Widget _buildViewToggle(BuildContext context) {
     final preferences = AppScope.preferencesControllerOf(context);
+    final isLive = switch (AppScope.navigationControllerOf(
+      context,
+    ).currentRoute) {
+      CatalogRoute(kind: CatalogItemKind.live) => true,
+      _ => false,
+    };
+    final listView = isLive
+        ? preferences.liveUseListView
+        : preferences.useListView;
     return IconButton(
-      tooltip: preferences.useListView ? 'Show card view' : 'Show list view',
-      isSelected: preferences.useListView,
-      onPressed: () => preferences.setUseListView(!preferences.useListView),
+      tooltip: listView ? 'Show card view' : 'Show list view',
+      isSelected: listView,
+      onPressed: () => isLive
+          ? preferences.setLiveUseListView(!listView)
+          : preferences.setUseListView(!listView),
       icon: Icon(
-        preferences.useListView
-            ? Icons.grid_view_outlined
-            : Icons.view_list_outlined,
+        listView ? Icons.grid_view_outlined : Icons.view_list_outlined,
       ),
     );
   }

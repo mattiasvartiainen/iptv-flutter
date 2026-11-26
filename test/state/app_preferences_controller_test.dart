@@ -23,6 +23,25 @@ void main() {
     },
   );
 
+  test(
+    'Live view defaults to rows and is independent and persistent',
+    () async {
+      final settings = InMemorySettingsRepository();
+      final controller = AppPreferencesController(settingsRepository: settings);
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      expect(controller.liveUseListView, isTrue);
+      expect(controller.useListView, isFalse);
+      await controller.setLiveUseListView(false);
+      await controller.setUseListView(true);
+      final restored = AppPreferencesController(settingsRepository: settings);
+      addTearDown(restored.dispose);
+      await restored.initialize();
+      expect(restored.liveUseListView, isFalse);
+      expect(restored.useListView, isTrue);
+    },
+  );
+
   test('initializes defaults when settings are missing', () async {
     final controller = AppPreferencesController(
       settingsRepository: InMemorySettingsRepository(),

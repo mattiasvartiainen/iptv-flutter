@@ -20,6 +20,15 @@ Favourites and All remain explicit choices. Older DE step descriptions that
 mention Details activation or an All-groups default are historical; preserve
 the current behavior when implementing them. The compact group row is tracked
 as WP-compact-group-strip in the architecture work-package status.
+WP-live-channel-rows combines the Live row and lazy browsing portions of DE-04
+and DE-05: Live defaults to a separately persisted row preference, with cards
+still available. The shared MediaTile interaction and paged grid are reused
+instead of introducing a second focus handler or data loader.
+Focused tests cover default/toggle persistence, bounded 1,000-channel paging,
+sorting, group selection, 1x/2x responsive layouts, artwork fallback, remote
+activation and Back. The full suite reached 960 passes and the two known
+Settings-focus failures before stalling in the known telemetry test; the
+analyzer retains two baseline infos. Physical-device checks remain pending.
 
 ### Preserve
 
@@ -82,8 +91,8 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 | DE-01 | Deterministic visual baseline | None | READY | `test(ui): capture design evolution baseline` |
 | DE-02 | Reusable bounded artwork | DE-01 | PARTIAL (2026-11-25): WP-XM-movie extracted MediaArtwork for tiles/Details; bounded decode/failure regressions pass. DE-01 visual comparisons and complete artwork-fit checks remain pending. | `refactor(ui): share bounded media artwork rendering` |
 | DE-03 | Adaptive visual Details | DE-02 | PARTIAL (2026-11-25): WP-XM-movie adds scrollable adaptive Details/Play with local fallback and 1x/2x viewport coverage. Deterministic artwork comparisons remain pending. | `feat(details): add adaptive artwork and content hierarchy` |
-| DE-04 | Channel row component | DE-02 | READY | `feat(live): add accessible channel row presentation` |
-| DE-05 | Paged Live TV list | DE-04 | READY | `feat(live): use paged channel browsing layouts` |
+| DE-04 | Channel row component | DE-02 | PARTIAL: Live uses shared focusable MediaTile rows with bounded logos; visual baseline and hardware checks remain pending. | `feat(live): add accessible channel row presentation` |
+| DE-05 | Paged Live TV list | DE-04 | PARTIAL: Live defaults to a lazy single-column paged grid, with its own saved card/row toggle; full-suite baseline and hardware checks remain pending. | `feat(live): use paged channel browsing layouts` |
 | DE-06 | Poster-oriented catalog tiles | DE-02 | READY | `feat(catalog): add poster presentation for movies and series` |
 | DE-07 | Adaptive episode presentation | DE-02 | READY | `feat(series): adapt episode presentation to available space` |
 | DE-08 | Focus-following catalog context | DE-05, DE-06 | READY | `feat(catalog): show lightweight focused item context` |

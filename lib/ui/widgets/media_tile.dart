@@ -16,6 +16,7 @@ class MediaTile extends StatefulWidget {
     this.focusNode,
     this.selected = false,
     this.listView = false,
+    this.showListArtwork = false,
   });
 
   final String title;
@@ -27,6 +28,7 @@ class MediaTile extends StatefulWidget {
   final FocusNode? focusNode;
   final bool selected;
   final bool listView;
+  final bool showListArtwork;
 
   @override
   State<MediaTile> createState() => _MediaTileState();
@@ -149,7 +151,20 @@ class _MediaTileState extends State<MediaTile> {
                     child: widget.listView
                         ? Row(
                             children: [
-                              fallback,
+                              if (widget.showListArtwork)
+                                SizedBox(
+                                  width: 48,
+                                  height: 48,
+                                  child: MediaArtwork(
+                                    imageUrl: imageUrl,
+                                    fallbackIcon:
+                                        widget.icon ?? Icons.ondemand_video,
+                                    decodeWidth: AppTokens.artworkDecodeWidth,
+                                    decodeHeight: AppTokens.artworkDecodeHeight,
+                                  ),
+                                )
+                              else
+                                fallback,
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(

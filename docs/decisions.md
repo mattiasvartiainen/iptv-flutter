@@ -152,6 +152,10 @@ Details -> Player. Opening the Live section does not autoplay. Existing player
 controls/Back, lookup cancellation and paged browsing remain unchanged; no
 metadata/API request is needed to start a channel.
 
+The Live catalog now defaults to channel rows and has a separate saved
+card/row preference. The existing shared view preference remains in use for
+Home, Movies and Series. This does not start playback on focus or entry.
+
 ### Automatic adult-label exclusion (2026-11-26)
 
 The user chose automatic-only filtering: skip adult-labeled groups and

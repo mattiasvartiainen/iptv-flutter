@@ -44,9 +44,9 @@ void main() {
       );
       final app = harness.controllers.app;
       if (surface.startsWith('Live')) {
-        if (surface == 'Live list') {
-          await harness.controllers.preferences.setUseListView(true);
-        }
+        await harness.controllers.preferences.setLiveUseListView(
+          surface == 'Live list',
+        );
         app.openLiveTv();
         await tester.pumpAndSettle();
       } else if (surface == 'Search') {
@@ -71,7 +71,7 @@ void main() {
       final focus = Focus.of(tester.element(title));
       focus.requestFocus();
       await tester.pump();
-      if (surface == 'Live cards' || surface == 'Search') {
+      if (surface.startsWith('Live') || surface == 'Search') {
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       } else {

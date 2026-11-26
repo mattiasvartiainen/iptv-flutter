@@ -14,17 +14,25 @@ class AppPreferencesController extends ChangeNotifier {
   bool showHomeSeries = true;
   bool verboseRefreshInfo = false;
   bool useListView = false;
+  bool liveUseListView = true;
 
   Future<void> initialize() async {
     await refreshHomeSectionVisibility();
     await refreshVerboseRefreshInfoSetting();
     useListView = await _preferences.useListView();
+    liveUseListView = await _preferences.liveUseListView();
     notifyListeners();
   }
 
   Future<void> setUseListView(bool enabled) async {
     await _preferences.setUseListView(enabled);
     useListView = enabled;
+    notifyListeners();
+  }
+
+  Future<void> setLiveUseListView(bool enabled) async {
+    await _preferences.setLiveUseListView(enabled);
+    liveUseListView = enabled;
     notifyListeners();
   }
 

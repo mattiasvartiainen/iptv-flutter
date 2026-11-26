@@ -38,6 +38,16 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-live-channel-rows combines the Live channel row and paged presentation as
+one vertical slice. Dependencies: WP-first-playlist-group,
+WP-safe-automatic-catalog. Touches: catalog screen, shared media tile, shell
+view toggle, settings preferences and their tests, and current design docs.
+Skills: flutter-build-responsive-layout, dart-add-unit-test,
+dart-run-static-analysis. Live defaults to rows and has its own persisted
+card/row preference; other sections retain their existing shared preference.
+Reuse the lazy paged grid and existing focus/activation behavior. No preview,
+EPG, playback lifecycle, import or schema changes.
+
 WP-compact-group-strip adds a responsive, horizontally scrollable group row
 above compact Live, Movies and Series results, retaining the existing picker
 and wide sidebar. Dependencies: WP-first-playlist-group, WP-safe-automatic-catalog.
@@ -312,6 +322,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-live-channel-rows | Paged Live channel rows | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Live-specific saved preference and lazy logo/name/group rows implemented. Focused paging, activation, responsive and architecture tests pass. Full run reached 960 passes and two known Settings-focus failures, then stalled in the known telemetry test. Analyzer retains two baseline infos; clean full suite and device checks remain pending. |
 | WP-compact-group-strip | Responsive compact group row | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | S | IN PROGRESS (2026-11-26): Compact group row implemented; 50 focused tests passed. Broad run has 955 passes and two known Settings focus failures; full suite stalled in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-favourite-group | Favourite group in catalog browsing | Catalog | WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Implemented and 65 focused tests pass. Broad run has 952 passes and two known Settings focus failures; full suite stalls in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-safe-automatic-catalog | Adult labels in automatic catalog views | Catalog | WP-first-playlist-group | M | DONE (2026-11-26): Automatic views exclude best-effort adult labels; explicit group browsing and Search remain available. 46 focused tests pass; broad regression has 946 passes and two known Settings focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos; 20k-item import benchmark passes (cold 5,107 ms, 5% churn refresh 3,243 ms). |

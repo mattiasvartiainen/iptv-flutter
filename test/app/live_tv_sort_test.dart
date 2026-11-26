@@ -13,6 +13,35 @@ import '../support/catalog_fixtures.dart';
 import '../support/in_memory_settings_repository.dart';
 
 void main() {
+  testWidgets('default Live rows load large groups in bounded pages', (
+    tester,
+  ) async {
+    final names = List.generate(1000, (index) => 'Channel $index');
+    final harness = await pumpIptvApp(
+      tester,
+      size: const Size(1440, 900),
+      catalogQueryService: InMemoryCatalogQueryService(
+        'test-fixture-playlist',
+        const M3uParser().parse(swedishPlaylistText(names)),
+      ),
+    );
+    harness.controllers.app.openLiveTv();
+    await tester.pumpAndSettle();
+    final collection = harness.controllers.app.catalogView.items;
+    expect(collection.items.length, kCatalogPageSize);
+    final grid = find.descendant(
+      of: find.byType(PagedGridView<CatalogItemSummary>),
+      matching: find.byType(GridView),
+    );
+    final scroll = tester.widget<GridView>(grid).controller!;
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(collection.items.length, greaterThan(kCatalogPageSize));
+    expect(collection.items.length, lessThan(names.length));
+    expect(collection.items.first.title, names.first);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in [const Size(390, 844), const Size(1440, 900)]) {
     for (final textScale in [1.0, 2.0]) {
       testWidgets(

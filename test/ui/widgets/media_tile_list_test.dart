@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/ui/theme/app_theme.dart';
 import 'package:iptv_flutter/ui/theme/app_tokens.dart';
+import 'package:iptv_flutter/ui/widgets/media_artwork.dart';
 import 'package:iptv_flutter/ui/widgets/media_tile.dart';
 
 void main() {
@@ -48,4 +49,45 @@ void main() {
       expect(activations, 3);
     });
   }
+
+  testWidgets('channel rows display bounded logo artwork and fallback', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 100,
+            child: MediaTile(
+              title: 'Channel',
+              imageUrl: 'https://example.invalid/logo.png',
+              listView: true,
+              showListArtwork: true,
+              onActivate: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    final artwork = tester.widget<MediaArtwork>(find.byType(MediaArtwork));
+    expect(artwork.imageUrl, 'https://example.invalid/logo.png');
+    expect(tester.getSize(find.byType(MediaArtwork)), const Size(48, 48));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 100,
+            child: MediaTile(
+              title: 'Channel',
+              listView: true,
+              showListArtwork: true,
+              onActivate: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byIcon(Icons.ondemand_video), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

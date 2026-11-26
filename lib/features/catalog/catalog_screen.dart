@@ -19,13 +19,17 @@ const SliverGridDelegate _cardGrid = SliverGridDelegateWithMaxCrossAxisExtent(
   mainAxisSpacing: AppTokens.gridGap,
 );
 
-SliverGridDelegate _viewGrid(BuildContext context, SliverGridDelegate cards) =>
-    AppScope.preferencesControllerOf(context).useListView
+SliverGridDelegate _viewGrid(
+  BuildContext context,
+  SliverGridDelegate cards, {
+  bool? listView,
+  double extraListExtent = 0,
+}) => (listView ?? AppScope.preferencesControllerOf(context).useListView)
     ? SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 1,
-        mainAxisExtent: AppTokens.mediaListExtentFor(
-          MediaQuery.textScalerOf(context),
-        ),
+        mainAxisExtent:
+            AppTokens.mediaListExtentFor(MediaQuery.textScalerOf(context)) +
+            extraListExtent,
       )
     : cards;
 
@@ -85,6 +89,11 @@ class _ContentGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.appControllerOf(context);
+    final isLive = groupKind == CatalogGroupKind.live;
+    final preferences = AppScope.preferencesControllerOf(context);
+    final listView = isLive
+        ? preferences.liveUseListView
+        : preferences.useListView;
     return AppShellScaffold(
       showBack: true,
       title: title,
@@ -115,11 +124,15 @@ class _ContentGrid extends StatelessWidget {
                         : controller.catalogView.awaitingGroupSelection
                         ? 'No automatically selected group. Choose a group to browse.'
                         : emptyText,
-                    gridDelegate: _viewGrid(context, _cardGrid),
+                    gridDelegate: _viewGrid(
+                      context,
+                      _cardGrid,
+                      listView: listView,
+                      extraListExtent: isLive ? 8 : 0,
+                    ),
                     itemBuilder: (context, item, autofocus) => MediaTile(
-                      listView: AppScope.preferencesControllerOf(
-                        context,
-                      ).useListView,
+                      listView: listView,
+                      showListArtwork: isLive,
                       key: ValueKey<String>(item.id),
                       autofocus: autofocus,
                       title: item.title,
