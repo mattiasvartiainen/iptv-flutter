@@ -8,10 +8,18 @@ import '../../models/content_item.dart';
 import '../../services/playback/playback_contract.dart';
 import '../../ui/theme/player_theme.dart';
 import '../../ui/widgets/app_scope.dart';
+import '../../ui/widgets/selected_value_builder.dart';
 import 'player_controller.dart';
 import 'widgets/player_controls.dart';
 import 'widgets/player_error_panel.dart';
 import 'widgets/player_track_dialog.dart';
+
+typedef _SurfaceValues = ({
+  PlaybackStatus status,
+  bool buffering,
+  PlaybackErrorKind? errorKind,
+  Widget? videoView,
+});
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key, required this.item});
@@ -245,16 +253,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   }
                   return KeyEventResult.ignored;
                 },
-                child: ValueListenableBuilder<PlaybackState>(
+                child: SelectedValueBuilder<PlaybackState, _SurfaceValues>(
                   valueListenable: player.playbackState,
-                  builder: (context, playback, _) => Stack(
+                  select: (state) => (
+                    status: state.status,
+                    buffering: state.isBuffering,
+                    errorKind: state.errorKind,
+                    videoView: player.videoView,
+                  ),
+                  builder: (context, selected) => Stack(
                     fit: StackFit.expand,
                     children: [
                       ColoredBox(
                         color: videoBackground,
                         child: Center(
                           child:
-                              player.videoView ??
+                              selected.videoView ??
                               Icon(
                                 Icons.ondemand_video,
                                 size: 72,
@@ -262,16 +276,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               ),
                         ),
                       ),
-                      if (playback.status == PlaybackStatus.loading ||
-                          playback.isBuffering)
+                      if (selected.status == PlaybackStatus.loading ||
+                          selected.buffering)
                         Center(
                           child: CircularProgressIndicator(
                             color: playerTheme.foreground,
                           ),
                         ),
-                      if (playback.status == PlaybackStatus.error)
+                      if (selected.status == PlaybackStatus.error)
                         PlayerErrorPanel(
-                          errorKind: playback.errorKind,
+                          errorKind: selected.errorKind,
                           onBack: () =>
                               AppScope.navigationControllerOf(context).pop(),
                           onRetry: () => unawaited(player.open(widget.item)),
@@ -295,7 +309,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   builder: (_, _) => PlayerControls(
                                     item: widget.item,
                                     player: player,
-                                    playback: playback,
+                                    positionUpdatesEnabled: _controlsVisible,
                                     showDiagnostics:
                                         preferences.verboseRefreshInfo,
                                     playFocus: _playFocus,
@@ -356,15 +370,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final id = await showDialog<String>(
         context: context,
-        builder: (dialogContext) => ValueListenableBuilder<PlaybackState>(
-          valueListenable: player.playbackState,
-          builder: (_, state, _) => PlayerTrackDialog(
-            mediaInfo: state.mediaInfo,
-            subtitle: subtitle,
-            onSelected: (id) => Navigator.of(dialogContext).pop(id),
-            onCancel: () => Navigator.of(dialogContext).pop(),
-          ),
-        ),
+        builder: (dialogContext) =>
+            SelectedValueBuilder<PlaybackState, (List<PlaybackTrack>, String?)>(
+              valueListenable: player.playbackState,
+              select: (state) => subtitle
+                  ? (
+                      state.mediaInfo.subtitleTracks,
+                      state.mediaInfo.selectedSubtitleId,
+                    )
+                  : (
+                      state.mediaInfo.audioTracks,
+                      state.mediaInfo.selectedAudioId,
+                    ),
+              builder: (_, _) => PlayerTrackDialog(
+                mediaInfo: player.playbackState.value.mediaInfo,
+                subtitle: subtitle,
+                onSelected: (id) => Navigator.of(dialogContext).pop(id),
+                onCancel: () => Navigator.of(dialogContext).pop(),
+              ),
+            ),
       );
       if (id != null &&
           mounted &&

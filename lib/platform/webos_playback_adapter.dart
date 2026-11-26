@@ -28,6 +28,11 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   PlaybackLoad? _load;
   Future<void>? _disposeFuture;
   Future<void> _controllerDisposal = Future<void>.value();
+  lg.VideoPlayerValue? _metadataValue;
+  List<PlaybackTrack> _audioTracks = const [];
+  List<PlaybackTrack> _subtitleTracks = const [];
+  List<String> _sensitiveTrackParts = const [];
+  static final _languageTag = RegExp(r'^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$');
 
   @override
   PlaybackCapabilities get capabilities => const PlaybackCapabilities(
@@ -86,9 +91,17 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
       );
       throw PlaybackConfigurationError();
     }
-    final controller = lg.VideoPlayerController.network(
-      Uri.parse(item.streamUrl),
-    );
+    final uri = Uri.parse(item.streamUrl);
+    final controller = lg.VideoPlayerController.network(uri);
+    _sensitiveTrackParts =
+        [
+              ...uri.userInfo.split(':'),
+              ...uri.pathSegments,
+              ...uri.queryParametersAll.values.expand((v) => v),
+            ]
+            .where((part) => part.isNotEmpty)
+            .map((part) => part.toLowerCase())
+            .toList();
     _controller = controller;
     controller.addListener(_handleUpdate);
     try {
@@ -231,10 +244,6 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
       return;
     }
     if (!value.isInitialized) return;
-    final size = value.size;
-    final audio = _tracks(value.audioTracks, 'Audio');
-    final subtitles = _tracks(value.subtitleTracks, 'Subtitle');
-    final selectedAudio = value.currentAudioTrack;
     _publish(
       _state.copyWith(
         status: value.isPlaying
@@ -249,36 +258,61 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
         playbackStartedAt: value.isPlaying
             ? (_state.playbackStartedAt ?? DateTime.now())
             : null,
-        mediaInfo: PlaybackMediaInfo(
-          width: size.width.isFinite && size.width > 0
-              ? size.width.toInt()
-              : null,
-          height: size.height.isFinite && size.height > 0
-              ? size.height.toInt()
-              : null,
-          audioTracks: audio,
-          subtitleTracks: subtitles.isEmpty
-              ? subtitles
-              : [const PlaybackTrack(id: 'off', label: 'Off'), ...subtitles],
-          selectedAudioId:
-              selectedAudio != null &&
-                  selectedAudio >= 0 &&
-                  selectedAudio < audio.length
-              ? selectedAudio.toString()
-              : null,
-        ),
+        mediaInfo: _mediaInfo(value),
       ),
+    );
+  }
+
+  PlaybackMediaInfo _mediaInfo(lg.VideoPlayerValue value) {
+    final previous = _metadataValue;
+    final size = value.size;
+    final width = size.width.isFinite && size.width > 0
+        ? size.width.toInt()
+        : null;
+    final height = size.height.isFinite && size.height > 0
+        ? size.height.toInt()
+        : null;
+    // The pinned plugin retains track-list identity on position/status copies.
+    final audioChanged =
+        previous == null || !identical(previous.audioTracks, value.audioTracks);
+    final subtitlesChanged =
+        previous == null ||
+        !identical(previous.subtitleTracks, value.subtitleTracks);
+    if (!audioChanged &&
+        !subtitlesChanged &&
+        _state.mediaInfo.width == width &&
+        _state.mediaInfo.height == height &&
+        previous.currentAudioTrack == value.currentAudioTrack) {
+      return _state.mediaInfo;
+    }
+    if (audioChanged) _audioTracks = _tracks(value.audioTracks, 'Audio');
+    if (subtitlesChanged) {
+      final subtitles = _tracks(value.subtitleTracks, 'Subtitle');
+      _subtitleTracks = subtitles.isEmpty
+          ? subtitles
+          : List.unmodifiable([
+              const PlaybackTrack(id: 'off', label: 'Off'),
+              ...subtitles,
+            ]);
+    }
+    _metadataValue = value;
+    final selectedAudio = value.currentAudioTrack;
+    return PlaybackMediaInfo(
+      width: width,
+      height: height,
+      audioTracks: _audioTracks,
+      subtitleTracks: _subtitleTracks,
+      selectedAudioId:
+          selectedAudio != null &&
+              selectedAudio >= 0 &&
+              selectedAudio < _audioTracks.length
+          ? selectedAudio.toString()
+          : null,
     );
   }
 
   List<PlaybackTrack> _tracks(List<Map<String, dynamic>>? tracks, String type) {
     if (tracks == null) return const [];
-    final uri = Uri.tryParse(_state.item?.streamUrl ?? '');
-    final sensitive = <String>[
-      if (uri != null) ...uri.userInfo.split(':'),
-      if (uri != null) ...uri.pathSegments,
-      if (uri != null) ...uri.queryParametersAll.values.expand((v) => v),
-    ].where((part) => part.isNotEmpty).map((part) => part.toLowerCase());
     return List.unmodifiable(
       tracks.asMap().entries.map((entry) {
         final language = entry.value['language'];
@@ -286,8 +320,10 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
         // Restrict it to language tags so URLs and credentials never reach UI.
         final text = language is String ? language.trim() : '';
         final safe =
-            RegExp(r'^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$').hasMatch(text) &&
-                !sensitive.any((part) => text.toLowerCase().contains(part))
+            _languageTag.hasMatch(text) &&
+                !_sensitiveTrackParts.any(
+                  (part) => text.toLowerCase().contains(part),
+                )
             ? safePlaybackLabel(text)
             : '';
         return PlaybackTrack(
@@ -308,6 +344,10 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
     final controller = _controller;
     _controller = null;
     _videoView = null;
+    _metadataValue = null;
+    _audioTracks = const [];
+    _subtitleTracks = const [];
+    _sensitiveTrackParts = const [];
     if (controller != null) {
       controller.removeListener(_handleUpdate);
       final previous = _controllerDisposal;

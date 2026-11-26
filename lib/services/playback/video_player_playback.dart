@@ -193,6 +193,12 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         : (_state.status == PlaybackStatus.stopped
               ? PlaybackStatus.stopped
               : PlaybackStatus.paused);
+    final width = value.size.width.isFinite && value.size.width > 0
+        ? value.size.width.round()
+        : null;
+    final height = value.size.height.isFinite && value.size.height > 0
+        ? value.size.height.round()
+        : null;
     _publish(
       _state.copyWith(
         status: status,
@@ -200,14 +206,10 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         duration: value.duration == Duration.zero ? null : value.duration,
         clearDuration: value.duration == Duration.zero,
         isBuffering: value.isBuffering,
-        mediaInfo: PlaybackMediaInfo(
-          width: value.size.width.isFinite && value.size.width > 0
-              ? value.size.width.round()
-              : null,
-          height: value.size.height.isFinite && value.size.height > 0
-              ? value.size.height.round()
-              : null,
-        ),
+        mediaInfo:
+            _state.mediaInfo.width == width && _state.mediaInfo.height == height
+            ? _state.mediaInfo
+            : PlaybackMediaInfo(width: width, height: height),
         volume: value.volume * 100,
         playbackStartedAt: value.isPlaying
             ? (_state.playbackStartedAt ?? DateTime.now())

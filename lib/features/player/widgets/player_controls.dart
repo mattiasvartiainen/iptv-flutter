@@ -6,6 +6,7 @@ import '../../../models/content_item.dart';
 import '../../../services/playback/playback_contract.dart';
 import '../../../ui/formatting.dart';
 import '../../../ui/theme/player_theme.dart';
+import '../../../ui/widgets/selected_value_builder.dart';
 import '../player_controller.dart';
 import '../player_layout.dart';
 import 'player_header.dart';
@@ -16,7 +17,7 @@ class PlayerControls extends StatelessWidget {
     super.key,
     required this.item,
     required this.player,
-    required this.playback,
+    this.positionUpdatesEnabled = true,
     required this.showDiagnostics,
     required this.playFocus,
     required this.seekFocus,
@@ -31,7 +32,7 @@ class PlayerControls extends StatelessWidget {
 
   final ContentItem item;
   final PlayerController player;
-  final PlaybackState playback;
+  final bool positionUpdatesEnabled;
   final bool showDiagnostics;
   final FocusNode playFocus;
   final FocusNode seekFocus;
@@ -44,7 +45,28 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback onChooseAudio;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SelectedValueBuilder<PlaybackState, Object>(
+        valueListenable: player.playbackState,
+        select: (state) => (
+          state.status,
+          state.isBuffering,
+          state.item,
+          state.duration,
+          state.mediaInfo.width,
+          state.mediaInfo.height,
+          state.mediaInfo.fps?.isFinite == true && state.mediaInfo.fps! > 0
+              ? state.mediaInfo.fps
+              : null,
+          state.mediaInfo.videoCodec,
+          state.mediaInfo.audioCodec,
+          state.mediaInfo.channelLayout,
+        ),
+        builder: (context, _) =>
+            _buildControls(context, player.playbackState.value),
+      );
+
+  Widget _buildControls(BuildContext context, PlaybackState playback) {
     final duration = playback.duration;
     final canSeek =
         player.capabilities.supportsSeek &&
@@ -112,16 +134,35 @@ class PlayerControls extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (showDiagnostics)
-                          _PlayerDiagnostics(playback: playback),
+                          SelectedValueBuilder<
+                            PlaybackState,
+                            (Duration, Duration?, Duration?)
+                          >(
+                            valueListenable: player.playbackState,
+                            enabled: positionUpdatesEnabled,
+                            select: (state) => (
+                              state.position,
+                              state.duration,
+                              state.startupLatency,
+                            ),
+                            builder: (_, _) => _PlayerDiagnostics(
+                              playback: player.playbackState.value,
+                            ),
+                          ),
                         if (canSeek)
-                          PlayerSeekBar(
-                            focusNode: seekFocus,
-                            position: playback.position,
-                            duration: duration,
-                            preview: seekPreview,
-                            onChangeStart: onSeekStart,
-                            onChanged: onSeekChanged,
-                            onChangeEnd: onSeekEnd,
+                          SelectedValueBuilder<PlaybackState, Duration>(
+                            valueListenable: player.playbackState,
+                            enabled: positionUpdatesEnabled,
+                            select: (state) => state.position,
+                            builder: (_, position) => PlayerSeekBar(
+                              focusNode: seekFocus,
+                              position: position,
+                              duration: duration,
+                              preview: seekPreview,
+                              onChangeStart: onSeekStart,
+                              onChanged: onSeekChanged,
+                              onChangeEnd: onSeekEnd,
+                            ),
                           ),
                         Wrap(
                           alignment: WrapAlignment.center,
@@ -183,13 +224,25 @@ class PlayerControls extends StatelessWidget {
                                       color: playerTheme.foreground,
                                     ),
                                     Expanded(
-                                      child: Slider(
-                                        key: const ValueKey('player-volume'),
-                                        value: playback.volume.clamp(0, 100),
-                                        max: 100,
-                                        onChanged: (value) =>
-                                            unawaited(player.setVolume(value)),
-                                      ),
+                                      child:
+                                          SelectedValueBuilder<
+                                            PlaybackState,
+                                            double
+                                          >(
+                                            valueListenable:
+                                                player.playbackState,
+                                            select: (state) => state.volume,
+                                            builder: (_, volume) => Slider(
+                                              key: const ValueKey(
+                                                'player-volume',
+                                              ),
+                                              value: volume.clamp(0, 100),
+                                              max: 100,
+                                              onChanged: (value) => unawaited(
+                                                player.setVolume(value),
+                                              ),
+                                            ),
+                                          ),
                                     ),
                                   ],
                                 ),

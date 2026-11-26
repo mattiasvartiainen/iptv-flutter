@@ -239,7 +239,28 @@ owner-provided preview; `PlayerTrackDialog` and `PlayerErrorPanel` receive data
 and callbacks without navigation or service dependencies. `PlayerScreen` retains
 focus-node lifetime, auto-hide timers, input/Back policy, seek-preview state and
 chooser session/focus restoration. Presentation widgets do not own playback
-sessions, introduce new subscriptions or change native surface caching.
+sessions or change native surface caching. Scoped `ValueListenable` listeners
+are detached when their widgets are disposed.
+
+`SelectedValueBuilder` compares immutable selected values before rebuilding.
+The screen selects status/buffering/errors and current video-widget identity,
+so same-session surface replacement still appears immediately. Controls select
+status, duration and technical facts separately from position and volume.
+Only the seek/time slice and opt-in diagnostics rebuild on position changes;
+hidden position slices detach and read the latest state when revealed. Track
+dialogs select only their track kind's list and confirmed selection, preserving
+focus across position ticks and unrelated track-kind updates. Playback events
+remain unthrottled and seek-preview ownership is unchanged.
+
+Android reuses `PlaybackMediaInfo` while mapped dimensions are unchanged.
+LG caches mapped tracks by the pinned plugin's native list identity and reuses
+media info while mapped dimensions and selected audio index are unchanged.
+Selection/dimension updates reuse the existing track lists; list replacements
+remap only the changed kind. Credential-derived language-label filters are
+prepared once per load and cleared with all metadata caches on resource disposal
+or replacement. Native metadata remains unknown when unreported, including
+LG subtitle confirmation. MediaKit already maps metadata only on metadata/track
+events, not on position events. None of this runs during playlist import.
 
 `PlayerLayout` owns the overlay breakpoint and compact/regular geometry.
 `PlayerControls` resolves it from `LayoutBuilder` constraints; dialogs use their

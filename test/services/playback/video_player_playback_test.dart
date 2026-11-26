@@ -76,6 +76,40 @@ void main() {
       VideoPlayerPlatform.instance = original;
     });
 
+    test(
+      'position and volume updates retain metadata until dimensions change',
+      () async {
+        platform.autoInitialize = true;
+        await adapter.load(item);
+        final view =
+            adapter.buildVideoView()
+                as PlaybackVideoSurface<vp.VideoPlayerValue>;
+        final controller = view.values as vp.VideoPlayerController;
+        final info = adapter.state.mediaInfo;
+        for (var i = 1; i <= 100; i++) {
+          controller.value = controller.value.copyWith(
+            position: Duration(seconds: i),
+          );
+          expect(adapter.state.mediaInfo, same(info));
+          expect(adapter.state.position, Duration(seconds: i));
+        }
+        controller.value = controller.value.copyWith(volume: .42);
+        expect(adapter.state.volume, 42);
+        expect(adapter.state.mediaInfo, same(info));
+        controller.value = controller.value.copyWith(
+          size: const Size(800, 600),
+        );
+        final changed = adapter.state.mediaInfo;
+        expect(changed.width, 800);
+        expect(changed.height, 600);
+        expect(changed, isNot(same(info)));
+        controller.value = controller.value.copyWith(
+          position: const Duration(seconds: 101),
+        );
+        expect(adapter.state.mediaInfo, same(changed));
+      },
+    );
+
     test('stop cancels initialization and ignores detached events', () async {
       final created = platform.created.stream.first;
       final loading = adapter.load(item);

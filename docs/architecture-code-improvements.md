@@ -33,6 +33,32 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-player-updates narrows position-driven rebuilds and metadata remapping.
+Dependencies: WP-player-presentation. Touches: player screen/controls/dialog,
+selected-value builder, Android/LG metadata mapping and related tests/docs.
+Skills: dart-add-unit-test, dart-run-static-analysis, dart-write-documentation.
+Preserve every playback event, control/focus/Back behavior and metadata update.
+Subscribe presentation slices only to their consumed values; suspend hidden
+position presentation. Reuse native metadata when its inputs are unchanged,
+reset caches on resource replacement and retain credential-safe track labels.
+No import, database, backend selection, new packages or frame-rate throttling.
+
+Implemented selected-value presentation listeners: position changes update only
+visible seek/time and optional diagnostics, not header/buttons/volume/dialogs.
+Hidden position slices detach and catch up on reveal; dialog list/selection and
+surface identity changes remain reactive. LG caches mapped tracks by verified
+pinned-plugin list identity; selection/dimension changes reuse track lists.
+Android retains media info until mapped dimensions change. Invalid FPS/size
+values do not cause needless tick rebuilds/remapping. Cache disposal/replacement
+clears credential filters and maps; playlist import remains untouched.
+
+Verification: 130 focused tests pass, including 100-tick zero-rebuild selection
+tests, hidden listener cleanup/reveal, metadata-object/track-list reuse,
+volume/status/duration/metadata updates, chooser focus and stream replacement.
+Broad regression: 907 passes and the two known Settings focus failures,
+excluding the previously stalled telemetry file. Analyzer retains two baseline
+infos; Windows debug build passes. Real Android/LG hardware profiling is pending.
+
 WP-player-presentation separates adaptive layout/theme policy from playback.
 Dependencies: WP-player-contract. Touches: player screen/presentation widgets,
 new player layout policy/theme extension, AppTheme and related tests/docs.
@@ -204,6 +230,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-player-updates | Narrow playback updates and metadata remapping | Player | WP-player-presentation | M | DONE (2026-11-25): Selected-value rebuilds and native metadata reuse; 130 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-presentation | Adaptive player layout/theme policy | Player | WP-player-contract | M | DONE (2026-11-25): Constraint-based geometry and inherited player theme; 114 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-contract | Capabilities, surface lifetime and typed errors | Player | WP-player-widgets | M | DONE (2026-11-25) - capability gates, resource-owned reactive surfaces and safe typed failures; 127 focused tests and Windows build pass; baseline analyzer/test caveats above |
 | WP-player-widgets | Focused player presentation widgets | Player | WP-player-session | M | DONE (2026-11-25): Stateless controls/header, seek bar, track dialog and error panel; 69 focused tests and Windows debug build pass. |

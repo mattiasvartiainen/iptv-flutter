@@ -295,6 +295,102 @@ void main() {
     },
   );
 
+  test(
+    'position updates reuse metadata and track mapping until inputs change',
+    () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      platform.initialize(await created);
+      await loading;
+      final view =
+          adapter.buildVideoView()
+              as PlaybackVideoSurface<video.VideoPlayerValue>;
+      final controller = view.values as video.VideoPlayerController;
+      final originalInfo = adapter.state.mediaInfo;
+      for (var i = 1; i <= 100; i++) {
+        controller.value = controller.value.copyWith(
+          position: Duration(seconds: i),
+        );
+        expect(adapter.state.position, Duration(seconds: i));
+        expect(adapter.state.mediaInfo, same(originalInfo));
+      }
+      controller.value = controller.value.copyWith(currentAudioTrack: 1);
+      final selectedInfo = adapter.state.mediaInfo;
+      expect(selectedInfo.selectedAudioId, '1');
+      expect(selectedInfo.audioTracks, same(originalInfo.audioTracks));
+      expect(selectedInfo.subtitleTracks, same(originalInfo.subtitleTracks));
+      controller.value = controller.value.copyWith(size: const Size(800, 600));
+      expect(adapter.state.mediaInfo.width, 800);
+      expect(
+        adapter.state.mediaInfo.audioTracks,
+        same(originalInfo.audioTracks),
+      );
+      controller.value = controller.value.copyWith(
+        position: const Duration(seconds: 101),
+        audioTracks: [
+          {'language': 'sv'},
+        ],
+      );
+      expect(adapter.state.mediaInfo.audioTracks.single.label, 'sv');
+      expect(adapter.state.mediaInfo.selectedAudioId, isNull);
+      expect(
+        adapter.state.mediaInfo.subtitleTracks,
+        same(originalInfo.subtitleTracks),
+      );
+      controller.value = controller.value.copyWith(
+        position: const Duration(seconds: 102),
+        subtitleTracks: [],
+      );
+      expect(adapter.state.mediaInfo.subtitleTracks, isEmpty);
+      final changedInfo = adapter.state.mediaInfo;
+      controller.value = controller.value.copyWith(
+        position: const Duration(seconds: 103),
+      );
+      expect(adapter.state.mediaInfo, same(changedInfo));
+      controller.value = controller.value.copyWith(
+        size: Size(double.nan, double.nan),
+      );
+      final unknownDimensions = adapter.state.mediaInfo;
+      expect(unknownDimensions.width, isNull);
+      expect(unknownDimensions.height, isNull);
+      for (var i = 104; i <= 110; i++) {
+        controller.value = controller.value.copyWith(
+          position: Duration(seconds: i),
+        );
+        expect(adapter.state.mediaInfo, same(unknownDimensions));
+      }
+    },
+  );
+
+  test(
+    'replacement clears cached tracks and rechecks credential-safe labels',
+    () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      platform.initialize(await created);
+      await loading;
+      final firstInfo = adapter.state.mediaInfo;
+      const replacement = ContentItem(
+        id: 'replacement',
+        title: 'Replacement',
+        type: ContentType.live,
+        streamUrl: 'https://example.com/live/en/pass/2',
+        group: 'TV',
+      );
+      final nextCreated = platform.created.stream.first;
+      final nextLoading = adapter.load(replacement);
+      platform.initialize(await nextCreated);
+      await nextLoading;
+      expect(
+        adapter.state.mediaInfo.audioTracks,
+        isNot(same(firstInfo.audioTracks)),
+      );
+      expect(adapter.state.mediaInfo.audioTracks.first.label, 'Audio track 1');
+      expect(adapter.state.mediaInfo.selectedAudioId, isNull);
+      expect(adapter.state.item, replacement);
+    },
+  );
+
   test('stop during initialization suppresses stale playback', () async {
     final createdLoad = platform.created.stream.first;
     final loading = adapter.load(item);

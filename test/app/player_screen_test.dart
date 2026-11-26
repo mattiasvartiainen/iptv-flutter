@@ -7,6 +7,8 @@ import 'package:iptv_flutter/app/app_dependencies.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/app/navigation/navigation_controller.dart';
 import 'package:iptv_flutter/features/player/player_controller.dart';
+import 'package:iptv_flutter/features/player/widgets/player_header.dart';
+import 'package:iptv_flutter/features/player/widgets/player_track_dialog.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/favorite_repository.dart';
@@ -17,6 +19,7 @@ import 'package:iptv_flutter/state/catalog_view_state.dart';
 import 'package:iptv_flutter/state/playlists_controller.dart';
 
 import '../support/catalog_fixtures.dart';
+import '../support/controlled_playback.dart';
 import '../support/in_memory_settings_repository.dart';
 
 typedef _PlayerHarness = ({
@@ -289,6 +292,13 @@ void main() {
       );
 
       final initialBuilds = adapter.builds;
+      final header = tester.widget<PlayerHeader>(find.byType(PlayerHeader));
+      final central = tester.widget<IconButton>(
+        find.byKey(const ValueKey('player-central-play')),
+      );
+      final volume = tester.widget<Slider>(
+        find.byKey(const ValueKey('player-volume')),
+      );
       for (var i = 1; i <= 20; i++) {
         await harness.player.seekTo(Duration(seconds: i));
         await tester.pump();
@@ -296,8 +306,107 @@ void main() {
       expect(adapter.viewsCreated, 1);
       expect(adapter.builds, initialBuilds);
       expect(initialBuilds, greaterThan(0));
+      expect(
+        tester.widget<PlayerHeader>(find.byType(PlayerHeader)),
+        same(header),
+      );
+      expect(
+        tester.widget<IconButton>(
+          find.byKey(const ValueKey('player-central-play')),
+        ),
+        same(central),
+      );
+      expect(
+        tester.widget<Slider>(find.byKey(const ValueKey('player-volume'))),
+        same(volume),
+      );
+      expect(
+        tester.widget<Slider>(find.byKey(const ValueKey('player-seek'))).value,
+        20000,
+      );
+      await harness.player.setVolume(42);
+      await tester.pump();
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const ValueKey('player-volume')))
+            .value,
+        42,
+      );
+      expect(
+        tester.widget<PlayerHeader>(find.byType(PlayerHeader)),
+        same(header),
+      );
     },
   );
+  testWidgets(
+    'hidden position controls stop rebuilding and catch up on reveal',
+    (tester) async {
+      final harness = await _pumpPlayerApp(
+        tester,
+        playbackAdapter: _TrackingPlaybackAdapter(),
+        item: _movie,
+      );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_controlsAreIgnoringInput(tester), isTrue);
+      final seek = tester.widget<Slider>(
+        find.byKey(const ValueKey('player-seek')),
+      );
+      for (var i = 1; i <= 20; i++) {
+        await harness.player.seekTo(Duration(seconds: i));
+        await tester.pump();
+      }
+      expect(
+        tester.widget<Slider>(find.byKey(const ValueKey('player-seek'))),
+        same(seek),
+      );
+      await tester.tapAt(const Offset(300, 250));
+      await tester.pumpAndSettle();
+      expect(_controlsAreIgnoringInput(tester), isFalse);
+      expect(
+        tester.widget<Slider>(find.byKey(const ValueKey('player-seek'))).value,
+        20000,
+      );
+    },
+  );
+
+  testWidgets('open track chooser ignores position but refreshes selection', (
+    tester,
+  ) async {
+    final harness = await _pumpPlayerApp(
+      tester,
+      playbackAdapter: _TrackingPlaybackAdapter(),
+      item: _movie,
+    );
+    await tester.tap(find.byTooltip('Audio tracks'));
+    await tester.pumpAndSettle();
+    final dialog = tester.widget<PlayerTrackDialog>(
+      find.byType(PlayerTrackDialog),
+    );
+    final focused = FocusManager.instance.primaryFocus;
+    for (var i = 1; i <= 20; i++) {
+      await harness.player.seekTo(Duration(seconds: i));
+      await tester.pump();
+    }
+    expect(
+      tester.widget<PlayerTrackDialog>(find.byType(PlayerTrackDialog)),
+      same(dialog),
+    );
+    expect(FocusManager.instance.primaryFocus, same(focused));
+    await harness.player.selectTrack('2', subtitle: false);
+    await tester.pump();
+    expect(
+      tester
+          .widget<PlayerTrackDialog>(find.byType(PlayerTrackDialog))
+          .mediaInfo
+          .selectedAudioId,
+      '2',
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+  });
   testWidgets(
     'same-session surface changes replace or remove the visible video',
     (tester) async {
@@ -519,6 +628,58 @@ void main() {
       },
     );
   }
+  testWidgets(
+    'chooser refreshes replacement tracks but ignores other track kind',
+    (tester) async {
+      final adapter = ControlledPlayback();
+      await _pumpPlayerApp(tester, playbackAdapter: adapter, item: _movie);
+      adapter.emit(
+        adapter.state.copyWith(
+          mediaInfo: const PlaybackMediaInfo(
+            subtitleTracks: [
+              PlaybackTrack(id: 'off', label: 'Off'),
+              PlaybackTrack(id: 'en', label: 'English'),
+            ],
+            selectedSubtitleId: 'off',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('Subtitles'));
+      await tester.pumpAndSettle();
+      final dialog = tester.widget<PlayerTrackDialog>(
+        find.byType(PlayerTrackDialog),
+      );
+      adapter.emit(
+        adapter.state.copyWith(
+          mediaInfo: adapter.state.mediaInfo.withSelectedTrack(
+            'sv',
+            subtitle: false,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<PlayerTrackDialog>(find.byType(PlayerTrackDialog)),
+        same(dialog),
+      );
+      adapter.emit(
+        adapter.state.copyWith(
+          mediaInfo: const PlaybackMediaInfo(
+            subtitleTracks: [PlaybackTrack(id: 'sv', label: 'Swedish')],
+            selectedSubtitleId: 'sv',
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('English'), findsNothing);
+      expect(find.text('Swedish'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('player renders fullscreen video surface and readable overlay', (
     tester,
   ) async {
