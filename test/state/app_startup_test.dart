@@ -99,7 +99,7 @@ void main() {
       await startup.initialize();
       expect(playlists.activePlaylistId, 'saved');
       expect(view.itemCount, fixtureCatalog.length);
-      expect(view.homeLive, hasLength(3));
+      expect(view.homeLive, hasLength(2));
     },
   );
 

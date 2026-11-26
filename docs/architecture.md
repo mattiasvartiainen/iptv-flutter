@@ -127,6 +127,13 @@ Flutter widgets should be repeatable from state. A screen may own ephemeral widg
 
 ### Content-selection flows (2026-11-26)
 
+Home previews and initial Live, Movies and Series catalog views use the first
+visible group for that kind in playlist order, not alphabetical group order.
+The compact selector and wide sidebar retain access to All groups and other
+groups. Item sort preferences remain separate from group ordering. Home shows
+the selected group name; its Live preview follows playlist item order, while
+movie and series previews remain alphabetical.
+
 The [Xtream and metadata plan](xtream-and-metadata-implementation-plan.md#9-details-and-interaction)
 defines the requested flows. Movie and Series details and direct Live
 activation are implemented:

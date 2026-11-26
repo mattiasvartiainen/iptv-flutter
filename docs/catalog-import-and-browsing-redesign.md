@@ -492,7 +492,9 @@ Rules:
 
 #### Implemented catalog sorting (2026-11-25)
 
-Live TV starts with All groups and defaults to original playlist order. The
+Since WP-first-playlist-group, Live TV starts with its first visible group in
+playlist order (All groups remains available). Live defaults to original item
+order. The
 sort toggle next to the list/card-view button switches between Playlist order and
 Alphabetical (A-Z), independently of presentation. The choice is saved per
 playlist and section through `AppPreferences` under `live_tv_sort:<playlistId>`,

@@ -230,11 +230,13 @@ do not resume them. Mini-player and system PiP are deferred to separately scoped
 backend capabilities, explicit close behavior, and platform integration. Only one stream may play at
 a time.
 
-### D-8 - Catalog entry and activation behavior (OPEN)
-The concept selects the first group and includes direct-play/resume examples. Current catalog browsing
-starts with All and current activation destinations are covered by tests. Decide these behaviors
-explicitly before a separate behavioral package changes them. Batch 4 presentation/focus work preserves
-All, current destinations, and existing load policies. History-based initial focus requires real data.
+### D-8 - Catalog entry and activation behavior (partially resolved)
+The user approved direct Live activation and first-group entry for Live, Movies
+and Series. Home previews and catalog entry use the first visible group in
+playlist order independently for each kind; users can still choose All or any
+other group on compact and wide layouts. Item sort preferences remain
+independent. Resume/history-based focus and other activation changes remain
+separate decisions.
 
 ### D-9 - Palette and theme scope (OPEN)
 Decide whether to retain the current dark palette, adopt the Kanal semantic palette, or also deliver

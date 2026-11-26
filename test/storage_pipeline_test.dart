@@ -690,7 +690,8 @@ http://nxtportal.xyz:8080/DxB63ueRBDyBf9cwi/Qk0RuQ0B5DMBNUbdj/323813
 
       expect(controller.catalogItemCount, 4);
       final live = controller.catalogView.homeLive;
-      expect(live, hasLength(4));
+      expect(controller.catalogView.homeLiveGroup?.title, 'Sweden');
+      expect(live, hasLength(1));
       final svt2Summary = live.firstWhere((item) => item.title == 'SVT2 SD SE');
       final svt2 = await controller.catalogView.itemById(svt2Summary.id);
       expect(svt2, isNotNull);

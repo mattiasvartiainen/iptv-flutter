@@ -10,6 +10,7 @@ import '../services/settings/app_preferences.dart';
 typedef PageFetcher<T> = Future<CatalogPage<T>> Function(int offset, int limit);
 
 enum CatalogFailure { pageLoadFailed, groupsLoadFailed, sortSaveFailed }
+
 enum ItemActivationFailure { notFound, lookupFailed }
 
 /// Holds one visible page window of a query result.
@@ -154,6 +155,9 @@ class CatalogViewState extends ChangeNotifier {
   List<CatalogItemSummary> homeLive = const [];
   List<CatalogItemSummary> homeMovies = const [];
   List<SeriesSummary> homeSeries = const [];
+  GroupSummary? homeLiveGroup;
+  GroupSummary? homeMoviesGroup;
+  GroupSummary? homeSeriesGroup;
   List<SeasonSummary> seasons = const [];
   List<GroupSummary> browseGroups = const [];
   CatalogGroupKind? browseGroupKind;
@@ -166,6 +170,7 @@ class CatalogViewState extends ChangeNotifier {
   int _searchStatusGeneration = 0;
   int _browseGeneration = 0;
   int _bindingGeneration = 0;
+  bool _selectFirstGroupOnRetry = false;
   final Map<CatalogGroupKind, CatalogSort> _sorts = {};
   final Map<CatalogGroupKind, CatalogFailure> _sortFailures = {};
   bool isSavingSort = false;
@@ -205,6 +210,7 @@ class CatalogViewState extends ChangeNotifier {
     browseGroups = const [];
     browseGroupKind = null;
     selectedGroupId = null;
+    _selectFirstGroupOnRetry = false;
     groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
@@ -212,6 +218,14 @@ class CatalogViewState extends ChangeNotifier {
     _sorts.clear();
     isSavingSort = false;
     _sortFailures.clear();
+    homeLive = const [];
+    homeMovies = const [];
+    homeSeries = const [];
+    homeLiveGroup = null;
+    homeMoviesGroup = null;
+    homeSeriesGroup = null;
+    itemCount = 0;
+    _notify();
     final preferences = _preferences;
     if (preferences != null) {
       final sorts = await Future.wait(
@@ -240,6 +254,7 @@ class CatalogViewState extends ChangeNotifier {
     browseGroups = const [];
     browseGroupKind = null;
     selectedGroupId = null;
+    _selectFirstGroupOnRetry = false;
     groupsFailure = null;
     searchIndexStatus = null;
     _searchTerm = '';
@@ -250,6 +265,9 @@ class CatalogViewState extends ChangeNotifier {
     homeLive = const [];
     homeMovies = const [];
     homeSeries = const [];
+    homeLiveGroup = null;
+    homeMoviesGroup = null;
+    homeSeriesGroup = null;
     itemCount = 0;
     _notify();
   }
@@ -325,22 +343,60 @@ class CatalogViewState extends ChangeNotifier {
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return;
 
-    final results = await Future.wait([
-      service.homePreview(playlistId, kind: CatalogItemKind.live),
-      service.homePreview(playlistId, kind: CatalogItemKind.movie),
-      service.querySeries(playlistId, limit: kHomePreviewCount),
+    final binding = _bindingGeneration;
+    final groups = await Future.wait(
+      CatalogGroupKind.values.map(
+        (kind) => service.queryGroups(playlistId, kind: kind),
+      ),
+    );
+    if (binding != _bindingGeneration || _disposed) return;
+    final liveGroup = groups[CatalogGroupKind.live.index].firstOrNull;
+    final movieGroup = groups[CatalogGroupKind.movie.index].firstOrNull;
+    final seriesGroup = groups[CatalogGroupKind.series.index].firstOrNull;
+    final results = await (
+      liveGroup == null
+          ? Future.value(const CatalogPage<CatalogItemSummary>.empty())
+          : service.itemsInGroup(
+              playlistId,
+              liveGroup.id,
+              limit: kHomePreviewCount,
+              sort: CatalogSort.playlistOrder,
+            ),
+      movieGroup == null
+          ? Future.value(const CatalogPage<CatalogItemSummary>.empty())
+          : service.itemsInGroup(
+              playlistId,
+              movieGroup.id,
+              limit: kHomePreviewCount,
+              sort: CatalogSort.title,
+            ),
+      seriesGroup == null
+          ? Future.value(const CatalogPage<SeriesSummary>.empty())
+          : service.seriesInGroup(
+              playlistId,
+              seriesGroup.id,
+              limit: kHomePreviewCount,
+              sort: CatalogSort.title,
+            ),
       service.queryItems(CatalogQuery(playlistId: playlistId, limit: 1)),
-    ]);
+    ).wait;
 
-    if (_playlistId != playlistId) return;
-    homeLive = results[0] as List<CatalogItemSummary>;
-    homeMovies = results[1] as List<CatalogItemSummary>;
-    homeSeries = (results[2] as CatalogPage<SeriesSummary>).items;
-    itemCount = (results[3] as CatalogPage<CatalogItemSummary>).total;
+    if (binding != _bindingGeneration || _disposed) return;
+    homeLiveGroup = liveGroup;
+    homeMoviesGroup = movieGroup;
+    homeSeriesGroup = seriesGroup;
+    homeLive = results.$1.items;
+    homeMovies = results.$2.items;
+    homeSeries = results.$3.items;
+    itemCount = results.$4.total;
     _notify();
   }
 
-  Future<void> showItems(CatalogItemKind kind, {int? groupId}) async {
+  Future<void> showItems(
+    CatalogItemKind kind, {
+    int? groupId,
+    bool selectFirstGroup = false,
+  }) async {
     final service = _service;
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return Future<void>.value();
@@ -355,14 +411,20 @@ class CatalogViewState extends ChangeNotifier {
     final sort = sortFor(groupKind);
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
+    if (kindChanged) browseGroups = const [];
     selectedGroupId = kindChanged ? null : groupId;
+    if (selectFirstGroup) items.clear();
     await _loadBrowseGroups(
       service,
       playlistId,
       groupKind,
       generation: generation,
+      selectFirstGroup: selectFirstGroup,
     );
-    if (generation != _browseGeneration) return;
+    if (generation != _browseGeneration ||
+        (selectFirstGroup && groupsFailure != null)) {
+      return;
+    }
     final selectedGroup = selectedGroupId;
     await items.load(
       (offset, limit) => selectedGroup == null
@@ -410,13 +472,25 @@ class CatalogViewState extends ChangeNotifier {
       }
       _notify();
       if (browseGroupKind == kind) {
+        final selectFirst = _selectFirstGroupOnRetry;
         switch (kind) {
           case CatalogGroupKind.live:
-            await showItems(CatalogItemKind.live, groupId: selectedGroupId);
+            await showItems(
+              CatalogItemKind.live,
+              groupId: selectedGroupId,
+              selectFirstGroup: selectFirst,
+            );
           case CatalogGroupKind.movie:
-            await showItems(CatalogItemKind.movie, groupId: selectedGroupId);
+            await showItems(
+              CatalogItemKind.movie,
+              groupId: selectedGroupId,
+              selectFirstGroup: selectFirst,
+            );
           case CatalogGroupKind.series:
-            await showSeries(groupId: selectedGroupId);
+            await showSeries(
+              groupId: selectedGroupId,
+              selectFirstGroup: selectFirst,
+            );
         }
       }
     } catch (error, stackTrace) {
@@ -438,7 +512,7 @@ class CatalogViewState extends ChangeNotifier {
     }
   }
 
-  Future<void> showSeries({int? groupId}) async {
+  Future<void> showSeries({int? groupId, bool selectFirstGroup = false}) async {
     final service = _service;
     final playlistId = _playlistId;
     if (service == null || playlistId == null) return Future<void>.value();
@@ -448,14 +522,20 @@ class CatalogViewState extends ChangeNotifier {
     final sort = sortFor(groupKind);
     final kindChanged = browseGroupKind != groupKind;
     browseGroupKind = groupKind;
+    if (kindChanged) browseGroups = const [];
     selectedGroupId = kindChanged ? null : groupId;
+    if (selectFirstGroup) series.clear();
     await _loadBrowseGroups(
       service,
       playlistId,
       groupKind,
       generation: generation,
+      selectFirstGroup: selectFirstGroup,
     );
-    if (generation != _browseGeneration) return;
+    if (generation != _browseGeneration ||
+        (selectFirstGroup && groupsFailure != null)) {
+      return;
+    }
     final selectedGroup = selectedGroupId;
     await series.load(
       (offset, limit) => selectedGroup == null
@@ -495,7 +575,9 @@ class CatalogViewState extends ChangeNotifier {
     String playlistId,
     CatalogGroupKind kind, {
     required int generation,
+    bool selectFirstGroup = false,
   }) async {
+    _selectFirstGroupOnRetry = selectFirstGroup;
     isLoadingGroups = true;
     groupsFailure = null;
     _notify();
@@ -508,10 +590,13 @@ class CatalogViewState extends ChangeNotifier {
         return;
       }
       browseGroups = loaded;
-      if (selectedGroupId != null &&
+      if (selectFirstGroup) {
+        selectedGroupId = loaded.firstOrNull?.id;
+      } else if (selectedGroupId != null &&
           !loaded.any((group) => group.id == selectedGroupId)) {
         selectedGroupId = null;
       }
+      _selectFirstGroupOnRetry = false;
     } catch (error, stackTrace) {
       if (_service != service ||
           _playlistId != playlistId ||
@@ -540,13 +625,25 @@ class CatalogViewState extends ChangeNotifier {
   }
 
   Future<void> retryBrowseGroups() async {
+    final selectFirst = _selectFirstGroupOnRetry;
     switch (browseGroupKind) {
       case CatalogGroupKind.live:
-        await showItems(CatalogItemKind.live, groupId: selectedGroupId);
+        await showItems(
+          CatalogItemKind.live,
+          groupId: selectedGroupId,
+          selectFirstGroup: selectFirst,
+        );
       case CatalogGroupKind.movie:
-        await showItems(CatalogItemKind.movie, groupId: selectedGroupId);
+        await showItems(
+          CatalogItemKind.movie,
+          groupId: selectedGroupId,
+          selectFirstGroup: selectFirst,
+        );
       case CatalogGroupKind.series:
-        await showSeries(groupId: selectedGroupId);
+        await showSeries(
+          groupId: selectedGroupId,
+          selectFirstGroup: selectFirst,
+        );
       case null:
         return;
     }

@@ -180,7 +180,7 @@ void main() {
     final (controllers, _) = await pumpLoadedApp(tester);
 
     expect(controllers.app.catalogItemCount, 5);
-    expect(controllers.app.catalogView.homeLive, hasLength(3));
+    expect(controllers.app.catalogView.homeLive, hasLength(2));
     expect(controllers.app.catalogView.homeMovies, hasLength(2));
     expect(find.text('News 24'), findsOneWidget);
     expect(find.text('Northbound'), findsOneWidget);
@@ -245,10 +245,10 @@ void main() {
       controllers.app.navigationController.currentRoute,
       isA<CatalogRoute>(),
     );
-    expect(controllers.app.catalogView.items.items, hasLength(3));
+    expect(controllers.app.catalogView.items.items, hasLength(2));
     expect(controllers.app.catalogView.items.hasMore, isFalse);
     expect(find.text('News 24'), findsOneWidget);
-    expect(find.text('World Sports'), findsOneWidget);
+    expect(find.text('World Sports'), findsNothing);
     expect(find.text('Northbound'), findsNothing);
   });
 

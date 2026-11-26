@@ -24,6 +24,133 @@ void main() {
     view.dispose();
   });
 
+  test('Home and initial views use first source group per kind', () async {
+    final service = InMemoryCatalogQueryService(
+      'p1',
+      const M3uParser().parse(firstGroupsPlaylistText),
+    );
+    await view.bind(service: service, playlistId: 'p1');
+    expect(view.homeLiveGroup?.title, 'Sweden');
+    expect(view.homeLive.map((item) => item.title), [
+      'Welcome channel',
+      'SVT channel',
+    ]);
+    expect(view.homeMoviesGroup?.title, 'Zulu Movies');
+    expect(view.homeMovies.map((item) => item.title), ['Z movie']);
+    expect(view.homeSeriesGroup?.title, 'Zulu Series');
+    expect(view.homeSeries.map((item) => item.title), ['Z Show']);
+    expect(view.itemCount, 7);
+
+    await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+    expect(view.selectedGroupId, view.browseGroups.first.id);
+    expect(view.items.items.map((item) => item.title), [
+      'Welcome channel',
+      'SVT channel',
+    ]);
+    await view.setLiveTvSort(CatalogSort.title);
+    expect(view.selectedGroupId, view.browseGroups.first.id);
+    await view.selectBrowseGroup(null);
+    expect(view.items.total, 3);
+    await view.showItems(CatalogItemKind.movie, selectFirstGroup: true);
+    expect(view.selectedGroupId, view.browseGroups.first.id);
+    expect(view.items.items.single.title, 'Z movie');
+    await view.showSeries(selectFirstGroup: true);
+    expect(view.selectedGroupId, view.browseGroups.first.id);
+    expect(view.series.items.single.title, 'Z Show');
+    await view.selectBrowseGroup(null);
+    expect(view.series.total, 2);
+    await view.showSeries(selectFirstGroup: true);
+    expect(view.series.items.single.title, 'Z Show');
+  });
+
+  test('first group selection retries after a group lookup failure', () async {
+    final service = _FailOnceGroupsService(
+      'p1',
+      const M3uParser().parse(firstGroupsPlaylistText),
+    );
+    await view.bind(service: service, playlistId: 'p1');
+    service.failNext = true;
+    await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+    expect(view.groupsFailure, CatalogFailure.groupsLoadFailed);
+    expect(view.items.items, isEmpty);
+    await view.retryBrowseGroups();
+    expect(view.groupsFailure, isNull);
+    expect(view.selectedGroupId, view.browseGroups.first.id);
+    expect(view.items.items.map((item) => item.title), [
+      'Welcome channel',
+      'SVT channel',
+    ]);
+  });
+
+  test(
+    'late Home group lookup cannot replace a newer playlist binding',
+    () async {
+      final old = _GatedGroupsService(
+        'p1',
+        const M3uParser().parse(firstGroupsPlaylistText),
+      )..gate = true;
+      final current = InMemoryCatalogQueryService('p1', fixtureCatalog);
+      final stale = view.bind(service: old, playlistId: 'p1');
+      await view.bind(service: current, playlistId: 'p1');
+      for (final kind in CatalogGroupKind.values) {
+        old.completeGroups(kind, [_group(99, kind, 'Stale group')]);
+      }
+      await stale;
+      expect(view.homeLiveGroup?.title, 'News');
+      expect(view.homeLive.map((item) => item.title), [
+        'News 24',
+        'City Radio',
+      ]);
+      expect(view.itemCount, fixtureCatalog.length);
+    },
+  );
+
+  test('empty playlist has no selected group or Home previews', () async {
+    await view.bind(
+      service: InMemoryCatalogQueryService('empty', const []),
+      playlistId: 'empty',
+    );
+    expect(view.homeLiveGroup, isNull);
+    expect(view.homeMoviesGroup, isNull);
+    expect(view.homeSeriesGroup, isNull);
+    expect(view.homeLive, isEmpty);
+    await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+    expect(view.selectedGroupId, isNull);
+    expect(view.items.items, isEmpty);
+    await view.showSeries(selectFirstGroup: true);
+    expect(view.selectedGroupId, isNull);
+    expect(view.series.items, isEmpty);
+  });
+
+  test(
+    'changing sort while initial groups load still selects the first group',
+    () async {
+      final service = _GatedGroupsService(
+        'p1',
+        const M3uParser().parse(firstGroupsPlaylistText),
+      );
+      await view.bind(service: service, playlistId: 'p1');
+      final groups = await service.queryGroups(
+        'p1',
+        kind: CatalogGroupKind.live,
+      );
+      service.gate = true;
+      final opening = view.showItems(
+        CatalogItemKind.live,
+        selectFirstGroup: true,
+      );
+      final sorting = view.setLiveTvSort(CatalogSort.title);
+      await Future<void>.delayed(Duration.zero);
+      service.completeGroups(CatalogGroupKind.live, groups);
+      await Future.wait([opening, sorting]);
+      expect(view.selectedGroupId, groups.first.id);
+      expect(view.items.items.map((item) => item.title), [
+        'SVT channel',
+        'Welcome channel',
+      ]);
+    },
+  );
+
   test('switching browse kind resets selected group to All', () async {
     const playlistId = 'browse-kind-reset';
     final service = InMemoryCatalogQueryService(playlistId, fixtureCatalog);
@@ -304,6 +431,7 @@ void main() {
     const playlistId = 'browse-group-failure';
     final service = _FailOnceGroupsService(playlistId, fixtureCatalog);
     await view.bind(service: service, playlistId: playlistId);
+    service.failNext = true;
 
     await view.showItems(CatalogItemKind.live);
 
@@ -326,6 +454,7 @@ void main() {
       const playlistId = 'browse-generation';
       final service = _GatedGroupsService(playlistId, fixtureCatalog);
       await view.bind(service: service, playlistId: playlistId);
+      service.gate = true;
 
       final liveRequest = view.showItems(CatalogItemKind.live);
       final movieRequest = view.showItems(CatalogItemKind.movie);
@@ -426,6 +555,7 @@ class _GatedSortSettings extends InMemorySettingsRepository {
 
 class _GatedGroupsService extends InMemoryCatalogQueryService {
   _GatedGroupsService(super.playlistId, super.items);
+  bool gate = false;
 
   final Map<CatalogGroupKind, Completer<List<GroupSummary>>> _groupResponses = {
     for (final kind in CatalogGroupKind.values)
@@ -441,13 +571,15 @@ class _GatedGroupsService extends InMemoryCatalogQueryService {
     String playlistId, {
     required CatalogGroupKind kind,
     String profileId = 'default',
-  }) => _groupResponses[kind]!.future;
+  }) => gate
+      ? _groupResponses[kind]!.future
+      : super.queryGroups(playlistId, kind: kind, profileId: profileId);
 }
 
 class _FailOnceGroupsService extends InMemoryCatalogQueryService {
   _FailOnceGroupsService(super.playlistId, super.items);
 
-  bool _shouldFail = true;
+  bool failNext = false;
 
   @override
   Future<List<GroupSummary>> queryGroups(
@@ -455,8 +587,8 @@ class _FailOnceGroupsService extends InMemoryCatalogQueryService {
     required CatalogGroupKind kind,
     String profileId = 'default',
   }) {
-    if (_shouldFail) {
-      _shouldFail = false;
+    if (failNext) {
+      failNext = false;
       throw StateError(
         'Failed URL: https://provider.test/live/private-user/private-pass/list.m3u',
       );

@@ -38,6 +38,15 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-first-playlist-group selects the first visible playlist-ordered group for
+Home previews and when opening Live, Movies or Series. Dependencies:
+WP-live-activation, WP-3.1. Touches: catalog view state, navigation facade,
+Home and group selector widgets, related state/widget/SQLite tests and docs.
+Skills: flutter-build-responsive-layout, dart-add-unit-test,
+dart-run-static-analysis. Preserve paged queries and per-kind item sort
+preferences; explicitly selecting All or another group remains available at
+every width. No changes to import, schema, native playback or search.
+
 WP-live-activation starts selected Live channels without intermediate Details.
 Dependencies: WP-player-guardrails, WP-XM-series. Touches: shared item activation,
 AppScope/catalog/Home/Search callbacks, activation/navigation tests and docs.
@@ -275,6 +284,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-first-playlist-group | First playlist group on Home and browsing | Catalog | WP-live-activation, WP-3.1 | M | DONE (2026-11-26): First visible source-ordered group per kind on Home and catalog entry; compact keyboard/Back-accessible picker preserves All and other groups. 102 focused tests pass; broad regression has 938 passes and two known Settings focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos; 20k-item import benchmark passes (cold 3,140 ms, 5% churn refresh 1,487 ms). |
 | WP-live-activation | Direct Live channel activation | Navigation | WP-player-guardrails, WP-XM-series | S | DONE (2026-11-26): Catalog/Home/Search share type-aware activation; Live skips Details, movies/episodes unchanged. 173 focused tests pass; broad regression has 930 passes and the two existing Settings focus failures, excluding the known telemetry stall. Analyzer retains only two baseline infos. Native backends/import pipeline unchanged. |
 | WP-player-guardrails | Architecture guardrails and documentation authority | Player | WP-player-updates | M | DONE (2026-11-26): Export-aware boundary checks, contract-only playback barrel and historical-doc labels; 120 focused tests and Windows build pass; baseline analyzer/test caveats above. |
 | WP-player-updates | Narrow playback updates and metadata remapping | Player | WP-player-presentation | M | DONE (2026-11-25): Selected-value rebuilds and native metadata reuse; 130 focused tests and Windows build pass; baseline analyzer/test caveats above. |
@@ -1225,7 +1235,7 @@ Agents must not resolve these on their own. Record the answer in `docs/decisions
 | D-5 | Do we need explicit Android TV detection? | `highlightMode` only / detect leanback feature via `device_info_plus` or a method channel | `highlightMode` only until a feature needs more |
 | D-6 | webOS entry: keep `--dart-define=IPTV_WEBOS=true` or a separate `lib/main_webos.dart` target | define / separate target (requires verifying `flutter-webos build -t`) | Keep the define; read it only in `lib/platform/` |
 | D-7 | Player Back and background viewing | Stop on exit / in-app mini player / mini player plus supported system PiP | OPEN: retain stop-on-exit during Batch 4; decide separately before session/lifecycle changes. |
-| D-8 | Catalog initial group and activation destinations | Keep All and current destinations / first group and content-specific direct-play or resume flows | OPEN: preserve current behavior; define a separate behavioral package if changed. |
+| D-8 | Catalog initial group and activation destinations | First group, direct Live playback; other destinations preserved | PARTIALLY RESOLVED: first-group entry and direct Live approved; resume/history remains a separate decision. |
 | D-9 | Visual palette and light-theme scope | Extract current dark theme / adopt Kanal palette / adopt palette plus light variant | OPEN: current-theme extraction is unblocked; visual redesign/light-theme delivery needs approval. |
 | D-10 | Adaptive navigation composition | Compact four bottom destinations plus Search/Settings, medium adaptive rail, expanded labeled rail / alternative composition | RESOLVED (2026-10-09): approved documented recommendation; implemented in WP-4.7. |
 

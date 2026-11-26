@@ -36,19 +36,19 @@ class AppController {
     navigationController.resetToHomeAndPush(
       const CatalogRoute(CatalogItemKind.live),
     );
-    catalogView.showItems(CatalogItemKind.live);
+    catalogView.showItems(CatalogItemKind.live, selectFirstGroup: true);
   }
 
   void openMovies() {
     navigationController.resetToHomeAndPush(
       const CatalogRoute(CatalogItemKind.movie),
     );
-    catalogView.showItems(CatalogItemKind.movie);
+    catalogView.showItems(CatalogItemKind.movie, selectFirstGroup: true);
   }
 
   void openSeries() {
     navigationController.resetToHomeAndPush(const SeriesRoute());
-    catalogView.showSeries();
+    catalogView.showSeries(selectFirstGroup: true);
   }
 
   void openSearch() {

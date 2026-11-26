@@ -490,7 +490,7 @@ void main() {
       expect(loaded, isTrue);
       expect(playlists.activePlaylistId, playlistId);
       expect(app.catalogItemCount, fixtureCatalog.length);
-      expect(catalogView.homeLive, hasLength(3));
+      expect(catalogView.homeLive, hasLength(2));
       expect(settings.appSettings['active_playlist_id'], playlistId);
     },
   );

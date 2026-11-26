@@ -30,7 +30,16 @@ class GroupSidebarLayout extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < _sidebarBreakpoint) {
-          return FocusTraversalGroup(child: child);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListenableBuilder(
+                listenable: view,
+                builder: (context, _) => _CompactGroupSelector(view: view),
+              ),
+              Expanded(child: FocusTraversalGroup(child: child)),
+            ],
+          );
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -63,6 +72,99 @@ class GroupSidebarLayout extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _CompactGroupSelector extends StatefulWidget {
+  const _CompactGroupSelector({required this.view});
+
+  final CatalogViewState view;
+
+  @override
+  State<_CompactGroupSelector> createState() => _CompactGroupSelectorState();
+}
+
+class _CompactGroupSelectorState extends State<_CompactGroupSelector> {
+  final _focus = FocusNode(debugLabel: 'Catalog group selector');
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final view = widget.view;
+    final error = view.groupsFailure;
+    if (error != null) {
+      return TextButton.icon(
+        focusNode: _focus,
+        onPressed: () => unawaited(view.retryBrowseGroups()),
+        icon: const Icon(Icons.refresh),
+        label: Text(catalogFailureMessage(error)),
+      );
+    }
+    if (view.isLoadingGroups && view.browseGroups.isEmpty) {
+      return const LinearProgressIndicator(minHeight: 2);
+    }
+    final selected = view.browseGroups
+        .where((group) => group.id == view.selectedGroupId)
+        .firstOrNull;
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        focusNode: _focus,
+        onPressed: () async {
+          final route = DialogRoute<void>(
+            context: context,
+            builder: (dialogContext) => LayoutBuilder(
+              builder: (context, constraints) => AlertDialog(
+                title: const Text('Groups'),
+                content: SizedBox(
+                  width: 420,
+                  height: constraints.maxHeight * 0.6,
+                  child: ListView.builder(
+                    itemCount: view.browseGroups.length + 1,
+                    itemBuilder: (context, index) {
+                      final group = index == 0
+                          ? null
+                          : view.browseGroups[index - 1];
+                      return ListTile(
+                        autofocus: index == 0,
+                        selected: group?.id == view.selectedGroupId,
+                        title: Text(
+                          group?.title ?? 'All groups',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () {
+                          Navigator.of(dialogContext).pop();
+                          unawaited(view.selectBrowseGroup(group?.id));
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+          await Navigator.of(context, rootNavigator: true).push(route);
+          await route.completed;
+          if (context.mounted &&
+              ModalRoute.of(context)?.isCurrent == true &&
+              !Navigator.of(context, rootNavigator: true).canPop()) {
+            _focus.requestFocus();
+          }
+        },
+        icon: const Icon(Icons.filter_list),
+        label: Text(
+          'Groups: ${selected?.title ?? 'All groups'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
     );
   }
 }
@@ -112,7 +214,7 @@ class _GroupFilterMenu extends StatelessWidget {
                     children: [
                       _GroupChoice(
                         label: 'All groups',
-                        count: totalItems,
+                        count: selectedGroupId == null ? totalItems : null,
                         selected: selectedGroupId == null,
                         onTap: () => onSelected(null),
                       ),
@@ -145,7 +247,7 @@ class _GroupChoice extends StatelessWidget {
   });
 
   final String label;
-  final int count;
+  final int? count;
   final bool selected;
   final VoidCallback onTap;
 
@@ -154,7 +256,9 @@ class _GroupChoice extends StatelessWidget {
     selected: selected,
     dense: true,
     title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-    trailing: Text('$count', style: Theme.of(context).textTheme.labelSmall),
+    trailing: count == null
+        ? null
+        : Text('$count', style: Theme.of(context).textTheme.labelSmall),
     onTap: onTap,
   );
 }

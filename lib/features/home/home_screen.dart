@@ -46,6 +46,7 @@ class HomeScreen extends StatelessWidget {
                 if (preferences.showHomeLiveTv) ...[
                   _SectionHeader(
                     title: 'Live TV',
+                    group: c.catalogView.homeLiveGroup?.title,
                     actionLabel: 'See all',
                     onAction: c.openLiveTv,
                   ),
@@ -61,6 +62,7 @@ class HomeScreen extends StatelessWidget {
                 if (preferences.showHomeMovies) ...[
                   _SectionHeader(
                     title: 'Movies',
+                    group: c.catalogView.homeMoviesGroup?.title,
                     actionLabel: 'See all',
                     onAction: c.openMovies,
                   ),
@@ -76,6 +78,7 @@ class HomeScreen extends StatelessWidget {
                 if (preferences.showHomeSeries) ...[
                   _SectionHeader(
                     title: 'Series',
+                    group: c.catalogView.homeSeriesGroup?.title,
                     actionLabel: 'See all',
                     onAction: c.openSeries,
                   ),
@@ -103,11 +106,13 @@ class HomeScreen extends StatelessWidget {
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
+    this.group,
     required this.actionLabel,
     required this.onAction,
   });
 
   final String title;
+  final String? group;
   final String actionLabel;
   final VoidCallback onAction;
 
@@ -117,11 +122,18 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(
-            title,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (group case final group?)
+                Text(group, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
           ),
         ),
         TextButton(onPressed: onAction, child: Text(actionLabel)),

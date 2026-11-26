@@ -9,6 +9,7 @@ import 'package:iptv_flutter/services/catalog/sqlite_catalog_query_service.dart'
 import 'package:iptv_flutter/services/catalog/sqlite_catalog_repository.dart';
 import 'package:iptv_flutter/services/storage/catalog_sort_v13_migration.dart';
 import 'package:iptv_flutter/services/storage/database_adapter.dart';
+import 'package:iptv_flutter/state/catalog_view_state.dart';
 
 import 'support/catalog_fixtures.dart';
 import 'support/catalog_http_test_server.dart';
@@ -213,6 +214,76 @@ void main() {
       );
       await searchIndexer.processQueue(playlistId: playlistId);
     });
+
+    test(
+      'Home and browse follow first visible group after refresh reorders it',
+      () async {
+        const id = 'first-groups';
+        server.responses['/groups.m3u'] = firstGroupsPlaylistText;
+        final sync = createCatalogSyncService(
+          adapter,
+          searchIndexer: SqliteCatalogSearchIndexer(
+            databaseAdapter: adapter,
+            autoStartWorker: false,
+          ),
+        );
+        Future<void> refresh() async {
+          await sync.load(
+            playlistId: id,
+            playlistUrl: server.url('/groups.m3u'),
+            policy: CatalogLoadPolicy.networkOnly,
+          );
+        }
+
+        await refresh();
+        final view = CatalogViewState();
+        addTearDown(view.dispose);
+        await view.bind(service: queries, playlistId: id);
+        expect(view.homeLiveGroup?.title, 'Sweden');
+        expect(view.homeLive.map((item) => item.title), [
+          'Welcome channel',
+          'SVT channel',
+        ]);
+        expect(view.homeMoviesGroup?.title, 'Zulu Movies');
+        expect(view.homeSeriesGroup?.title, 'Zulu Series');
+        await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+        expect(view.items.items.map((item) => item.title), [
+          'Welcome channel',
+          'SVT channel',
+        ]);
+        await view.showItems(CatalogItemKind.movie, selectFirstGroup: true);
+        expect(view.items.items.single.title, 'Z movie');
+        await view.showSeries(selectFirstGroup: true);
+        expect(view.series.items.single.title, 'Z Show');
+
+        final database = await adapter.database;
+        await database.insert('hidden_groups_v8', {
+          'playlist_id': id,
+          'kind': 1,
+          'group_title': 'Sweden',
+          'profile_id': 'default',
+        });
+        await view.refreshHomeSections();
+        expect(view.homeLiveGroup?.title, 'Alpha Live');
+        await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+        expect(view.items.items.single.title, 'A channel');
+        await database.delete(
+          'hidden_groups_v8',
+          where: 'playlist_id = ?',
+          whereArgs: [id],
+        );
+
+        const welcome =
+            '#EXTINF:-1 group-title="Sweden",Welcome channel\nhttps://example.invalid/live/welcome.m3u8\n';
+        server.responses['/groups.m3u'] =
+            '${firstGroupsPlaylistText.replaceFirst(welcome, '')}$welcome';
+        await refresh();
+        await view.refreshHomeSections();
+        expect(view.homeLiveGroup?.title, 'Alpha Live');
+        await view.showItems(CatalogItemKind.live, selectFirstGroup: true);
+        expect(view.items.items.single.title, 'A channel');
+      },
+    );
 
     test(
       'paginates without gaps or duplicates and reports a stable total',
@@ -500,8 +571,12 @@ void main() {
         await db.execute('DROP INDEX idx_items_series_membership');
         await db.execute('DROP TRIGGER invalidate_series_metadata_source');
         await db.execute('DROP TRIGGER invalidate_series_metadata_episode');
-        await db.execute('DROP TRIGGER invalidate_series_metadata_episode_update');
-        await db.execute('DROP TRIGGER invalidate_series_metadata_episode_insert');
+        await db.execute(
+          'DROP TRIGGER invalidate_series_metadata_episode_update',
+        );
+        await db.execute(
+          'DROP TRIGGER invalidate_series_metadata_episode_insert',
+        );
         await db.execute('DROP TRIGGER invalidate_series_metadata_title');
         await db.execute('DROP TABLE series_metadata_cache');
         await db.execute('DROP TRIGGER invalidate_movie_metadata_source');
