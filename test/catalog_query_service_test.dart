@@ -223,6 +223,37 @@ void main() {
     });
 
     test(
+      'stable lookup survives row renumbering and respects playlist',
+      () async {
+        final page = await queries.queryItems(
+          CatalogQuery(
+            playlistId: playlistId,
+            kinds: const [CatalogItemKind.movie],
+          ),
+        );
+        final original = page.items.first;
+        expect(original.playlistId, playlistId);
+        expect(original.itemKey, isNotNull);
+        final db = await adapter.database;
+        await db.update(
+          'items',
+          {'id': 10000000},
+          where: 'id = ?',
+          whereArgs: [int.parse(original.id)],
+        );
+        final selected = await queries.itemByKey(playlistId, original.itemKey!);
+        expect(selected?.id, '10000000');
+        expect(selected?.catalogItemKey, original.itemKey);
+        expect(
+          await queries.itemByKey('other-playlist', original.itemKey!),
+          isNull,
+        );
+        await db.delete('items', where: 'id = ?', whereArgs: [10000000]);
+        expect(await queries.itemByKey(playlistId, original.itemKey!), isNull);
+      },
+    );
+
+    test(
       'favourite pages use persisted items, kind, profile and hidden groups',
       () async {
         final db = await adapter.database;

@@ -18,7 +18,11 @@ import 'user_library_repository.dart';
 /// New code should depend on [CatalogSyncService], [CatalogQueryService],
 /// [CatalogSearchIndexer] or [UserLibraryRepository] directly.
 class SqliteCatalogRepository
-    implements CatalogRepository, CatalogQueryService, CatalogMaintenance {
+    implements
+        CatalogRepository,
+        CatalogQueryService,
+        CatalogMaintenance,
+        StableCatalogItemLookup {
   factory SqliteCatalogRepository({
     required DatabaseAdapter databaseAdapter,
     bool autoStartSearchIndexWorker = true,
@@ -221,6 +225,10 @@ class SqliteCatalogRepository
 
   @override
   Future<ContentItem?> itemById(String itemId) => queries.itemById(itemId);
+
+  @override
+  Future<ContentItem?> itemByKey(String playlistId, int itemKey) =>
+      (queries as StableCatalogItemLookup).itemByKey(playlistId, itemKey);
 
   // --- UserLibraryRepository -------------------------------------------------
 

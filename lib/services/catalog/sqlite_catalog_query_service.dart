@@ -12,7 +12,8 @@ import 'catalog_search_indexer.dart';
 
 /// Paged reads over the v9 catalog (`items`, `groups`, `series_v8`,
 /// `items_fts`), excluding groups hidden for the default profile.
-class SqliteCatalogQueryService implements CatalogQueryService {
+class SqliteCatalogQueryService
+    implements CatalogQueryService, StableCatalogItemLookup {
   SqliteCatalogQueryService({
     required DatabaseAdapter databaseAdapter,
     required CatalogSearchIndexer searchIndexer,
@@ -325,6 +326,22 @@ WHERE m.id = ? LIMIT 1
         );
         if (rows.isEmpty) return null;
         return _mapRowToItem(rows.single);
+      });
+
+  @override
+  Future<ContentItem?> itemByKey(String playlistId, int itemKey) =>
+      telemetry.measure('db.query.item_by_key', () async {
+        final db = await _databaseAdapter.database;
+        final rows = await db.rawQuery(
+          '''
+SELECT m.id, m.playlist_id, m.item_key, m.title, m.kind, m.stream_url, g.title AS group_title,
+       m.logo_url, m.tvg_id, m.tvg_name, m.tvg_chno, m.xui_id, m.ord
+FROM items m JOIN groups g ON g.id = m.group_id
+WHERE m.playlist_id = ? AND m.item_key = ? LIMIT 1
+''',
+          [playlistId, itemKey],
+        );
+        return rows.isEmpty ? null : _mapRowToItem(rows.single);
       });
 
   Future<bool> _isGroupHidden(

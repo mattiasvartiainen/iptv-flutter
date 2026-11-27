@@ -38,6 +38,13 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-playback-library-identity completes DE-11. Dependency: WP-continuity-policy.
+Touches: catalog item identity and lookup, activation, player session,
+dependency composition, focused catalog/player tests, and design documentation.
+Skills: dart-add-unit-test, dart-run-static-analysis,
+flutter-apply-architecture-best-practices. Preserve playback behavior and do
+not write viewing progress.
+
 WP-continuity-policy completes DE-10. Dependency: WP-presentation-checkpoint.
 Touches: decisions, design guidelines, and the design evolution plan. Record
 the user's approved policy and representative scenarios without changing
@@ -408,6 +415,7 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-playback-library-identity | Stable playback library identity | Design | WP-continuity-policy | M | DONE (2026-11-27): Scoped stable catalog lookup and player identity; analyzer clean, all 1055 tests pass. No progress writes. |
 | WP-continuity-policy | Approve viewing continuity policy | Design | WP-presentation-checkpoint | S | DONE (2026-11-27): User approved continuity policy and scenarios; implementation remains in DE-11 through DE-18. |
 | WP-presentation-checkpoint | Cross-device presentation checkpoint | Design | WP-adaptive-details, WP-adaptive-episodes, WP-catalog-context | M | DONE (2026-11-27): 1047 tests pass; analyzer clean. Native validation and remaining matrix checks are recorded in DE-09. |
 | WP-catalog-context | Focus-following catalog context | Design | WP-poster-catalog, WP-artwork-baseline | M | DONE (2026-11-27): Responsive Live/movie/series context uses paged summaries; focus, resize, group reset, removal and activation checks pass. Analyzer clean; all 1038 tests pass. Physical-device checks deferred. |

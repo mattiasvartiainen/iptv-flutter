@@ -83,6 +83,10 @@ abstract interface class CatalogQueryService {
   Future<ContentItem?> itemById(String itemId);
 }
 
+abstract interface class StableCatalogItemLookup {
+  Future<ContentItem?> itemByKey(String playlistId, int itemKey);
+}
+
 /// Converts free text into a safe FTS5 prefix expression.
 ///
 /// User input reaches `MATCH` directly, so every token is quoted to neutralise
@@ -100,7 +104,8 @@ String? buildFtsPrefixQuery(String term) {
 
 /// List-backed implementation for fixtures and tests. Series structure is
 /// derived once up front rather than on every query.
-class InMemoryCatalogQueryService implements CatalogQueryService {
+class InMemoryCatalogQueryService
+    implements CatalogQueryService, StableCatalogItemLookup {
   InMemoryCatalogQueryService(
     this.playlistId,
     List<ContentItem> items, {
@@ -145,6 +150,8 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
 
       final summary = CatalogItemSummary(
         id: item.id,
+        playlistId: item.catalogPlaylistId,
+        itemKey: item.catalogItemKey,
         title: item.title,
         sortTitle: CatalogNormalizer.normalizeText(item.title),
         kind: kind,
@@ -465,6 +472,17 @@ class InMemoryCatalogQueryService implements CatalogQueryService {
 
   @override
   Future<ContentItem?> itemById(String itemId) async => _itemsById[itemId];
+
+  @override
+  Future<ContentItem?> itemByKey(String playlistId, int itemKey) async {
+    for (final item in _itemsById.values) {
+      if (item.catalogPlaylistId == playlistId &&
+          item.catalogItemKey == itemKey) {
+        return item;
+      }
+    }
+    return null;
+  }
 
   int _groupIdFor(CatalogItemKind kind, String title) {
     final groupKind = switch (kind) {

@@ -431,9 +431,9 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
                                       'Episode ${episode.episodeNumber ?? '-'}',
                                   focusNode: index == 0 ? _firstEpisode : null,
                                   icon: Icons.play_circle_outline,
-                                  onActivate: () => AppScope.activateItemById(
+                                  onActivate: () => AppScope.activateSummary(
                                     context,
-                                    episode.id,
+                                    episode,
                                   ),
                                 ),
                               );

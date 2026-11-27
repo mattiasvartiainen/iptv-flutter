@@ -82,6 +82,8 @@ class CatalogItemSummary {
     this.artworkUrl,
     this.sourceIndex = 0,
     this.episodeNumber,
+    this.playlistId,
+    this.itemKey,
   });
 
   final String id;
@@ -93,6 +95,8 @@ class CatalogItemSummary {
   final String? logoUrl;
   final String? artworkUrl;
   final int sourceIndex;
+  final String? playlistId;
+  final int? itemKey;
 
   /// Only populated by episode queries.
   final int? episodeNumber;
@@ -113,6 +117,8 @@ class CatalogItemSummary {
         artworkUrl: (row['artwork_url'] ?? row['logo_url']) as String?,
         sourceIndex: (row['source_index'] ?? row['ord']) as int? ?? 0,
         episodeNumber: row['episode_number'] as int?,
+        playlistId: row['playlist_id'] as String?,
+        itemKey: row['item_key'] as int?,
       );
 
   @override

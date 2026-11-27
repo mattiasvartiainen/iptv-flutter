@@ -189,8 +189,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           maxLines: 1,
                         ),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () =>
-                            AppScope.activateItemById(context, item.id),
+                        onTap: () => AppScope.activateSummary(context, item),
                       ),
                     );
                   },

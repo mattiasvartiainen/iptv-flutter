@@ -2,6 +2,7 @@ import '../app/navigation/app_route.dart';
 import '../app/navigation/navigation_controller.dart';
 import '../models/content_item.dart';
 import '../services/catalog/catalog_query.dart';
+import '../services/catalog/catalog_query_service.dart';
 import '../services/logging/app_logger.dart';
 import 'catalog_view_state.dart';
 
@@ -18,6 +19,8 @@ class AppController {
   int _activationGeneration = 0;
   ({
     String itemId,
+    String? playlistId,
+    int? itemKey,
     AppRoute route,
     int binding,
     bool directLive,
@@ -77,9 +80,21 @@ class AppController {
     required Future<void> Function(ContentItem) playLive,
   }) => _activateById(itemId, playLive: playLive);
 
+  Future<void> activateSummary(
+    CatalogItemSummary item, {
+    required Future<void> Function(ContentItem) playLive,
+  }) => _activateById(
+    item.id,
+    playLive: playLive,
+    playlistId: item.playlistId,
+    itemKey: item.itemKey,
+  );
+
   Future<void> _activateById(
     String itemId, {
     Future<void> Function(ContentItem)? playLive,
+    String? playlistId,
+    int? itemKey,
   }) {
     final route = navigationController.currentRoute;
     if ((route is DetailsRoute && route.item.id == itemId) ||
@@ -90,6 +105,8 @@ class AppController {
     final pending = _pendingActivation;
     if (pending != null &&
         pending.itemId == itemId &&
+        pending.playlistId == playlistId &&
+        pending.itemKey == itemKey &&
         identical(pending.route, route) &&
         pending.binding == binding &&
         pending.directLive == (playLive != null)) {
@@ -102,9 +119,13 @@ class AppController {
       binding,
       generation,
       playLive,
+      playlistId,
+      itemKey,
     );
     _pendingActivation = (
       itemId: itemId,
+      playlistId: playlistId,
+      itemKey: itemKey,
       route: route,
       binding: binding,
       directLive: playLive != null,
@@ -119,6 +140,8 @@ class AppController {
     int binding,
     int generation,
     Future<void> Function(ContentItem)? playLive,
+    String? playlistId,
+    int? itemKey,
   ) async {
     var routeChanged = false;
     void invalidate() {
@@ -136,7 +159,22 @@ class AppController {
     try {
       ContentItem? item;
       try {
-        item = await catalogView.itemById(itemId);
+        final service = catalogView.queryService;
+        if (playlistId != null && itemKey != null) {
+          if (playlistId != catalogView.playlistId ||
+              service is! StableCatalogItemLookup) {
+            logger.warning('catalog_activation_identity_unavailable');
+            catalogView.activationFailure.value =
+                ItemActivationFailure.notFound;
+            return;
+          }
+          item = await (service as StableCatalogItemLookup).itemByKey(
+            playlistId,
+            itemKey,
+          );
+        } else {
+          item = await catalogView.itemById(itemId);
+        }
       } catch (_) {
         if (!current()) return;
         logger.error('catalog_activation_lookup_failed');
@@ -145,6 +183,16 @@ class AppController {
         return;
       }
       if (!current()) return;
+      if (item != null &&
+          ((item.catalogPlaylistId != null &&
+                  item.catalogPlaylistId != catalogView.playlistId) ||
+              (itemKey != null &&
+                  (item.catalogPlaylistId != playlistId ||
+                      item.catalogItemKey != itemKey)))) {
+        logger.warning('catalog_activation_identity_mismatch');
+        catalogView.activationFailure.value = ItemActivationFailure.notFound;
+        return;
+      }
       if (item == null) {
         logger.warning('catalog_activation_item_missing');
         catalogView.activationFailure.value = ItemActivationFailure.notFound;

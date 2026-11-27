@@ -103,7 +103,7 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 | DE-08 | Focus-following catalog context | DE-05, DE-06 | DONE (2026-11-27): Responsive focused-summary context, paging and resize focus verified; analyzer clean and all 1038 tests pass. Hardware checks deferred. | `feat(catalog): show lightweight focused item context` |
 | DE-09 | Presentation checkpoint | DE-03, DE-05, DE-06, DE-07, DE-08 | DONE for the software checkpoint (2026-11-27): 1047 tests pass; native validation and remaining matrix checks pending. | `test(ui): verify evolved cross-device browsing` |
 | DE-10 | Continuity policy decision | DE-09 | DONE (2026-11-27): Policy and scenarios approved; no application code changed. | `docs(ux): define viewing continuity policy` |
-| DE-11 | Stable playback library identity | DE-10 | READY | `feat(library): resolve stable playback identity` |
+| DE-11 | Stable playback library identity | DE-10 | DONE (2026-11-27): Stable scoped lookup and session identity; analyzer clean, 1055 tests pass. | `feat(library): resolve stable playback identity` |
 | DE-12 | Session-safe progress/history recording | DE-11 | READY | `feat(player): persist viewing progress safely` |
 | DE-13 | Explicit resume execution | DE-12 | READY | `feat(player): support explicit session-safe resume` |
 | DE-14 | Resume actions in Details | DE-13 | READY | `feat(details): offer resume and start over actions` |
@@ -379,6 +379,22 @@ or player lifecycle was changed.
 **Checks:** Identical row IDs across playlists, refresh/reorder preserving item keys, removed item, playlist switch during lookup, profile isolation, late lookup completion and disposal. All existing callers continue working.
 
 **Done:** A player session can carry verified immutable library identity without changing start position or writing progress. Any API change includes all consumers and tests in this commit.
+
+**Evidence (2026-11-27):** Catalog summaries carry the persisted playlist and
+item key. Home, catalog, Search and inline/compatibility episodes resolve
+selected catalog items by that stable pair, rather than treating a row ID as
+an item key. Activation checks the active playlist and rejects missing,
+mismatched or stale results. Player sessions expose immutable playlist,
+profile and item-key identity when available; uncatalogued playback continues
+without identity. The composition root supplies the existing user-library
+repository and tests use a fake. Playback start position and progress/history
+writes are unchanged.
+
+Focused tests cover row renumbering and removal in SQLite, same row IDs in
+different playlists, profile isolation, late lookup after a playlist switch or
+disposal, favourite operations and existing activation paths. Flutter analysis
+is clean and the complete suite passes 1055 tests. Real backend and native
+device validation remains pending; DE-12 has not been implemented.
 
 ### DE-12 - Session-Safe Progress/History Recording
 

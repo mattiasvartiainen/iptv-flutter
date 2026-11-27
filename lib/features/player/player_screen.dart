@@ -288,7 +288,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           errorKind: selected.errorKind,
                           onBack: () =>
                               AppScope.navigationControllerOf(context).pop(),
-                          onRetry: () => unawaited(player.open(widget.item)),
+                          onRetry: () => unawaited(
+                            player.open(
+                              widget.item,
+                              profileId:
+                                  player.libraryIdentity?.profileId ??
+                                  'default',
+                            ),
+                          ),
                         ),
                       IgnorePointer(
                         key: const ValueKey<String>('player-controls'),

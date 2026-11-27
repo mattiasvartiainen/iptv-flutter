@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../app/navigation/navigation_controller.dart';
 import '../../features/player/player_controller.dart';
+import '../../services/catalog/catalog_query.dart';
 import '../../services/metadata/movie_metadata.dart';
 import '../../services/metadata/series_metadata.dart';
 import '../../state/app_controller.dart';
@@ -53,6 +54,17 @@ class AppScope extends InheritedWidget {
     final scope = _scopeOf(context);
     return scope.appController.activateItemById(
       itemId,
+      playLive: scope.playerController.openPlayer,
+    );
+  }
+
+  static Future<void> activateSummary(
+    BuildContext context,
+    CatalogItemSummary item,
+  ) {
+    final scope = _scopeOf(context);
+    return scope.appController.activateSummary(
+      item,
       playLive: scope.playerController.openPlayer,
     );
   }

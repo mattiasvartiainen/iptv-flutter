@@ -6,7 +6,9 @@ import 'package:flutter/widgets.dart';
 import '../../app/navigation/app_route.dart';
 import '../../app/navigation/navigation_controller.dart';
 import '../../models/content_item.dart';
+import '../../models/library_identity.dart';
 import '../../services/catalog/favorite_repository.dart';
+import '../../services/catalog/user_library_repository.dart';
 import '../../services/logging/app_logger.dart';
 import '../../services/playback/playback_contract.dart';
 import '../../services/playback/playback_labels.dart';
@@ -19,6 +21,7 @@ class PlayerController extends ChangeNotifier {
     required this.navigationController,
     AppLogger logger = const DebugAppLogger(),
     this.favorites,
+    this.userLibrary,
     this.onFavoriteChanged,
   }) : playbackAdapter = PlaybackSession(playbackAdapter, logger: logger),
        _logger = logger,
@@ -47,6 +50,9 @@ class PlayerController extends ChangeNotifier {
   final NavigationController navigationController;
   final AppLogger _logger;
   final FavoriteRepository? favorites;
+  final UserLibraryRepository? userLibrary;
+  LibraryIdentity? _libraryIdentity;
+  LibraryIdentity? get libraryIdentity => _libraryIdentity;
   final void Function(String playlistId)? onFavoriteChanged;
   bool? _favorite;
   bool _favoriteBusy = false;
@@ -54,8 +60,10 @@ class PlayerController extends ChangeNotifier {
   String? _controlError;
   bool get canFavorite =>
       favorites != null &&
-      _playbackState.value.item?.catalogPlaylistId != null &&
-      _playbackState.value.item?.catalogItemKey != null;
+      _libraryIdentity != null &&
+      _playbackState.value.item?.catalogPlaylistId ==
+          _libraryIdentity?.playlistId &&
+      _playbackState.value.item?.catalogItemKey == _libraryIdentity?.itemKey;
   bool? get favorite => _favorite;
   bool get favoriteBusy => _favoriteBusy || _favoriteLoading;
   String? get controlError => _controlError;
@@ -96,17 +104,26 @@ class PlayerController extends ChangeNotifier {
 
   bool handleBackRequest() => _backRequestHandler?.call() ?? false;
 
-  Future<void> openPlayer(ContentItem item) {
+  Future<void> openPlayer(ContentItem item, {String profileId = 'default'}) {
     if (_disposed) return Future<void>.value();
     navigationController.push(PlayerRoute(item));
-    return open(item);
+    return open(item, profileId: profileId);
   }
 
   Future<void> openPlaybackSpike() => openPlayer(playbackSpikeItem);
 
-  Future<void> open(ContentItem item) async {
+  Future<void> open(ContentItem item, {String profileId = 'default'}) async {
     if (_disposed) return;
     final generation = ++_playbackLoadGeneration;
+    final playlistId = item.catalogPlaylistId;
+    final itemKey = item.catalogItemKey;
+    _libraryIdentity = playlistId == null || itemKey == null
+        ? null
+        : LibraryIdentity(
+            playlistId: playlistId,
+            profileId: profileId,
+            itemKey: itemKey,
+          );
     _favorite = null;
     _favoriteBusy = false;
     _favoriteLoading = false;
@@ -192,6 +209,7 @@ class PlayerController extends ChangeNotifier {
       final value = await repository.isFavorite(
         playlistId: playlist,
         itemKey: key,
+        profileId: _libraryIdentity?.profileId ?? 'default',
       );
       if (_disposed || generation != _playbackLoadGeneration) return;
       _favorite = value;
@@ -215,6 +233,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> toggleFavorite() async {
     if (_disposed || !canFavorite || favoriteBusy) return;
     final item = _playbackState.value.item!;
+    final identity = _libraryIdentity;
     final generation = _playbackLoadGeneration;
     _favoriteBusy = true;
     _controlError = null;
@@ -225,10 +244,12 @@ class PlayerController extends ChangeNotifier {
           await favorites!.isFavorite(
             playlistId: item.catalogPlaylistId!,
             itemKey: item.catalogItemKey!,
+            profileId: identity?.profileId ?? 'default',
           );
       await favorites!.setFavorite(
         playlistId: item.catalogPlaylistId!,
         itemKey: item.catalogItemKey!,
+        profileId: identity?.profileId ?? 'default',
         favorite: !current,
       );
       onFavoriteChanged?.call(item.catalogPlaylistId!);
@@ -312,6 +333,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> close() async {
     if (_disposed) return;
     _playbackLoadGeneration++;
+    _libraryIdentity = null;
     await _stopPlayback();
   }
 
@@ -430,6 +452,7 @@ class PlayerController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     ++_playbackLoadGeneration;
+    _libraryIdentity = null;
     _lifecycleListener.dispose();
     navigationController.removeListener(_handleNavigationChanged);
     _backHandlerOwner = null;

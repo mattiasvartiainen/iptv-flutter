@@ -190,7 +190,7 @@ class _ContentGrid extends StatelessWidget {
                             icon: item.kind.icon,
                             imageUrl: item.artworkUrl ?? item.logoUrl,
                             onActivate: () =>
-                                AppScope.activateItemById(context, item.id),
+                                AppScope.activateSummary(context, item),
                           ),
                         ),
                   ),
@@ -400,7 +400,7 @@ class _EpisodeGrid extends StatelessWidget {
                       icon: Icons.play_circle_outline,
                       imageUrl: episode.artworkUrl ?? episode.logoUrl,
                       onActivate: () =>
-                          AppScope.activateItemById(context, episode.id),
+                          AppScope.activateSummary(context, episode),
                     ),
                   );
                 },
