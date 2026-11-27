@@ -19,6 +19,7 @@ class PagedGridView<T> extends StatefulWidget {
     this.onRetry,
     this.emptyIcon,
     this.resetScrollOnLoad = false,
+    this.preserveFocusedItemOnLayoutChange = false,
   }) : assert(prefetchThreshold > 0);
 
   final PagedCollection<T> collection;
@@ -30,6 +31,7 @@ class PagedGridView<T> extends StatefulWidget {
   final VoidCallback? onRetry;
   final IconData? emptyIcon;
   final bool resetScrollOnLoad;
+  final bool preserveFocusedItemOnLayoutChange;
 
   @override
   State<PagedGridView<T>> createState() => _PagedGridViewState<T>();
@@ -41,6 +43,9 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
   bool _loadScheduled = false;
   double _viewportWidth = 0;
   bool _autofocusFirstItem = true;
+  int? _focusedIndex;
+  FocusNode? _focusedNode;
+  (double, double, int, double, double)? _focusLayout;
 
   @override
   void initState() {
@@ -148,6 +153,7 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
       return (widget.prefetchThreshold / columns).ceil() *
           (rowExtent + delegate.mainAxisSpacing);
     }
+
     if (delegate is! SliverGridDelegateWithMaxCrossAxisExtent) return 600;
     columns = math.max(
       1,
@@ -158,6 +164,79 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
     rowExtent = delegate.mainAxisExtent ?? 180;
     final rows = (widget.prefetchThreshold / columns).ceil();
     return rows * (rowExtent + delegate.mainAxisSpacing);
+  }
+
+  void _preserveFocusOnLayoutChange(BoxConstraints constraints) {
+    final delegate = widget.gridDelegate;
+    if (!widget.preserveFocusedItemOnLayoutChange) return;
+    final (columns, extent, spacing) = switch (delegate) {
+      SliverGridDelegateWithFixedCrossAxisCount(
+        :final crossAxisCount,
+        mainAxisExtent: final double extent,
+        :final mainAxisSpacing,
+      ) =>
+        (crossAxisCount, extent, mainAxisSpacing),
+      SliverGridDelegateWithMaxCrossAxisExtent(
+        :final maxCrossAxisExtent,
+        :final crossAxisSpacing,
+        mainAxisExtent: final double extent,
+        :final mainAxisSpacing,
+      ) =>
+        (
+          math.max(
+            1,
+            (constraints.maxWidth / (maxCrossAxisExtent + crossAxisSpacing))
+                .ceil(),
+          ),
+          extent,
+          mainAxisSpacing,
+        ),
+      _ => (0, 0.0, 0.0),
+    };
+    if (columns == 0) return;
+    final next = (
+      constraints.maxWidth,
+      constraints.maxHeight,
+      columns,
+      extent,
+      spacing,
+    );
+    final previous = _focusLayout;
+    _focusLayout = next;
+    if (previous == null || previous == next || _focusedIndex == null) return;
+    final node = FocusManager.instance.primaryFocus;
+    if (node == null || node != _focusedNode) return;
+    final index = _focusedIndex!;
+    if (!_scrollController.hasClients) return;
+    final oldStart = (index ~/ previous.$3) * (previous.$4 + previous.$5);
+    final oldOffset = _scrollController.offset;
+    if (oldStart + previous.$4 <= oldOffset ||
+        oldStart >= oldOffset + previous.$2) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          _focusLayout != next ||
+          FocusManager.instance.primaryFocus != node) {
+        return;
+      }
+      final target = (index ~/ columns) * (extent + spacing);
+      _scrollController.jumpTo(
+        target.clamp(
+          _scrollController.position.minScrollExtent,
+          _scrollController.position.maxScrollExtent,
+        ),
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final focusContext = node.context;
+        if (mounted &&
+            focusContext != null &&
+            FocusManager.instance.primaryFocus == node) {
+          unawaited(Scrollable.ensureVisible(focusContext));
+        }
+      });
+    });
   }
 
   @override
@@ -186,6 +265,7 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
         return LayoutBuilder(
           builder: (context, constraints) {
             _viewportWidth = constraints.maxWidth;
+            _preserveFocusOnLayoutChange(constraints);
             return NotificationListener<ScrollUpdateNotification>(
               onNotification: (notification) {
                 if (notification.metrics.extentAfter <=
@@ -210,10 +290,24 @@ class _PagedGridViewState<T> extends State<PagedGridView<T>> {
                     }
                     return const LoadingView();
                   }
-                  return widget.itemBuilder(
+                  final child = widget.itemBuilder(
                     context,
                     items[index],
                     index == 0 && _autofocusFirstItem,
+                  );
+                  if (!widget.preserveFocusedItemOnLayoutChange) return child;
+                  return Focus(
+                    canRequestFocus: false,
+                    onFocusChange: (focused) {
+                      if (focused) {
+                        _focusedIndex = index;
+                        _focusedNode = FocusManager.instance.primaryFocus;
+                      } else if (_focusedIndex == index) {
+                        _focusedIndex = null;
+                        _focusedNode = null;
+                      }
+                    },
+                    child: child,
                   );
                 },
               ),

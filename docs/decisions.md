@@ -248,8 +248,42 @@ The user approved direct Live activation and first-group entry for Live, Movies
 and Series. Home previews and catalog entry use the first visible group in
 playlist order independently for each kind; users can still choose All or any
 other group on compact and wide layouts. Item sort preferences remain
-independent. Resume/history-based focus and other activation changes remain
-separate decisions.
+independent. The approved continuity policy below retains the current Home
+initial focus and routes Continue Watching through Details.
+
+### D-11 - Viewing continuity policy (APPROVED 2026-11-27; not yet implemented)
+
+The user approved the following policy for DE-11 through DE-18:
+
+- Record a VOD item as watched after 30 seconds of actual playback, not merely
+  seeking. Checkpoint progress every 15 seconds and on pause, background, or
+  exit. Exclude Live from this continuity history and progress.
+- Offer Resume from 30 seconds onward when seeking is supported and the saved
+  position is valid. Mark an item complete when playback ends or reaches 90%
+  of a known duration during playback. Seeking near the end alone does not
+  mark completion; reaching the threshold during subsequent playback does.
+  When duration is unknown, allow Resume when seeking is supported and mark
+  complete only on an end event. Unsupported or invalid saved positions offer
+  Start Over only.
+- Keep completed items in recent history, but remove them from Continue
+  Watching. Details offers Resume and Start Over where resumable; Home's
+  Continue Watching opens Details. A failed Resume remains retryable; Start
+  Over explicitly resets the saved position.
+- Retain current Home initial-focus behavior and first-visible-group defaults.
+  Only in-progress episodes appear in Continue Watching, with at most the most
+  recently watched episode per series. Do not start the next episode
+  automatically.
+- Scope records to the active playlist and current profile (the default
+  profile until profile switching exists). Retain history until explicitly
+  cleared, exclude hidden groups from automatic views, and provide both
+  per-item removal and a clear-history action. Clearing history also clears
+  associated progress in that scope.
+
+Approved scenarios: a 20-second viewing is not added; watching past 30 seconds
+offers Resume; an ended movie remains in history but not Continue Watching;
+seeking near the end without playing does not mark it complete. Preserve D-7:
+route exit stops playback and background behavior remains unchanged. This
+decision approves the policy, not completion of its implementation.
 
 ### D-9 - Palette and theme scope (OPEN)
 Decide whether to retain the current dark palette, adopt the Kanal semantic palette, or also deliver

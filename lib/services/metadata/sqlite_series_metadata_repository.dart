@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite_common/sqlite_api.dart';
 
 import '../logging/app_logger.dart';
@@ -28,6 +29,12 @@ class SqliteSeriesMetadataRepository implements SeriesMetadataRepository {
   final _pending = <(String, String, int, String), _SeriesWork>{};
   final _tails = <(String, int), Future<void>>{};
   final _retryAt = <(String, int), DateTime>{};
+
+  @visibleForTesting
+  int debugActiveReaders(SeriesMetadataSubject subject, int revision) =>
+      _pending[(subject.playlistId, subject.seriesId, revision, subject.locale)]
+          ?.readers ??
+      0;
 
   @override
   Stream<SeriesMetadataResult> resolve(

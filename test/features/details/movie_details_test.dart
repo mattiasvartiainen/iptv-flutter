@@ -104,6 +104,113 @@ void main() {
     }
   }
 
+  for (final (label, size, sideBySide) in [
+    ('compact', const Size(390, 844), false),
+    ('wide', const Size(1440, 900), true),
+    ('short landscape', const Size(1000, 360), false),
+  ]) {
+    testWidgets('$label Details lays out long local content and artwork', (
+      tester,
+    ) async {
+      final harness = await pumpIptvApp(tester, size: size, textScale: 2);
+      final title = List.filled(12, 'A long movie title').join(' ');
+      final description = List.filled(30, 'A long synopsis.').join(' ');
+      final item = ContentItem(
+        id: 'long-movie',
+        title: title,
+        type: ContentType.vod,
+        streamUrl: 'https://fixture.test/movie.mp4',
+        group: '',
+        description: description,
+        logoUrl: 'https://example.invalid/portrait.png',
+      );
+      harness.controllers.app.openDetails(item);
+      await tester.pumpAndSettle();
+      final artwork = find.byType(MediaArtwork, skipOffstage: false);
+      expect(tester.widget<MediaArtwork>(artwork).imageUrl, item.logoUrl);
+      final play = find.byWidgetPredicate(
+        (widget) => widget is ElevatedButton,
+        skipOffstage: false,
+      );
+      expect(
+        tester.widget<ElevatedButton>(play).focusNode!.hasPrimaryFocus,
+        isTrue,
+      );
+      final viewport = find
+          .ancestor(of: play, matching: find.byType(SingleChildScrollView))
+          .first;
+      expect(
+        tester.getRect(viewport).contains(tester.getTopLeft(play)),
+        isTrue,
+      );
+      expect(
+        tester.getRect(play).bottom,
+        lessThanOrEqualTo(tester.getRect(viewport).bottom),
+      );
+      expect(
+        tester.getRect(play).right,
+        lessThanOrEqualTo(tester.getRect(viewport).right),
+      );
+      final contentTitle = find.descendant(
+        of: find.byType(SingleChildScrollView),
+        matching: find.text(title, skipOffstage: false),
+        skipOffstage: false,
+      );
+      expect(contentTitle, findsOneWidget);
+      final artworkRect = tester.getRect(artwork);
+      final titleRect = tester.getRect(contentTitle);
+      if (sideBySide) {
+        expect(artworkRect.right, lessThan(titleRect.left));
+      } else {
+        expect(artworkRect.top, greaterThan(titleRect.bottom));
+      }
+      await tester.ensureVisible(find.text(description, skipOffstage: false));
+      await tester.pumpAndSettle();
+      expect(find.text(description), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ElevatedButton>(play).focusNode!.hasFocus, isFalse);
+      tester.widget<ElevatedButton>(play).focusNode!.requestFocus();
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(viewport).contains(tester.getTopLeft(play)),
+        isTrue,
+      );
+      expect(
+        tester.getRect(play).bottom,
+        lessThanOrEqualTo(tester.getRect(viewport).bottom),
+      );
+      expect(
+        tester.getRect(play).right,
+        lessThanOrEqualTo(tester.getRect(viewport).right),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('empty group, description and artwork have local fallbacks', (
+    tester,
+  ) async {
+    final harness = await pumpIptvApp(tester, size: const Size(390, 844));
+    harness.controllers.app.openDetails(
+      const ContentItem(
+        id: 'empty-movie',
+        title: 'No details',
+        type: ContentType.vod,
+        streamUrl: 'https://fixture.test/movie.mp4',
+        group: '',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No description available yet.'), findsOneWidget);
+    expect(
+      tester.widget<MediaArtwork>(find.byType(MediaArtwork)).imageUrl,
+      isNull,
+    );
+    expect(find.byIcon(Icons.ondemand_video), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('metadata failure has retry while Play remains usable', (
     tester,
   ) async {

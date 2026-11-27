@@ -7,6 +7,7 @@ class MediaArtwork extends StatelessWidget {
     this.fit = BoxFit.contain,
     this.decodeWidth = 320,
     this.decodeHeight = 480,
+    this.resizePolicy = ResizeImagePolicy.exact,
     this.fallbackIcon = Icons.ondemand_video,
   });
 
@@ -14,6 +15,7 @@ class MediaArtwork extends StatelessWidget {
   final BoxFit fit;
   final int decodeWidth;
   final int decodeHeight;
+  final ResizeImagePolicy resizePolicy;
   final IconData fallbackIcon;
 
   @override
@@ -21,12 +23,15 @@ class MediaArtwork extends StatelessWidget {
     final fallback = Icon(fallbackIcon, size: 24);
     final url = imageUrl?.trim();
     if (url == null || url.isEmpty) return fallback;
-    return Image.network(
-      url,
+    return Image(
+      image: ResizeImage(
+        NetworkImage(url),
+        width: decodeWidth,
+        height: decodeHeight,
+        policy: resizePolicy,
+      ),
       width: double.infinity,
       fit: fit,
-      cacheWidth: decodeWidth,
-      cacheHeight: decodeHeight,
       excludeFromSemantics: true,
       errorBuilder: (context, error, stackTrace) => fallback,
       loadingBuilder: (context, child, progress) =>

@@ -15,6 +15,10 @@ independently persisted card-view option. Other sections keep the shared view
 preference. Rows reuse the catalog's paged grid and activation/focus handling;
 they do not start playback until activated.
 
+When browsing space permits, Live, Movies and Series show a focus-following
+context panel built from the current paged summary. It does not resolve a
+playable item or start playback; compact layouts keep the browsing space.
+
 ## 2. Layers and ownership
 
 ```text

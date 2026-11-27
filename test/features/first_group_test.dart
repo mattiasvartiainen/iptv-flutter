@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/catalog/m3u_parser.dart';
+import 'package:iptv_flutter/ui/widgets/media_tile.dart';
 
 import '../support/app_harness.dart';
 import '../support/catalog_fixtures.dart';
@@ -25,14 +26,20 @@ void main() {
       expect(find.text('Ordinary channel'), findsOneWidget);
       harness.controllers.app.openMovies();
       await tester.pumpAndSettle();
-      expect(find.text('Ordinary film'), findsOneWidget);
+      expect(find.widgetWithText(MediaTile, 'Ordinary film'), findsOneWidget);
       expect(find.text('Marked film [xXx]'), findsNothing);
       await tester.tap(find.widgetWithText(ListTile, 'Family Movies'));
       await tester.pumpAndSettle();
-      expect(find.text('Marked film [xXx]'), findsOneWidget);
+      expect(
+        find.widgetWithText(MediaTile, 'Marked film [xXx]'),
+        findsOneWidget,
+      );
       await tester.tap(find.widgetWithText(ListTile, 'Adults (VOD)'));
       await tester.pumpAndSettle();
-      expect(find.text('Restricted film [XXX]'), findsOneWidget);
+      expect(
+        find.widgetWithText(MediaTile, 'Restricted film [XXX]'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -100,19 +107,19 @@ void main() {
     ]);
     harness.controllers.app.openLiveTv();
     await tester.pumpAndSettle();
-    expect(find.text('Welcome channel'), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, 'Welcome channel'), findsOneWidget);
     expect(find.text('A channel'), findsNothing);
     expect(view.selectedGroupId, view.browseGroups.first.id);
     await tester.tap(find.widgetWithText(ListTile, 'Alpha Live'));
     await tester.pumpAndSettle();
-    expect(find.text('A channel'), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, 'A channel'), findsOneWidget);
     harness.controllers.app.openMovies();
     await tester.pumpAndSettle();
-    expect(find.text('Z movie'), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, 'Z movie'), findsOneWidget);
     expect(find.text('A movie'), findsNothing);
     harness.controllers.app.openSeries();
     await tester.pumpAndSettle();
-    expect(find.text('Z Show'), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, 'Z Show'), findsOneWidget);
     expect(find.text('A Show'), findsNothing);
   });
 
@@ -210,12 +217,12 @@ void main() {
     );
     await tester.tap(find.widgetWithText(ListTile, 'Favourites'));
     await tester.pumpAndSettle();
-    expect(find.text('A channel'), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, 'A channel'), findsOneWidget);
     expect(find.text('Welcome channel'), findsNothing);
     expect(harness.controllers.app.catalogView.favoriteGroupSelected, isTrue);
     harness.controllers.app.openMovies();
     await tester.pumpAndSettle();
-    expect(find.text('Z movie'), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, 'Z movie'), findsOneWidget);
     await tester.tap(find.widgetWithText(ListTile, 'Favourites'));
     await tester.pumpAndSettle();
     expect(find.text('No favourites in this section yet.'), findsOneWidget);

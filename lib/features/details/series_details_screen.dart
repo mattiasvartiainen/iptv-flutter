@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/navigation/app_route.dart';
 import '../../app/navigation/navigation_controller.dart';
+import '../../features/catalog/widgets/episode_layout.dart';
 import '../../services/catalog/catalog_query.dart';
 import '../../services/metadata/series_metadata.dart';
 import '../../services/sources/source_contracts.dart';
@@ -31,6 +32,9 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
   final _firstEpisode = FocusNode(debugLabel: 'Series first episode');
   final _episodeStatus = FocusNode(debugLabel: 'Series episode status');
   final _episodeHeading = GlobalKey();
+  final _episodeGrid = GlobalKey();
+  (double, double, int, bool)? _episodeLayout;
+  String? _focusedEpisodeId;
   final _seasonsFocus = <String, FocusNode>{};
   CatalogViewState? _catalog;
   NavigationController? _navigation;
@@ -93,11 +97,16 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_wasActive) return;
-      final node = _firstEpisode.hasFocus ? _firstEpisode :
-          _seasonsFocus.values.where((node) => node.hasFocus).firstOrNull;
+      final node = _firstEpisode.hasFocus
+          ? _firstEpisode
+          : _seasonsFocus.values.where((node) => node.hasFocus).firstOrNull;
       if (node?.context case final focusContext?) {
-        unawaited(Scrollable.ensureVisible(focusContext,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd));
+        unawaited(
+          Scrollable.ensureVisible(
+            focusContext,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          ),
+        );
       }
     });
   }
@@ -132,7 +141,8 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
     final source = _playlists!.playlists
         .where((entry) => entry.playlistId == controller.subject.playlistId)
         .firstOrNull;
-    final samePlaylist = _catalog!.playlistId == controller.subject.playlistId && source != null;
+    final samePlaylist =
+        _catalog!.playlistId == controller.subject.playlistId && source != null;
     final changed =
         source != null &&
         (source.connectionRevision != _revision ||
@@ -174,6 +184,51 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
     }
   }
 
+  void _preserveEpisodeOnResize(EpisodeLayout layout) {
+    final next = (layout.width, layout.height, layout.columns, layout.isRow);
+    final previous = _episodeLayout;
+    _episodeLayout = next;
+    if (previous == null || previous == next) return;
+    final focusedNode = FocusManager.instance.primaryFocus;
+    final id = _focusedEpisodeId;
+    if (id == null || focusedNode == null) return;
+    final seasonId = _controller!.selectedSeason?.id;
+    final index = _controller!.episodes.items.indexWhere(
+      (episode) => episode.id == id,
+    );
+    if (index < 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scroll.hasClients ||
+          _episodeLayout != next ||
+          _controller?.selectedSeason?.id != seasonId ||
+          FocusManager.instance.primaryFocus != focusedNode) {
+        return;
+      }
+      final render = _episodeGrid.currentContext?.findRenderObject();
+      if (render is! RenderSliver) return;
+      final start = _scroll.offset - render.constraints.scrollOffset;
+      final extent = layout.isRow
+          ? AppTokens.episodeRowExtentFor(layout.textScaler)
+          : AppTokens.episodeTileHeight + AppTokens.gridGap;
+      final target = start + (index ~/ layout.columns) * extent;
+      _scroll.jumpTo(
+        target.clamp(
+          _scroll.position.minScrollExtent,
+          _scroll.position.maxScrollExtent,
+        ),
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final focusContext = focusedNode.context;
+        if (mounted &&
+            focusContext != null &&
+            FocusManager.instance.primaryFocus == focusedNode) {
+          unawaited(Scrollable.ensureVisible(focusContext));
+        }
+      });
+    });
+  }
+
   Future<void> _focusEpisodes() async {
     if (_firstEpisode.context != null) {
       _focusControl(_firstEpisode);
@@ -211,187 +266,227 @@ class _SeriesDetailsScreenState extends State<SeriesDetailsScreen> {
       showBack: true,
       child: controller == null
           ? const Center(child: Text('Series is unavailable.'))
-          : CustomScrollView(
-              key: PageStorageKey('series-overview-${widget.series.id}'),
-              controller: _scroll,
-              slivers: [
-                SliverPadding(
-                  padding: AppTokens.pagePaddingFor(
-                    MediaQuery.sizeOf(context).width,
-                  ),
-                  sliver: SliverToBoxAdapter(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _header(context, controller),
-                        const SizedBox(height: 28),
-                        Text(
-                          'Seasons',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 12),
-                        if (controller.loadingSeasons)
-                          const Text('Loading seasons...')
-                        else if (controller.seasonsFailed)
-                          TextButton(
-                            onPressed: () =>
-                                unawaited(controller.loadSeasons()),
-                            child: const Text('Could not load seasons. Retry'),
-                          )
-                        else if (controller.seasons.isEmpty)
-                          const Text('No seasons found.')
-                        else
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: [
-                              for (final season in controller.seasons)
-                                Focus(
-                                  onKeyEvent: (node, event) {
-                                    if (event is KeyDownEvent &&
-                                        event.logicalKey ==
-                                            LogicalKeyboardKey.arrowDown) {
-                                      if (controller.episodes.items.isNotEmpty) {
-                                        unawaited(_focusEpisodes());
-                                        return KeyEventResult.handled;
-                                      }
-                                      if (controller.episodes.failure != null) {
-                                        _focusControl(_episodeStatus);
-                                        return KeyEventResult.handled;
-                                      }
-                                    }
-                                    return KeyEventResult.ignored;
-                                  },
-                                  child: OutlinedButton(
-                                    focusNode: _seasonsFocus.putIfAbsent(
-                                      season.id,
-                                      () => FocusNode(
-                                        debugLabel:
-                                            'Season ${season.seasonNumber}',
-                                      ),
-                                    ),
-                                    onPressed: () => _select(season),
-                                    style:
-                                        controller.selectedSeason?.id ==
-                                            season.id
-                                        ? OutlinedButton.styleFrom(
-                                            backgroundColor: Theme.of(
-                                              context,
-                                            ).colorScheme.secondaryContainer,
-                                          )
-                                        : null,
-                                    child: Semantics(
-                                      selected:
-                                          controller.selectedSeason?.id ==
+          : ListenableBuilder(
+              listenable: AppScope.preferencesControllerOf(context),
+              builder: (context, _) => LayoutBuilder(
+                builder: (context, viewport) => CustomScrollView(
+                  key: PageStorageKey('series-overview-${widget.series.id}'),
+                  controller: _scroll,
+                  slivers: [
+                    SliverPadding(
+                      padding: AppTokens.pagePaddingFor(
+                        MediaQuery.sizeOf(context).width,
+                      ),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _header(context, controller),
+                            const SizedBox(height: 28),
+                            Text(
+                              'Seasons',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 12),
+                            if (controller.loadingSeasons)
+                              const Text('Loading seasons...')
+                            else if (controller.seasonsFailed)
+                              TextButton(
+                                onPressed: () =>
+                                    unawaited(controller.loadSeasons()),
+                                child: const Text(
+                                  'Could not load seasons. Retry',
+                                ),
+                              )
+                            else if (controller.seasons.isEmpty)
+                              const Text('No seasons found.')
+                            else
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 12,
+                                children: [
+                                  for (final season in controller.seasons)
+                                    Focus(
+                                      onKeyEvent: (node, event) {
+                                        if (event is KeyDownEvent &&
+                                            event.logicalKey ==
+                                                LogicalKeyboardKey.arrowDown) {
+                                          if (controller
+                                              .episodes
+                                              .items
+                                              .isNotEmpty) {
+                                            unawaited(_focusEpisodes());
+                                            return KeyEventResult.handled;
+                                          }
+                                          if (controller.episodes.failure !=
+                                              null) {
+                                            _focusControl(_episodeStatus);
+                                            return KeyEventResult.handled;
+                                          }
+                                        }
+                                        return KeyEventResult.ignored;
+                                      },
+                                      child: OutlinedButton(
+                                        focusNode: _seasonsFocus.putIfAbsent(
                                           season.id,
-                                      child: Text(
-                                        'Season ${season.seasonNumber}',
+                                          () => FocusNode(
+                                            debugLabel:
+                                                'Season ${season.seasonNumber}',
+                                          ),
+                                        ),
+                                        onPressed: () => _select(season),
+                                        style:
+                                            controller.selectedSeason?.id ==
+                                                season.id
+                                            ? OutlinedButton.styleFrom(
+                                                backgroundColor:
+                                                    Theme.of(context)
+                                                        .colorScheme
+                                                        .secondaryContainer,
+                                              )
+                                            : null,
+                                        child: Semantics(
+                                          selected:
+                                              controller.selectedSeason?.id ==
+                                              season.id,
+                                          child: Text(
+                                            'Season ${season.seasonNumber}',
+                                          ),
+                                        ),
                                       ),
                                     ),
+                                ],
+                              ),
+                            const SizedBox(height: 24),
+                            Text(
+                              key: _episodeHeading,
+                              controller.selectedSeason == null
+                                  ? 'Select a season to see episodes.'
+                                  : 'Episodes - Season ${controller.selectedSeason!.seasonNumber}',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SliverPadding(
+                      key: _episodeGrid,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppTokens.pageInsetFor(
+                          MediaQuery.sizeOf(context).width,
+                        ),
+                      ),
+                      sliver: SliverLayoutBuilder(
+                        builder: (context, constraints) {
+                          final layout = EpisodeLayout(
+                            width: constraints.crossAxisExtent,
+                            height: viewport.maxHeight,
+                            listPreference: AppScope.preferencesControllerOf(
+                              context,
+                            ).useListView,
+                            textScaler: MediaQuery.textScalerOf(context),
+                          );
+                          final columns = layout.columns;
+                          _preserveEpisodeOnResize(layout);
+                          return SliverGrid(
+                            gridDelegate: layout.gridDelegate,
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final episode = controller.episodes.items[index];
+                              return Focus(
+                                canRequestFocus: false,
+                                onFocusChange: (focused) {
+                                  if (focused) {
+                                    _focusedEpisodeId = episode.id;
+                                  } else if (_focusedEpisodeId == episode.id) {
+                                    _focusedEpisodeId = null;
+                                  }
+                                },
+                                onKeyEvent: (node, event) {
+                                  if (index < columns &&
+                                      event is KeyDownEvent &&
+                                      event.logicalKey ==
+                                          LogicalKeyboardKey.arrowUp) {
+                                    _focusControl(
+                                      _seasonsFocus[controller
+                                          .selectedSeason
+                                          ?.id],
+                                    );
+                                    return KeyEventResult.handled;
+                                  }
+                                  return KeyEventResult.ignored;
+                                },
+                                child: MediaTile(
+                                  key: ValueKey(episode.id),
+                                  listView: layout.isRow,
+                                  episodeRow: layout.isRow,
+                                  keepAliveWhileFocused: true,
+                                  imageUrl:
+                                      episode.artworkUrl ?? episode.logoUrl,
+                                  title: episode.title,
+                                  subtitle:
+                                      'Episode ${episode.episodeNumber ?? '-'}',
+                                  focusNode: index == 0 ? _firstEpisode : null,
+                                  icon: Icons.play_circle_outline,
+                                  onActivate: () => AppScope.activateItemById(
+                                    context,
+                                    episode.id,
                                   ),
                                 ),
-                            ],
-                          ),
-                        const SizedBox(height: 24),
-                        Text(
-                          key: _episodeHeading,
-                          controller.selectedSeason == null
-                              ? 'Select a season to see episodes.'
-                              : 'Episodes - Season ${controller.selectedSeason!.seasonNumber}',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    ),
-                  ),
-                ),
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: AppTokens.pageInsetFor(
-                      MediaQuery.sizeOf(context).width,
-                    ),
-                  ),
-                  sliver: SliverLayoutBuilder(builder: (context, constraints) {
-                    final listView = AppScope.preferencesControllerOf(context).useListView;
-                    final columns = listView ? 1 : math.max(1,
-                      (constraints.crossAxisExtent / (AppTokens.episodeTileWidth + AppTokens.gridGap)).ceil());
-                    return SliverGrid(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        crossAxisSpacing: AppTokens.gridGap,
-                        mainAxisSpacing: AppTokens.gridGap,
-                        mainAxisExtent: listView ? AppTokens.mediaListExtentFor(MediaQuery.textScalerOf(context)) :
-                          AppTokens.episodeTileHeight,
+                              );
+                            }, childCount: controller.episodes.items.length),
+                          );
+                        },
                       ),
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                      final episode = controller.episodes.items[index];
-                      return Focus(
-                            onKeyEvent: (node, event) {
-                              if (index < columns &&
-                                  event is KeyDownEvent &&
-                                  event.logicalKey ==
-                                      LogicalKeyboardKey.arrowUp) {
-                                _focusControl(_seasonsFocus[controller.selectedSeason?.id]);
-                                return KeyEventResult.handled;
-                              }
-                              return KeyEventResult.ignored;
-                            },
-                            child: MediaTile(
-                              key: ValueKey(episode.id),
-                              listView: listView,
-                              imageUrl: episode.artworkUrl ?? episode.logoUrl,
-                              title: episode.title,
-                              subtitle:
-                                  'Episode ${episode.episodeNumber ?? '-'}',
-                              focusNode: index == 0 ? _firstEpisode : null,
-                              icon: Icons.play_circle_outline,
-                              onActivate: () => AppScope.activateItemById(
-                                context,
-                                episode.id,
-                              ),
-                            ),
-                      );
-                    }, childCount: controller.episodes.items.length),
-                    );
-                  }),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child:
+                            controller.episodes.isLoading ||
+                                controller.episodes.isLoadingMore
+                            ? const Text('Loading episodes...')
+                            : controller.episodes.failure != null
+                            ? Focus(
+                                onKeyEvent: (node, event) {
+                                  if (event is KeyDownEvent &&
+                                      event.logicalKey ==
+                                          LogicalKeyboardKey.arrowUp) {
+                                    _focusControl(
+                                      _seasonsFocus[controller
+                                          .selectedSeason
+                                          ?.id],
+                                    );
+                                    return KeyEventResult.handled;
+                                  }
+                                  return KeyEventResult.ignored;
+                                },
+                                child: TextButton(
+                                  focusNode: _episodeStatus,
+                                  onPressed: () => _retryEpisodes(),
+                                  child: const Text(
+                                    'Could not load episodes. Retry',
+                                  ),
+                                ),
+                              )
+                            : controller.episodes.hasMore
+                            ? TextButton(
+                                onPressed: () =>
+                                    unawaited(controller.episodes.loadMore()),
+                                child: const Text('Load more episodes'),
+                              )
+                            : controller.selectedSeason != null &&
+                                  controller.episodes.items.isEmpty
+                            ? const Text('No episodes found.')
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
                 ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child:
-                        controller.episodes.isLoading ||
-                            controller.episodes.isLoadingMore
-                        ? const Text('Loading episodes...')
-                        : controller.episodes.failure != null
-                        ? Focus(
-                            onKeyEvent: (node, event) {
-                              if (event is KeyDownEvent &&
-                                  event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                                _focusControl(_seasonsFocus[controller.selectedSeason?.id]);
-                                return KeyEventResult.handled;
-                              }
-                              return KeyEventResult.ignored;
-                            },
-                            child: TextButton(
-                            focusNode: _episodeStatus,
-                            onPressed: () =>
-                                _retryEpisodes(),
-                            child: const Text('Could not load episodes. Retry'),
-                          )
-                          )
-                        : controller.episodes.hasMore
-                        ? TextButton(
-                            onPressed: () =>
-                                unawaited(controller.episodes.loadMore()),
-                            child: const Text('Load more episodes'),
-                          )
-                        : controller.selectedSeason != null &&
-                              controller.episodes.items.isEmpty
-                        ? const Text('No episodes found.')
-                        : const SizedBox.shrink(),
-                  ),
-                ),
-              ],
+              ),
             ),
     );
   }

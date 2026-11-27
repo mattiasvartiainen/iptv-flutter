@@ -222,7 +222,9 @@ A UI change that introduces or modifies interactive controls is not complete unt
 ## 8. Deferred Product Work
 
 Mini-player/system picture-in-picture, EPG/live preview, quality folding, rating enrichment/sorting,
-history-backed initial focus/resume/favorites, next-episode autoplay, sports/recommendations,
+history-backed initial focus/favorites, next-episode autoplay, sports/recommendations,
 voice/suggestions/recent searches, subtitle/audio preferences, and branding/theme changes require
-separate delivery scope. Preserve All-group defaults under D-8 and existing activation destinations;
+separate delivery scope. Resume and viewing history are approved for future work
+under D-11 in [decisions](decisions.md), not yet implemented. Preserve
+first-visible-group defaults under D-8 and existing activation destinations;
 accessibility work is not approval to bypass Details or change playback behavior.

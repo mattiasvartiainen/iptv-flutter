@@ -176,7 +176,7 @@ void main() {
   ) async {
     final harness = await _pumpLoadedApp(tester);
     final context = tester.element(find.byType(AppShell));
-    showDialog<void>(
+    final dialogClosed = showDialog<void>(
       context: context,
       builder: (_) => const AlertDialog(
         title: Text('Modal focus guard'),
@@ -190,6 +190,7 @@ void main() {
     expect(field.focusNode.hasPrimaryFocus, isTrue);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+    await dialogClosed;
     expect(find.byType(AlertDialog), findsNothing);
   });
 

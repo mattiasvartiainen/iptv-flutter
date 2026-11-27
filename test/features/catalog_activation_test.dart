@@ -109,7 +109,7 @@ void main() {
     );
     harness.controllers.app.openLiveTv();
     await tester.pumpAndSettle();
-    await tester.tap(find.text(_live.title));
+    await tester.tap(find.widgetWithText(MediaTile, _live.title));
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
@@ -136,7 +136,7 @@ void main() {
     );
     harness.controllers.app.openMovies();
     await tester.pumpAndSettle();
-    await tester.tap(find.text(_movie.title));
+    await tester.tap(find.widgetWithText(MediaTile, _movie.title));
     await tester.pumpAndSettle();
     expect(
       harness.controllers.app.navigationController.currentRoute,

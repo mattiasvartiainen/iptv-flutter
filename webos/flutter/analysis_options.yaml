@@ -1,0 +1,6 @@
+include: ../../analysis_options.yaml
+
+# The webOS SDK regenerates the entrypoint and does not await the app's main.
+linter:
+  rules:
+    unawaited_futures: false

@@ -508,7 +508,7 @@ void main() {
     await tester.pumpAndSettle();
     final movie = harness.catalog.items.items.first;
     expect(_focusedTile()?.title, movie.title);
-    expect(find.text(movie.title), findsOneWidget);
+    expect(find.widgetWithText(MediaTile, movie.title), findsOneWidget);
   });
 
   testWidgets(

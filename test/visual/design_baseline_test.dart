@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
+import 'package:iptv_flutter/features/catalog/widgets/catalog_focus_context.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
@@ -167,6 +168,15 @@ void main() {
           matching: find.byIcon(Icons.live_tv),
         );
         await _waitForArtwork(tester, logo);
+        if (label == 'wide') {
+          await _waitForArtwork(
+            tester,
+            find.descendant(
+              of: find.byType(CatalogContextPanel),
+              matching: _loadedArtwork(),
+            ),
+          );
+        }
         expect(logo, findsOneWidget);
         expect(failedLogo, findsOneWidget);
         await capture('live');
@@ -193,6 +203,39 @@ void main() {
         app.openSeriesEpisodes(series, app.catalogView.seasons.single);
         await capture('episodes');
         expect(app.navigationController.currentRoute, isA<EpisodesRoute>());
+      } finally {
+        uninstallVisualFixtureHttp();
+      }
+    });
+  }
+
+  for (final (label, size) in [
+    ('compact', const Size(390, 844)),
+    ('wide', const Size(1440, 900)),
+  ]) {
+    testWidgets('Details portrait artwork visual baseline $label', (
+      tester,
+    ) async {
+      try {
+        final harness = await pumpIptvApp(tester, size: size);
+        harness.controllers.app.openDetails(
+          const ContentItem(
+            id: 'details-portrait',
+            title: 'A Movie With Portrait Artwork',
+            type: ContentType.vod,
+            streamUrl: 'https://example.invalid/movie/portrait',
+            group: 'Movies',
+            posterUrl: 'https://example.invalid/portrait.png',
+            description: 'A locally supplied description for the Details view.',
+          ),
+        );
+        await tester.pumpAndSettle();
+        await _waitForArtwork(tester, _loadedArtwork());
+        expect(tester.takeException(), isNull);
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile('goldens/${label}_details_portrait.png'),
+        );
       } finally {
         uninstallVisualFixtureHttp();
       }

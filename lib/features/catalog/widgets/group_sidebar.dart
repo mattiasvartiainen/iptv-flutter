@@ -9,7 +9,7 @@ import '../../../ui/widgets/app_scope.dart';
 import '../../../ui/widgets/state_views.dart';
 import 'compact_group_strip.dart';
 
-class GroupSidebarLayout extends StatelessWidget {
+class GroupSidebarLayout extends StatefulWidget {
   const GroupSidebarLayout({
     super.key,
     required this.kind,
@@ -27,11 +27,18 @@ class GroupSidebarLayout extends StatelessWidget {
   static const double _sidebarWidth = 250;
 
   @override
+  State<GroupSidebarLayout> createState() => _GroupSidebarLayoutState();
+}
+
+class _GroupSidebarLayoutState extends State<GroupSidebarLayout> {
+  final _contentKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
     final view = AppScope.appControllerOf(context).catalogView;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < _sidebarBreakpoint) {
+        if (constraints.maxWidth < GroupSidebarLayout._sidebarBreakpoint) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -43,9 +50,14 @@ class GroupSidebarLayout extends StatelessWidget {
                 ListenableBuilder(
                   listenable: view,
                   builder: (context, _) =>
-                      CompactGroupStrip(key: ValueKey(kind), view: view),
+                      CompactGroupStrip(key: ValueKey(widget.kind), view: view),
                 ),
-              Expanded(child: FocusTraversalGroup(child: child)),
+              Expanded(
+                child: FocusTraversalGroup(
+                  key: _contentKey,
+                  child: widget.child,
+                ),
+              ),
             ],
           );
         }
@@ -54,15 +66,15 @@ class GroupSidebarLayout extends StatelessWidget {
           children: [
             FocusTraversalGroup(
               child: SizedBox(
-                width: _sidebarWidth,
+                width: GroupSidebarLayout._sidebarWidth,
                 child: ListenableBuilder(
                   listenable: Listenable.merge([
                     view,
-                    ?collection,
-                    ?seriesCollection,
+                    ?widget.collection,
+                    ?widget.seriesCollection,
                   ]),
                   builder: (context, _) => _GroupFilterMenu(
-                    kind: kind,
+                    kind: widget.kind,
                     groups: view.browseGroups,
                     selectedGroupId: view.selectedGroupId,
                     favoriteGroupSelected: view.favoriteGroupSelected,
@@ -70,7 +82,9 @@ class GroupSidebarLayout extends StatelessWidget {
                     loading: view.isLoadingGroups,
                     error: view.groupsFailure,
                     totalItems:
-                        collection?.total ?? seriesCollection?.total ?? 0,
+                        widget.collection?.total ??
+                        widget.seriesCollection?.total ??
+                        0,
                     onSelected: view.selectBrowseGroup,
                     onFavoritesSelected: view.selectFavorites,
                     onRetry: () => unawaited(view.retryBrowseGroups()),
@@ -79,7 +93,9 @@ class GroupSidebarLayout extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 24),
-            Expanded(child: FocusTraversalGroup(child: child)),
+            Expanded(
+              child: FocusTraversalGroup(key: _contentKey, child: widget.child),
+            ),
           ],
         );
       },

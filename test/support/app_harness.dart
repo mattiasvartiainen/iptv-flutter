@@ -105,6 +105,7 @@ Future<TestAppHarness> pumpIptvApp(
   String playlistId = 'test-fixture-playlist',
   Size? size,
   double textScale = 1,
+  MediaQueryData? mediaQueryData,
 }) async {
   final settings = settingsRepository ?? InMemorySettingsRepository();
   final playlist = loadFixturePlaylist
@@ -141,7 +142,9 @@ Future<TestAppHarness> pumpIptvApp(
 
   await tester.pumpWidget(
     MediaQuery(
-      data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+      data: (mediaQueryData ?? const MediaQueryData()).copyWith(
+        textScaler: TextScaler.linear(textScale),
+      ),
       child: IptvApp(
         dependencies: AppDependencies.forTesting(
           appController: controllers.app,

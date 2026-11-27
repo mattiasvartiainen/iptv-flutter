@@ -38,6 +38,74 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-continuity-policy completes DE-10. Dependency: WP-presentation-checkpoint.
+Touches: decisions, design guidelines, and the design evolution plan. Record
+the user's approved policy and representative scenarios without changing
+application code or the existing player lifecycle.
+
+WP-presentation-checkpoint completes DE-09. Dependencies: WP-adaptive-details,
+WP-adaptive-episodes and WP-catalog-context (Live DE-05 is complete).
+Touches: cross-feature presentation and playback journey tests, test harness,
+visual baseline review, and design documentation. Skills:
+flutter-build-responsive-layout, dart-add-unit-test, dart-run-static-analysis.
+Preserve routes, playback and paging. Document native device checks separately;
+do not infer them from widget tests.
+
+WP-catalog-context completes DE-08. Dependencies: WP-poster-catalog and
+WP-artwork-baseline (Live DE-05 is complete). Touches: CatalogScreen, a
+feature-local context panel, MediaTile focus callbacks, PagedGridView resize
+anchoring, scoped widget and visual tests, and design documentation. Skills:
+flutter-build-responsive-layout, dart-add-unit-test, dart-run-static-analysis.
+Keep queries paged and focus separate from activation; do not fetch item
+details or start playback on focus. Preserve focus and scrolling on resize.
+
+WP-adaptive-episodes completes DE-07. Dependencies: WP-artwork-baseline.
+Touches: episode presentation in SeriesDetailsScreen and the compatibility
+EpisodesRoute, shared MediaTile and layout sizing, scoped widget tests, and
+design documentation. Skills: flutter-build-responsive-layout,
+dart-add-unit-test, dart-run-static-analysis. Preserve inline season selection,
+compatibility routes, paging, activation, focus, and existing view preferences.
+
+WP-poster-catalog completes DE-06. Dependencies: WP-artwork-baseline.
+Touches: MediaTile, MediaArtwork, AppTokens, movie and series catalog grids, scoped
+widget and visual tests, and design documentation. Skills:
+flutter-build-responsive-layout, dart-add-unit-test, dart-run-static-analysis.
+Keep Home, Live, list-view preferences, activation and paged queries unchanged.
+Use bounded artwork with titles below images and verify text scaling, focus,
+artwork fallbacks, responsive density, sorting and keyboard navigation.
+
+WP-adaptive-details completes DE-03. Dependencies: WP-artwork-baseline.
+Touches: Details screen, Details widget tests, deterministic visual baseline
+and design-plan documentation. Skills: flutter-build-responsive-layout,
+dart-add-unit-test, dart-run-static-analysis. Preserve local and provider
+metadata, Play and Back behavior; verify compact, wide and short layouts,
+long content, missing artwork and keyboard focus.
+
+WP-series-shared-fetch-test resolves the user-approved full-suite concurrency
+blocker. Dependencies: none. Touches: SQLite series metadata repository,
+shared-fetch cancellation tests and status documentation. Skills:
+dart-add-unit-test, dart-run-static-analysis. Preserve cancellation and
+deduplication behavior; synchronize the test on actual reader attachment
+instead of elapsed time and retain all assertions.
+
+WP-artwork-baseline completes the shared artwork checks in DE-02.
+Dependencies: WP-design-visual-baseline. Touches: MediaArtwork, MediaTile,
+artwork widget tests, synthetic visual fixtures and design-plan documentation.
+Skills: flutter-build-responsive-layout, dart-add-unit-test,
+dart-run-static-analysis. Preserve existing tile and Details appearance,
+activation and bounded decoding; verify loading, failure, missing artwork,
+poster/landscape/logo fitting, semantics and the existing golden baseline.
+
+WP-analyzer-baseline resolves the two existing analyzer diagnostics blocking
+the user-approved testing baseline. Dependencies: none. Touches: the focus
+widget test, generated webOS tooling analysis configuration and related
+documentation. Skills: dart-add-unit-test, dart-run-static-analysis. Await the
+dialog result after it closes; preserve generated files and all other analyzer
+diagnostics. The [webOS SDK generator](https://github.com/lg-flutter-webos/flutter-webos/blob/main/lib/webos_plugins.dart)
+regenerates its entrypoint with an unawaited application `main`; the scoped
+exception does not change that generated runtime behavior. Revisit it when
+the SDK generator changes.
+
 WP-test-baseline-blockers addresses the user-approved full-suite blockers
 holding up the design baseline. Dependencies: none. Touches: Settings dialog
 focus ownership and keyboard tests, telemetry widget test scheduling and
@@ -57,8 +125,9 @@ empty/error states. Do not modify application behavior.
 
 WP-live-channel-rows combines the Live channel row and paged presentation as
 one vertical slice. Dependencies: WP-first-playlist-group,
-WP-safe-automatic-catalog. Touches: catalog screen, shared media tile, shell
-view toggle, settings preferences and their tests, and current design docs.
+WP-safe-automatic-catalog. Touches: catalog screen, group sidebar, shared media
+tile, shell view toggle, settings preferences and their tests, and current
+design docs.
 Skills: flutter-build-responsive-layout, dart-add-unit-test,
 dart-run-static-analysis. Live defaults to rows and has its own persisted
 card/row preference; other sections retain their existing shared preference.
@@ -339,9 +408,18 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
-| WP-test-baseline-blockers | Resolve full-suite blockers | Testing | None | M | BLOCKED (2026-11-27): Settings focus and telemetry scheduling regressions fixed; full suite passes 989 tests. Analyzer exits 1 on the two pre-existing `unawaited_futures` infos in `test/app/navigation_focus_test.dart:179` and `webos/flutter/main.dart:11`; no new diagnostics. A green analyzer remains required for completion. |
-| WP-design-visual-baseline | Current responsive visual baseline | Design | None | S | IN PROGRESS (2026-11-27): Offline golden fixtures and 15 current-screen snapshots implemented; full suite now passes 989 tests. Analyzer retains two pre-existing infos and exits 1; device review remains pending. |
-| WP-live-channel-rows | Paged Live channel rows | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Live-specific saved preference and lazy logo/name/group rows implemented. Focused paging, activation, responsive and architecture tests pass. Full run reached 960 passes and two known Settings-focus failures, then stalled in the known telemetry test. Analyzer retains two baseline infos; clean full suite and device checks remain pending. |
+| WP-continuity-policy | Approve viewing continuity policy | Design | WP-presentation-checkpoint | S | DONE (2026-11-27): User approved continuity policy and scenarios; implementation remains in DE-11 through DE-18. |
+| WP-presentation-checkpoint | Cross-device presentation checkpoint | Design | WP-adaptive-details, WP-adaptive-episodes, WP-catalog-context | M | DONE (2026-11-27): 1047 tests pass; analyzer clean. Native validation and remaining matrix checks are recorded in DE-09. |
+| WP-catalog-context | Focus-following catalog context | Design | WP-poster-catalog, WP-artwork-baseline | M | DONE (2026-11-27): Responsive Live/movie/series context uses paged summaries; focus, resize, group reset, removal and activation checks pass. Analyzer clean; all 1038 tests pass. Physical-device checks deferred. |
+| WP-adaptive-episodes | Adaptive episode presentation | Design | WP-artwork-baseline | M | DONE (2026-11-27): Inline and compatibility episode layouts adapt to available space; focused episodes remain visible through resize, remote navigation and 2x text checks pass. Analyzer clean; all 1032 tests pass. Hardware checks deferred. |
+| WP-poster-catalog | Poster-oriented catalog tiles | Design | WP-artwork-baseline | M | DONE (2026-11-27): Movie and series poster grids preserve bounded portrait/landscape artwork proportions; responsive, 2x text, focus, activation and 1000-item paging checks pass. Four catalog snapshots reviewed; analyzer clean and all 1022 tests pass. Physical-device checks deferred. |
+| WP-adaptive-details | Verify adaptive visual Details | Design | WP-artwork-baseline | S | DONE (2026-11-27): Short-height stacking and focused Play visibility verified with long content and 2x text; compact/wide portrait artwork snapshots reviewed. Analyzer clean; all 1001 tests pass. Physical-device checks deferred. |
+| WP-series-shared-fetch-test | Stabilize series shared-fetch test | Testing | None | S | DONE (2026-11-27): Synchronize cancellation with actual attachment to the same shared fetch instead of a fixed delay. All 18 series tests pass; analyzer clean and full suite passes 995 tests. |
+| WP-artwork-baseline | Complete bounded artwork checks | Design | WP-design-visual-baseline | S | DONE (2026-11-27): Artwork fixtures and goldens pass, analyzer clean, and final full suite passes 995 tests after the shared-fetch test synchronization fix. Physical-device checks remain deferred. |
+| WP-analyzer-baseline | Restore analyzer baseline | Testing | None | S | DONE (2026-11-27): Dialog result awaited; generated webOS directory has a scoped `unawaited_futures` exception. Analyzer clean; 14 focus tests and all 989 suite tests pass. |
+| WP-test-baseline-blockers | Resolve full-suite blockers | Testing | None | M | DONE (2026-11-27): Settings focus and telemetry scheduling regressions fixed; analyzer is clean with the generated webOS exception documented above, and all 989 suite tests pass. |
+| WP-design-visual-baseline | Current responsive visual baseline | Design | None | S | DONE for software baseline (2026-11-27): Offline golden fixtures and 15 snapshots; analyzer clean with generated webOS exception, all 989 suite tests pass, and populated Windows desktop/portrait-like views partially reviewed. User deferred physical-device checks; remaining route, phone/TV input and playback validation are not complete. |
+| WP-live-channel-rows | Paged Live channel rows | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | M | DONE (2026-11-27): Live rows and bounded paging verified; resizing retains channel focus and scroll position. 50 focused tests and all 1006 suite tests pass; analyzer clean. Physical-device checks remain deferred. |
 | WP-compact-group-strip | Responsive compact group row | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | S | IN PROGRESS (2026-11-26): Compact group row implemented; 50 focused tests passed. Broad run has 955 passes and two known Settings focus failures; full suite stalled in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-favourite-group | Favourite group in catalog browsing | Catalog | WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Implemented and 65 focused tests pass. Broad run has 952 passes and two known Settings focus failures; full suite stalls in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-safe-automatic-catalog | Adult labels in automatic catalog views | Catalog | WP-first-playlist-group | M | DONE (2026-11-26): Automatic views exclude best-effort adult labels; explicit group browsing and Search remain available. 46 focused tests pass; broad regression has 946 passes and two known Settings focus failures, excluding the known telemetry stall. Analyzer retains two baseline infos; 20k-item import benchmark passes (cold 5,107 ms, 5% churn refresh 3,243 ms). |

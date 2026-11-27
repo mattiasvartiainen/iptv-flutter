@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../theme/app_tokens.dart';
 import 'media_artwork.dart';
 
+enum MediaTilePresentation { standard, poster }
+
 class MediaTile extends StatefulWidget {
   const MediaTile({
     super.key,
@@ -17,6 +19,10 @@ class MediaTile extends StatefulWidget {
     this.selected = false,
     this.listView = false,
     this.showListArtwork = false,
+    this.episodeRow = false,
+    this.keepAliveWhileFocused = false,
+    this.onFocusChanged,
+    this.presentation = MediaTilePresentation.standard,
   });
 
   final String title;
@@ -29,14 +35,21 @@ class MediaTile extends StatefulWidget {
   final bool selected;
   final bool listView;
   final bool showListArtwork;
+  final bool episodeRow;
+  final bool keepAliveWhileFocused;
+  final ValueChanged<bool>? onFocusChanged;
+  final MediaTilePresentation presentation;
 
   @override
   State<MediaTile> createState() => _MediaTileState();
 }
 
-class _MediaTileState extends State<MediaTile> {
+class _MediaTileState extends State<MediaTile>
+    with AutomaticKeepAliveClientMixin {
   bool _showFocus = false;
   bool _focused = false;
+  @override
+  bool get wantKeepAlive => widget.keepAliveWhileFocused && _focused;
   late FocusNode _focusNode;
   late bool _ownsFocusNode;
 
@@ -54,6 +67,9 @@ class _MediaTileState extends State<MediaTile> {
   @override
   void didUpdateWidget(covariant MediaTile oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.keepAliveWhileFocused != widget.keepAliveWhileFocused) {
+      updateKeepAlive();
+    }
     if (oldWidget.focusNode != widget.focusNode) {
       if (_ownsFocusNode) _focusNode.dispose();
       _setFocusNode(widget.focusNode);
@@ -80,6 +96,7 @@ class _MediaTileState extends State<MediaTile> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
     final subtitle = widget.subtitle;
@@ -90,7 +107,11 @@ class _MediaTileState extends State<MediaTile> {
       mouseCursor: SystemMouseCursors.click,
       autofocus: widget.autofocus,
       focusNode: _focusNode,
-      onFocusChange: (focused) => setState(() => _focused = focused),
+      onFocusChange: (focused) {
+        setState(() => _focused = focused);
+        updateKeepAlive();
+        widget.onFocusChanged?.call(focused);
+      },
       onShowFocusHighlight: (show) => setState(() => _showFocus = show),
       shortcuts: const {
         SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -151,9 +172,9 @@ class _MediaTileState extends State<MediaTile> {
                     child: widget.listView
                         ? Row(
                             children: [
-                              if (widget.showListArtwork)
+                              if (widget.showListArtwork || widget.episodeRow)
                                 SizedBox(
-                                  width: 48,
+                                  width: widget.episodeRow ? 80 : 48,
                                   height: 48,
                                   child: MediaArtwork(
                                     imageUrl: imageUrl,
@@ -161,6 +182,9 @@ class _MediaTileState extends State<MediaTile> {
                                         widget.icon ?? Icons.ondemand_video,
                                     decodeWidth: AppTokens.artworkDecodeWidth,
                                     decodeHeight: AppTokens.artworkDecodeHeight,
+                                    resizePolicy: widget.episodeRow
+                                        ? ResizeImagePolicy.fit
+                                        : ResizeImagePolicy.exact,
                                   ),
                                 )
                               else
@@ -173,7 +197,7 @@ class _MediaTileState extends State<MediaTile> {
                                   children: [
                                     Text(
                                       widget.title,
-                                      maxLines: 1,
+                                      maxLines: widget.episodeRow ? 2 : 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: theme.textTheme.titleMedium,
                                     ),
@@ -192,6 +216,78 @@ class _MediaTileState extends State<MediaTile> {
                                   ],
                                 ),
                               ),
+                            ],
+                          )
+                        : widget.presentation == MediaTilePresentation.poster
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    AppTokens.progressRadius,
+                                  ),
+                                  child: ColoredBox(
+                                    color: theme.colorScheme.surfaceContainer,
+                                    child: SizedBox.expand(
+                                      child: MediaArtwork(
+                                        imageUrl: imageUrl,
+                                        fallbackIcon:
+                                            widget.icon ?? Icons.ondemand_video,
+                                        decodeWidth: 320,
+                                        decodeHeight: 480,
+                                        resizePolicy: ResizeImagePolicy.fit,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height:
+                                    MediaQuery.textScalerOf(context).scale(
+                                      theme.textTheme.titleMedium?.fontSize ??
+                                          16,
+                                    ) *
+                                    (theme.textTheme.titleMedium?.height ??
+                                        1.25) *
+                                    2,
+                                child: Text(
+                                  widget.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: widget.selected
+                                        ? theme.colorScheme.onSecondaryContainer
+                                        : theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                              if (subtitle != null && subtitle.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                SizedBox(
+                                  height:
+                                      MediaQuery.textScalerOf(context).scale(
+                                        theme.textTheme.bodySmall?.fontSize ??
+                                            12,
+                                      ) *
+                                      (theme.textTheme.bodySmall?.height ??
+                                          1.33) *
+                                      2,
+                                  child: Text(
+                                    subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: widget.selected
+                                          ? theme
+                                                .colorScheme
+                                                .onSecondaryContainer
+                                          : theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           )
                         : Column(

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/app/navigation/app_route.dart';
 import 'package:iptv_flutter/features/details/series_details_controller.dart';
 import 'package:iptv_flutter/models/content_item.dart';
+import 'package:iptv_flutter/platform/platform_capabilities.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query.dart';
 import 'package:iptv_flutter/services/catalog/catalog_query_service.dart';
 import 'package:iptv_flutter/services/metadata/series_metadata.dart';
@@ -14,29 +15,310 @@ import 'package:iptv_flutter/ui/widgets/media_tile.dart';
 import '../../support/app_harness.dart';
 
 const entries = [
-  ContentItem(id: 'episode1', title: 'Fixture Show S01E01', type: ContentType.vod,
-    streamUrl: 'https://fixture.test/series/1.mkv', group: 'Series'),
-  ContentItem(id: 'episode2', title: 'Fixture Show S02E01', type: ContentType.vod,
-    streamUrl: 'https://fixture.test/series/2.mkv', group: 'Series'),
+  ContentItem(
+    id: 'episode1',
+    title: 'Fixture Show S01E01',
+    type: ContentType.vod,
+    streamUrl: 'https://fixture.test/series/1.mkv',
+    group: 'Series',
+  ),
+  ContentItem(
+    id: 'episode2',
+    title: 'Fixture Show S02E01',
+    type: ContentType.vod,
+    streamUrl: 'https://fixture.test/series/2.mkv',
+    group: 'Series',
+  ),
 ];
 
 void main() {
-  for (final size in [const Size(360, 800), const Size(390, 844), const Size(800, 360),
-    const Size(1440, 900), const Size(1920, 1080)]) {
+  for (final (size, rows) in [
+    (const Size(390, 844), true),
+    (const Size(800, 360), true),
+    (const Size(1440, 900), false),
+  ]) {
     for (final scale in [1.0, 2.0]) {
-      testWidgets('plain playlist inline overview fits $size scale $scale', (tester) async {
-        final queries = InMemoryCatalogQueryService('test-fixture-playlist', entries);
-        final harness = await pumpIptvApp(tester, size: size, textScale: scale, catalogQueryService: queries);
-        final series = (await queries.querySeries('test-fixture-playlist', offset: 0, limit: 10)).items.single;
+      testWidgets(
+        'episode layout uses ${rows ? 'rows' : 'grid'} at $size scale $scale',
+        (tester) async {
+          final queries = InMemoryCatalogQueryService(
+            'test-fixture-playlist',
+            entries,
+          );
+          final harness = await pumpIptvApp(
+            tester,
+            size: size,
+            textScale: scale,
+            catalogQueryService: queries,
+          );
+          final series = (await queries.querySeries(
+            'test-fixture-playlist',
+          )).items.single;
+          harness.controllers.app.openSeriesSeasons(series);
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Season 1'));
+          await tester.tap(find.text('Season 1'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Fixture Show S01E01'));
+          final tile = tester.widget<MediaTile>(find.byType(MediaTile).first);
+          expect(tile.listView, rows);
+          expect(tile.episodeRow, rows);
+          expect(find.text('Episode 1'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets(
+    'episode rows handle missing numbers and long titles at 2x text',
+    (tester) async {
+      final queries = _SparseEpisodeQueries();
+      final harness = await pumpIptvApp(
+        tester,
+        size: const Size(390, 844),
+        textScale: 2,
+        capabilities: const PlatformCapabilities(
+          primaryInput: PrimaryInput.remote,
+          hasHardwareBack: true,
+          supportsHover: false,
+        ),
+        catalogQueryService: queries,
+      );
+      final series = (await queries.querySeries(
+        'test-fixture-playlist',
+      )).items.single;
+      harness.controllers.app.openSeriesSeasons(series);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Season 1'));
+      await tester.tap(find.text('Season 1'));
+      await tester.pumpAndSettle();
+      final tile = find.byType(MediaTile).first;
+      await tester.ensureVisible(tile);
+      expect(tester.widget<MediaTile>(tile).subtitle, 'Episode -');
+      expect(tester.widget<MediaTile>(tile).imageUrl, isNull);
+      expect(tester.widget<MediaTile>(tile).episodeRow, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'inline episodes follow the saved list preference on wide screens',
+    (tester) async {
+      final queries = InMemoryCatalogQueryService(
+        'test-fixture-playlist',
+        entries,
+      );
+      final harness = await pumpIptvApp(
+        tester,
+        size: const Size(1440, 900),
+        catalogQueryService: queries,
+      );
+      final series = (await queries.querySeries(
+        'test-fixture-playlist',
+      )).items.single;
+      harness.controllers.app.openSeriesSeasons(series);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<MediaTile>(find.byType(MediaTile).first).listView,
+        isFalse,
+      );
+      await harness.controllers.preferences.setUseListView(true);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<MediaTile>(find.byType(MediaTile).first).episodeRow,
+        isTrue,
+      );
+      await harness.controllers.preferences.setUseListView(false);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<MediaTile>(find.byType(MediaTile).first).listView,
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets('resizing a long episode grid preserves the focused episode', (
+    tester,
+  ) async {
+    final queries = _ManyQueries()..fail = false;
+    final harness = await pumpIptvApp(
+      tester,
+      size: const Size(1440, 900),
+      catalogQueryService: queries,
+    );
+    final series = (await queries.querySeries(
+      'test-fixture-playlist',
+    )).items.single;
+    harness.controllers.app.openSeriesSeasons(series);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    final scroll = find.byType(CustomScrollView).last;
+    final tile = find.byWidgetPredicate(
+      (widget) => widget is MediaTile && widget.title == 'Episode 40',
+    );
+    await tester.scrollUntilVisible(
+      tile,
+      400,
+      scrollable: find
+          .descendant(of: scroll, matching: find.byType(Scrollable))
+          .first,
+    );
+    await tester.pumpAndSettle();
+    final detector = tester.widget<FocusableActionDetector>(
+      find
+          .descendant(of: tile, matching: find.byType(FocusableActionDetector))
+          .first,
+    );
+    detector.focusNode!.requestFocus();
+    await tester.pumpAndSettle();
+    expect(detector.focusNode!.hasFocus, isTrue);
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    final focused = FocusManager.instance.primaryFocus?.context
+        ?.findAncestorWidgetOfExactType<MediaTile>();
+    expect(focused?.title, 'Episode 40');
+    expect(tile, findsOneWidget);
+    final tileRect = tester.getRect(tile);
+    expect(tileRect.top, greaterThanOrEqualTo(0));
+    expect(tileRect.bottom, lessThanOrEqualTo(844));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<MediaTile>()
+          ?.title,
+      'Episode 41',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<MediaTile>()
+          ?.title,
+      'Episode 40',
+    );
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<MediaTile>()
+          ?.title,
+      'Episode 40',
+    );
+    final wideRect = tester.getRect(tile);
+    expect(wideRect.top, greaterThanOrEqualTo(0));
+    expect(wideRect.bottom, lessThanOrEqualTo(900));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'compatibility episode route preserves focused item across resize',
+    (tester) async {
+      final queries = _ManyQueries()..fail = false;
+      final harness = await pumpIptvApp(
+        tester,
+        size: const Size(1440, 900),
+        catalogQueryService: queries,
+      );
+      final series = (await queries.querySeries(
+        'test-fixture-playlist',
+      )).items.single;
+      final season = (await queries.seasons(series.id)).first;
+      harness.controllers.app.openSeriesEpisodes(series, season);
+      await tester.pumpAndSettle();
+      final tile = find.byWidgetPredicate(
+        (widget) => widget is MediaTile && widget.title == 'Episode 40',
+      );
+      await tester.scrollUntilVisible(
+        tile,
+        400,
+        scrollable: find
+            .descendant(
+              of: find.byType(GridView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      final detector = tester.widget<FocusableActionDetector>(
+        find
+            .descendant(
+              of: tile,
+              matching: find.byType(FocusableActionDetector),
+            )
+            .first,
+      );
+      detector.focusNode!.requestFocus();
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      expect(
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<MediaTile>()
+            ?.title,
+        'Episode 40',
+      );
+      expect(tester.getRect(tile).top, greaterThanOrEqualTo(0));
+      expect(tester.getRect(tile).bottom, lessThanOrEqualTo(844));
+      tester.view.physicalSize = const Size(1440, 900);
+      await tester.pumpAndSettle();
+      expect(
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<MediaTile>()
+            ?.title,
+        'Episode 40',
+      );
+      expect(tester.getRect(tile).top, greaterThanOrEqualTo(0));
+      expect(tester.getRect(tile).bottom, lessThanOrEqualTo(900));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final size in [
+    const Size(360, 800),
+    const Size(390, 844),
+    const Size(800, 360),
+    const Size(1440, 900),
+    const Size(1920, 1080),
+  ]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('plain playlist inline overview fits $size scale $scale', (
+        tester,
+      ) async {
+        final queries = InMemoryCatalogQueryService(
+          'test-fixture-playlist',
+          entries,
+        );
+        final harness = await pumpIptvApp(
+          tester,
+          size: size,
+          textScale: scale,
+          catalogQueryService: queries,
+        );
+        final series = (await queries.querySeries(
+          'test-fixture-playlist',
+          offset: 0,
+          limit: 10,
+        )).items.single;
         harness.controllers.app.openSeriesSeasons(series);
         await tester.pumpAndSettle();
         expect(find.text('Select a season to see episodes.'), findsOneWidget);
         expect(find.byType(MediaTile), findsNothing);
-        expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
+        expect(
+          Focus.of(tester.element(find.text('Season 1'))).hasFocus,
+          isTrue,
+        );
         await tester.ensureVisible(find.text('Season 1'));
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pumpAndSettle();
-        expect(harness.controllers.app.navigationController.currentRoute, isA<SeriesDetailsRoute>());
+        expect(
+          harness.controllers.app.navigationController.currentRoute,
+          isA<SeriesDetailsRoute>(),
+        );
         expect(find.text('Episodes - Season 1'), findsOneWidget);
         await tester.ensureVisible(find.text('Season 2'));
         await tester.tap(find.text('Season 2'));
@@ -48,54 +330,109 @@ void main() {
       });
     }
   }
-  testWidgets('metadata arrival preserves season focus; Down/Up and Back restore inline selection', (tester) async {
+  testWidgets(
+    'metadata arrival preserves season focus; Down/Up and Back restore inline selection',
+    (tester) async {
+      final repository = _Repository();
+      addTearDown(repository.close);
+      final queries = InMemoryCatalogQueryService(
+        'test-fixture-playlist',
+        entries,
+      );
+      final harness = await pumpIptvApp(
+        tester,
+        size: const Size(1440, 900),
+        catalogQueryService: queries,
+        seriesMetadataRepository: repository,
+      );
+      harness.controllers.app.openSeries();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(MediaTile).first);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      final seasonFocus = Focus.of(tester.element(find.text('Season 1')));
+      expect(seasonFocus.hasFocus, isTrue);
+      repository.streams.single.add(
+        SeriesMetadataResult(
+          metadata: ContentMetadata(
+            fields: {
+              ContentMetadataField.plot: 'Enriched show synopsis.',
+              ContentMetadataField.genres: 'Drama',
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Enriched show synopsis.'), findsOneWidget);
+      expect(seasonFocus.hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<MediaTile>(find.byType(MediaTile).first)
+            .focusNode!
+            .hasFocus,
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(seasonFocus.hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        harness.controllers.app.navigationController.currentRoute,
+        isA<DetailsRoute>(),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        harness.controllers.app.navigationController.currentRoute,
+        isA<SeriesDetailsRoute>(),
+      );
+      expect(find.text('Episodes - Season 1'), findsOneWidget);
+      expect(
+        tester
+            .widget<MediaTile>(find.byType(MediaTile).first)
+            .focusNode!
+            .hasFocus,
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        harness.controllers.app.navigationController.currentRoute,
+        isA<SeriesRoute>(),
+      );
+      expect(repository.tokens.single.isCancelled, isTrue);
+    },
+  );
+  testWidgets('metadata errors/retry do not prevent season/episode browsing', (
+    tester,
+  ) async {
     final repository = _Repository();
     addTearDown(repository.close);
-    final queries = InMemoryCatalogQueryService('test-fixture-playlist', entries);
-    final harness = await pumpIptvApp(tester, size: const Size(1440, 900),
-      catalogQueryService: queries, seriesMetadataRepository: repository);
-    harness.controllers.app.openSeries();
+    final queries = InMemoryCatalogQueryService(
+      'test-fixture-playlist',
+      entries,
+    );
+    final harness = await pumpIptvApp(
+      tester,
+      catalogQueryService: queries,
+      seriesMetadataRepository: repository,
+    );
+    harness.controllers.app.openSeriesSeasons(
+      (await queries.querySeries(
+        'test-fixture-playlist',
+        offset: 0,
+        limit: 10,
+      )).items.single,
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(MediaTile).first);
-    await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    final seasonFocus = Focus.of(tester.element(find.text('Season 1')));
-    expect(seasonFocus.hasFocus, isTrue);
-    repository.streams.single.add(SeriesMetadataResult(metadata: ContentMetadata(fields: {
-      ContentMetadataField.plot: 'Enriched show synopsis.', ContentMetadataField.genres: 'Drama',
-    })));
-    await tester.pumpAndSettle();
-    expect(find.text('Enriched show synopsis.'), findsOneWidget);
-    expect(seasonFocus.hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    expect(tester.widget<MediaTile>(find.byType(MediaTile).first).focusNode!.hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    expect(seasonFocus.hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(harness.controllers.app.navigationController.currentRoute, isA<DetailsRoute>());
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(harness.controllers.app.navigationController.currentRoute, isA<SeriesDetailsRoute>());
-    expect(find.text('Episodes - Season 1'), findsOneWidget);
-    expect(tester.widget<MediaTile>(find.byType(MediaTile).first).focusNode!.hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(harness.controllers.app.navigationController.currentRoute, isA<SeriesRoute>());
-    expect(repository.tokens.single.isCancelled, isTrue);
-  });
-  testWidgets('metadata errors/retry do not prevent season/episode browsing', (tester) async {
-    final repository = _Repository();
-    addTearDown(repository.close);
-    final queries = InMemoryCatalogQueryService('test-fixture-playlist', entries);
-    final harness = await pumpIptvApp(tester, catalogQueryService: queries, seriesMetadataRepository: repository);
-    harness.controllers.app.openSeriesSeasons((await queries.querySeries('test-fixture-playlist', offset: 0, limit: 10)).items.single);
-    await tester.pumpAndSettle();
-    repository.streams.single.add(const SeriesMetadataResult(failure: MetadataFailure.network));
+    repository.streams.single.add(
+      const SeriesMetadataResult(failure: MetadataFailure.network),
+    );
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Retry series information'));
     await tester.tap(find.text('Retry series information'));
@@ -108,91 +445,164 @@ void main() {
   });
   test('late season pages cannot replace the newly selected season', () async {
     final queries = _DelayedQueries();
-    final controller = SeriesDetailsController(queries: queries,
-      subject: const SeriesMetadataSubject(playlistId: 'p', seriesId: 's'));
+    final controller = SeriesDetailsController(
+      queries: queries,
+      subject: const SeriesMetadataSubject(playlistId: 'p', seriesId: 's'),
+    );
     addTearDown(controller.dispose);
     await controller.loadSeasons();
     final first = controller.selectSeason(controller.seasons.first);
     final second = controller.selectSeason(controller.seasons.last);
-    queries.second.complete(const CatalogPage(items: [
-      CatalogItemSummary(id: '2', title: 'Second', sortTitle: 'second', kind: CatalogItemKind.episode),
-    ], offset: 0, total: 1));
+    queries.second.complete(
+      const CatalogPage(
+        items: [
+          CatalogItemSummary(
+            id: '2',
+            title: 'Second',
+            sortTitle: 'second',
+            kind: CatalogItemKind.episode,
+          ),
+        ],
+        offset: 0,
+        total: 1,
+      ),
+    );
     await second;
-    queries.first.complete(const CatalogPage(items: [
-      CatalogItemSummary(id: '1', title: 'First', sortTitle: 'first', kind: CatalogItemKind.episode),
-    ], offset: 0, total: 1));
+    queries.first.complete(
+      const CatalogPage(
+        items: [
+          CatalogItemSummary(
+            id: '1',
+            title: 'First',
+            sortTitle: 'first',
+            kind: CatalogItemKind.episode,
+          ),
+        ],
+        offset: 0,
+        total: 1,
+      ),
+    );
     await first;
     expect(controller.selectedSeason!.id, '2');
     expect(controller.episodes.items.single.id, '2');
   });
-  testWidgets('large seasons use lazy bounded paging and error/Up/retry stays remote accessible', (tester) async {
-    final queries = _ManyQueries();
-    final harness = await pumpIptvApp(tester, size: const Size(1440, 900), catalogQueryService: queries);
-    harness.controllers.app.openSeriesSeasons((await queries.querySeries('test-fixture-playlist')).items.single);
-    await tester.pumpAndSettle();
-    expect(queries.calls, isEmpty);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(find.text('Could not load episodes. Retry'), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    expect(Focus.of(tester.element(find.text('Could not load episodes. Retry'))).hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    queries.fail = false;
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(queries.calls.every((call) => call.$2 == 0 && call.$3 == kCatalogPageSize), isTrue);
-    expect(queries.calls.map((call) => call.$1).toSet(), hasLength(1));
-    expect(find.byType(MediaTile).evaluate().length, lessThan(100));
-    expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
-  test('season failure can retry and disposed controllers ignore completion', () async {
-    final queries = _SeasonQueries();
-    final controller = SeriesDetailsController(queries: queries,
-      subject: const SeriesMetadataSubject(playlistId: 'p', seriesId: 's'));
-    await controller.loadSeasons();
-    expect(controller.seasonsFailed, isTrue);
-    queries.fail = false;
-    final loading = controller.loadSeasons();
-    controller.dispose();
-    queries.result.complete(const []);
-    await loading;
-    expect(controller.seasons, isEmpty);
-  });
-  testWidgets('long metadata keeps season focus visible and Down reaches lazy episodes', (tester) async {
-    final repository = _Repository();
-    addTearDown(repository.close);
-    final queries = InMemoryCatalogQueryService('test-fixture-playlist', entries);
-    final harness = await pumpIptvApp(tester, size: const Size(360, 800), textScale: 2,
-      catalogQueryService: queries, seriesMetadataRepository: repository);
-    harness.controllers.app.openSeriesSeasons((await queries.querySeries('test-fixture-playlist')).items.single);
-    await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    repository.streams.single.add(SeriesMetadataResult(metadata: ContentMetadata(fields: {
-      ContentMetadataField.plot: List.filled(100, 'A long show description.').join(' '),
-      ContentMetadataField.cast: List.filled(100, 'A cast member').join(', '),
-    })));
-    await tester.pumpAndSettle();
-    expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
-    expect(tester.getRect(find.text('Season 1')).bottom, lessThan(800));
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    final tile = find.byType(MediaTile).first;
-    expect(tester.widget<MediaTile>(tile).focusNode!.hasFocus, isTrue);
-    expect(tester.getRect(tile).top, lessThan(800));
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'large seasons use lazy bounded paging and error/Up/retry stays remote accessible',
+    (tester) async {
+      final queries = _ManyQueries();
+      final harness = await pumpIptvApp(
+        tester,
+        size: const Size(1440, 900),
+        catalogQueryService: queries,
+      );
+      harness.controllers.app.openSeriesSeasons(
+        (await queries.querySeries('test-fixture-playlist')).items.single,
+      );
+      await tester.pumpAndSettle();
+      expect(queries.calls, isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Could not load episodes. Retry'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(
+        Focus.of(
+          tester.element(find.text('Could not load episodes. Retry')),
+        ).hasFocus,
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      queries.fail = false;
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        queries.calls.every(
+          (call) => call.$2 == 0 && call.$3 == kCatalogPageSize,
+        ),
+        isTrue,
+      );
+      expect(queries.calls.map((call) => call.$1).toSet(), hasLength(1));
+      expect(find.byType(MediaTile).evaluate().length, lessThan(100));
+      expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+  test(
+    'season failure can retry and disposed controllers ignore completion',
+    () async {
+      final queries = _SeasonQueries();
+      final controller = SeriesDetailsController(
+        queries: queries,
+        subject: const SeriesMetadataSubject(playlistId: 'p', seriesId: 's'),
+      );
+      await controller.loadSeasons();
+      expect(controller.seasonsFailed, isTrue);
+      queries.fail = false;
+      final loading = controller.loadSeasons();
+      controller.dispose();
+      queries.result.complete(const []);
+      await loading;
+      expect(controller.seasons, isEmpty);
+    },
+  );
+  testWidgets(
+    'long metadata keeps season focus visible and Down reaches lazy episodes',
+    (tester) async {
+      final repository = _Repository();
+      addTearDown(repository.close);
+      final queries = InMemoryCatalogQueryService(
+        'test-fixture-playlist',
+        entries,
+      );
+      final harness = await pumpIptvApp(
+        tester,
+        size: const Size(360, 800),
+        textScale: 2,
+        catalogQueryService: queries,
+        seriesMetadataRepository: repository,
+      );
+      harness.controllers.app.openSeriesSeasons(
+        (await queries.querySeries('test-fixture-playlist')).items.single,
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      repository.streams.single.add(
+        SeriesMetadataResult(
+          metadata: ContentMetadata(
+            fields: {
+              ContentMetadataField.plot: List.filled(
+                100,
+                'A long show description.',
+              ).join(' '),
+              ContentMetadataField.cast: List.filled(
+                100,
+                'A cast member',
+              ).join(', '),
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
+      expect(tester.getRect(find.text('Season 1')).bottom, lessThan(800));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      final tile = find.byType(MediaTile).first;
+      expect(tester.widget<MediaTile>(tile).focusNode!.hasFocus, isTrue);
+      expect(tester.getRect(tile).top, lessThan(800));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(Focus.of(tester.element(find.text('Season 1'))).hasFocus, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _Repository implements SeriesMetadataRepository {
@@ -200,13 +610,23 @@ class _Repository implements SeriesMetadataRepository {
   final tokens = <MetadataCancellation>[];
   final force = <bool>[];
   @override
-  Stream<SeriesMetadataResult> resolve(SeriesMetadataSubject subject, {
-    required MetadataCancellation cancellation, bool forceRefresh = false}) {
+  Stream<SeriesMetadataResult> resolve(
+    SeriesMetadataSubject subject, {
+    required MetadataCancellation cancellation,
+    bool forceRefresh = false,
+  }) {
     final stream = StreamController<SeriesMetadataResult>();
-    streams.add(stream); tokens.add(cancellation); force.add(forceRefresh);
+    streams.add(stream);
+    tokens.add(cancellation);
+    force.add(forceRefresh);
     return stream.stream;
   }
-  void close() { for (final stream in streams) { unawaited(stream.close()); } }
+
+  void close() {
+    for (final stream in streams) {
+      unawaited(stream.close());
+    }
+  }
 }
 
 class _DelayedQueries extends InMemoryCatalogQueryService {
@@ -215,12 +635,25 @@ class _DelayedQueries extends InMemoryCatalogQueryService {
   final second = Completer<CatalogPage<CatalogItemSummary>>();
   @override
   Future<List<SeasonSummary>> seasons(String seriesId) async => [
-    const SeasonSummary(id: '1', seriesId: 's', seasonNumber: 1, episodeCount: 1),
-    const SeasonSummary(id: '2', seriesId: 's', seasonNumber: 2, episodeCount: 1),
+    const SeasonSummary(
+      id: '1',
+      seriesId: 's',
+      seasonNumber: 1,
+      episodeCount: 1,
+    ),
+    const SeasonSummary(
+      id: '2',
+      seriesId: 's',
+      seasonNumber: 2,
+      episodeCount: 1,
+    ),
   ];
   @override
-  Future<CatalogPage<CatalogItemSummary>> episodes(String seasonId, {int offset = 0, int limit = 100}) =>
-    seasonId == '1' ? first.future : second.future;
+  Future<CatalogPage<CatalogItemSummary>> episodes(
+    String seasonId, {
+    int offset = 0,
+    int limit = 100,
+  }) => seasonId == '1' ? first.future : second.future;
 }
 
 class _ManyQueries extends InMemoryCatalogQueryService {
@@ -228,13 +661,49 @@ class _ManyQueries extends InMemoryCatalogQueryService {
   bool fail = true;
   final calls = <(String, int, int)>[];
   @override
-  Future<CatalogPage<CatalogItemSummary>> episodes(String seasonId, {int offset = 0, int limit = kCatalogPageSize}) async {
+  Future<CatalogPage<CatalogItemSummary>> episodes(
+    String seasonId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+  }) async {
     calls.add((seasonId, offset, limit));
     if (fail) throw StateError('Fixture query failure');
-    return CatalogPage(items: List.generate(limit, (index) => CatalogItemSummary(
-      id: '$seasonId-${offset + index}', title: 'Episode ${offset + index + 1}', sortTitle: '',
-      kind: CatalogItemKind.episode, episodeNumber: offset + index + 1)), offset: offset, total: 1000);
+    return CatalogPage(
+      items: List.generate(
+        limit,
+        (index) => CatalogItemSummary(
+          id: '$seasonId-${offset + index}',
+          title: 'Episode ${offset + index + 1}',
+          sortTitle: '',
+          kind: CatalogItemKind.episode,
+          episodeNumber: offset + index + 1,
+        ),
+      ),
+      offset: offset,
+      total: 1000,
+    );
   }
+}
+
+class _SparseEpisodeQueries extends _ManyQueries {
+  @override
+  Future<CatalogPage<CatalogItemSummary>> episodes(
+    String seasonId, {
+    int offset = 0,
+    int limit = kCatalogPageSize,
+  }) async => const CatalogPage(
+    items: [
+      CatalogItemSummary(
+        id: 'sparse',
+        title:
+            'An exceptionally long provider episode title that must remain readable without overflowing',
+        sortTitle: 'long',
+        kind: CatalogItemKind.episode,
+      ),
+    ],
+    offset: 0,
+    total: 1,
+  );
 }
 
 class _SeasonQueries extends InMemoryCatalogQueryService {

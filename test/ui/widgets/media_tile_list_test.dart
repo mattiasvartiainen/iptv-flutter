@@ -90,4 +90,80 @@ void main() {
     expect(find.byIcon(Icons.ondemand_video), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('channel row separates focused and selected semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    final manager = FocusManager.instance;
+    final previous = manager.highlightStrategy;
+    addTearDown(() => manager.highlightStrategy = previous);
+    manager.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    var activations = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: SizedBox(
+              width: 280,
+              height: 100,
+              child: MediaTile(
+                title: 'A long channel name',
+                subtitle: 'Sweden',
+                icon: Icons.live_tv,
+                focusNode: focus,
+                listView: true,
+                showListArtwork: true,
+                onActivate: () => activations++,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    focus.requestFocus();
+    await tester.pumpAndSettle();
+    expect(activations, 0);
+    expect(
+      tester.getSemantics(find.byType(MediaTile)),
+      matchesSemantics(
+        label: 'A long channel name',
+        value: 'Sweden',
+        isButton: true,
+        hasSelectedState: true,
+        isFocusable: true,
+        isFocused: true,
+        hasTapAction: true,
+      ),
+    );
+    final decoration =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: find.byType(MediaTile),
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
+    expect(
+      decoration.border,
+      Border.all(color: AppTokens.focusRing, width: AppTokens.focusRingWidth),
+    );
+    final animation = tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+    expect(animation.scale, 1);
+    expect(animation.duration, Duration.zero);
+    expect(
+      tester.getSize(find.byType(MediaTile)).shortestSide,
+      greaterThanOrEqualTo(AppTokens.remoteTargetSize),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    expect(activations, 1);
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
 }

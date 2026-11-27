@@ -15,9 +15,14 @@ abstract final class AppTokens {
   static const gridGap = 20.0;
   static const tileWidth = 300.0;
   static const tileHeight = 180.0;
+  static const posterTileWidth = 220.0;
+  static double posterTileHeightFor(TextScaler textScaler) =>
+      316 + textScaler.scale(80);
   static const seasonTileHeight = 150.0;
   static const episodeTileWidth = 320.0;
   static const episodeTileHeight = 170.0;
+  static double episodeRowExtentFor(TextScaler textScaler) =>
+      44 + textScaler.scale(88);
   static const homeStripHeight = 182.0;
   static double mediaListExtentFor(TextScaler textScaler) =>
       44 + textScaler.scale(48);

@@ -11,9 +11,20 @@ final _imageBytes = base64Decode(
   'KCAMvwsIPmQWEF1DFBCeYj1DHMABHMABHMABHMABHMABHPAPHVjg/Fx5xYCP'
   'OAAAAABJRU5ErkJggg==',
 );
+final _portraitBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAACAAAABACAYAAAB7jnWuAAAAQElEQVR4nO3O'
+  'IQEAAAgDMJI8McFoBTEwE/Or9OynEhAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ'
+  'EBAQEBAQEMhz4AAYyIkeu4VbawAAAABJRU5ErkJggg==',
+);
+final _landscapeBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAYAAACinX6EAAAAXklEQVR4nO3Q'
+  'MQ0AIADAMJSgGGG4AhklYcf+ZmOufX5uaICuARqga4AG6BqgAboGaICuARqg'
+  'a4AG6BqgAboGaICuARqga4AG6BqgAboGaICuARqga4AG6BowH0DIAReGUYke'
+  'RXyw+gAAAABJRU5ErkJggg==',
+);
 
-void installVisualFixtureHttp() {
-  debugNetworkImageHttpClientProvider = () => _FixtureClient();
+void installVisualFixtureHttp({Map<String, Uint8List> extraImages = const {}}) {
+  debugNetworkImageHttpClientProvider = () => _FixtureClient(extraImages);
 }
 
 void uninstallVisualFixtureHttp() {
@@ -21,12 +32,24 @@ void uninstallVisualFixtureHttp() {
 }
 
 class _FixtureClient implements HttpClient {
+  _FixtureClient(this.extraImages);
+
+  final Map<String, Uint8List> extraImages;
+
   @override
   Future<HttpClientRequest> getUrl(Uri url) async {
     if (url.host != 'example.invalid') {
       throw StateError('Unexpected visual fixture image host.');
     }
-    return _FixtureRequest(url.path == '/missing.png');
+    final bytes =
+        extraImages[url.path] ??
+        switch (url.path) {
+          '/missing.png' => null,
+          '/portrait.png' => _portraitBytes,
+          '/landscape.png' => _landscapeBytes,
+          _ => _imageBytes,
+        };
+    return _FixtureRequest(bytes);
   }
 
   @override
@@ -34,27 +57,27 @@ class _FixtureClient implements HttpClient {
 }
 
 class _FixtureRequest implements HttpClientRequest {
-  _FixtureRequest(this.missing);
+  _FixtureRequest(this.bytes);
 
-  final bool missing;
+  final Uint8List? bytes;
 
   @override
-  Future<HttpClientResponse> close() async => _FixtureResponse(missing);
+  Future<HttpClientResponse> close() async => _FixtureResponse(bytes);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FixtureResponse extends Stream<List<int>> implements HttpClientResponse {
-  _FixtureResponse(this.missing);
+  _FixtureResponse(this.bytes);
 
-  final bool missing;
-
-  @override
-  int get statusCode => missing ? HttpStatus.notFound : HttpStatus.ok;
+  final Uint8List? bytes;
 
   @override
-  int get contentLength => missing ? 0 : _imageBytes.length;
+  int get statusCode => bytes == null ? HttpStatus.notFound : HttpStatus.ok;
+
+  @override
+  int get contentLength => bytes?.length ?? 0;
 
   @override
   HttpClientResponseCompressionState get compressionState =>
@@ -66,7 +89,7 @@ class _FixtureResponse extends Stream<List<int>> implements HttpClientResponse {
     Function? onError,
     void Function()? onDone,
     bool? cancelOnError,
-  }) => Stream<Uint8List>.value(missing ? Uint8List(0) : _imageBytes).listen(
+  }) => Stream<Uint8List>.value(bytes ?? Uint8List(0)).listen(
     onData,
     onError: onError,
     onDone: onDone,

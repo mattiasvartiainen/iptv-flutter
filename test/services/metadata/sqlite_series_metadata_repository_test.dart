@@ -120,13 +120,25 @@ void main() {
     final first = resolve(cancellation: cancellation);
     await server.started.future;
     final second = resolve();
-    // Wait until the second reader has reached the shared operation.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    cancellation.cancel();
-    expect(await first, isEmpty);
-    server.gate!.complete();
-    expect((await second).single.metadata, isNotNull);
-    expect(server.actions, hasLength(3));
+    try {
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (repository.debugActiveReaders(subject, 0) != 2 &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(repository.debugActiveReaders(subject, 0), 2,
+        reason: 'both readers must attach before the first is cancelled');
+      cancellation.cancel();
+      expect(await first, isEmpty);
+      expect(repository.debugActiveReaders(subject, 0), 1);
+      server.gate!.complete();
+      expect((await second).single.metadata![ContentMetadataField.plot], 'Provider synopsis');
+      expect(server.actions, ['get_series_categories', 'get_series', 'get_series_info']);
+    } finally {
+      cancellation.cancel();
+      if (!server.gate!.isCompleted) server.gate!.complete();
+      await Future.wait([first, second]);
+    }
   });
   test('cancelled/deleted subjects cannot write a late result', () async {
     server.gate = Completer<void>();

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app/navigation/app_route.dart';
+import '../../features/catalog/widgets/catalog_focus_context.dart';
+import '../../features/catalog/widgets/episode_layout.dart';
 import '../../features/catalog/widgets/group_sidebar.dart';
 import '../../services/catalog/catalog_query.dart';
 import '../../state/catalog_view_state.dart';
@@ -19,6 +21,16 @@ const SliverGridDelegate _cardGrid = SliverGridDelegateWithMaxCrossAxisExtent(
   mainAxisSpacing: AppTokens.gridGap,
 );
 
+SliverGridDelegate _posterGrid(BuildContext context) =>
+    SliverGridDelegateWithMaxCrossAxisExtent(
+      maxCrossAxisExtent: AppTokens.posterTileWidth,
+      mainAxisExtent: AppTokens.posterTileHeightFor(
+        MediaQuery.textScalerOf(context),
+      ),
+      crossAxisSpacing: AppTokens.gridGap,
+      mainAxisSpacing: AppTokens.gridGap,
+    );
+
 SliverGridDelegate _viewGrid(
   BuildContext context,
   SliverGridDelegate cards, {
@@ -33,6 +45,18 @@ SliverGridDelegate _viewGrid(
       )
     : cards;
 
+String? _seriesGroup(CatalogViewState view, SeriesSummary series) => view
+    .browseGroups
+    .where((group) => group.id == series.groupId)
+    .firstOrNull
+    ?.title;
+
+String _seriesSubtitle(CatalogViewState view, SeriesSummary series) {
+  final group = _seriesGroup(view, series);
+  return '${series.seasonCount} seasons · ${series.episodeCount} episodes'
+      '${group == null || group.isEmpty ? '' : ' · $group'}';
+}
+
 class CatalogScreen extends StatelessWidget {
   const CatalogScreen({super.key, required this.route});
 
@@ -46,12 +70,14 @@ class CatalogScreen extends StatelessWidget {
       listenable: AppScope.preferencesControllerOf(context),
       builder: (context, _) => switch (route) {
         CatalogRoute(kind: CatalogItemKind.live) => _ContentGrid(
+          key: const ValueKey(CatalogGroupKind.live),
           title: 'Live TV',
           groupKind: CatalogGroupKind.live,
           collection: view.items,
           emptyText: 'No live channels found yet.',
         ),
         CatalogRoute(kind: CatalogItemKind.movie) => _ContentGrid(
+          key: const ValueKey(CatalogGroupKind.movie),
           title: 'Movies',
           groupKind: CatalogGroupKind.movie,
           collection: view.items,
@@ -75,6 +101,7 @@ class CatalogScreen extends StatelessWidget {
 
 class _ContentGrid extends StatelessWidget {
   const _ContentGrid({
+    super.key,
     required this.title,
     required this.groupKind,
     required this.collection,
@@ -116,32 +143,56 @@ class _ContentGrid extends StatelessWidget {
                   kind: groupKind,
                   collection: collection,
                   seriesCollection: null,
-                  child: PagedGridView<CatalogItemSummary>(
-                    resetScrollOnLoad: true,
+                  child: CatalogFocusContext<CatalogItemSummary>(
                     collection: collection,
-                    emptyMessage: controller.catalogView.favoriteGroupSelected
-                        ? 'No favourites in this section yet.'
-                        : controller.catalogView.awaitingGroupSelection
-                        ? 'No automatically selected group. Choose a group to browse.'
-                        : emptyText,
-                    gridDelegate: _viewGrid(
-                      context,
-                      _cardGrid,
-                      listView: listView,
-                      extraListExtent: isLive ? 8 : 0,
-                    ),
-                    itemBuilder: (context, item, autofocus) => MediaTile(
-                      listView: listView,
-                      showListArtwork: isLive,
-                      key: ValueKey<String>(item.id),
-                      autofocus: autofocus,
-                      title: item.title,
-                      subtitle: item.group,
-                      icon: item.kind.icon,
-                      imageUrl: item.artworkUrl ?? item.logoUrl,
-                      onActivate: () =>
-                          AppScope.activateItemById(context, item.id),
-                    ),
+                    idOf: (item) => item.id,
+                    builder: (context, showContext) =>
+                        PagedGridView<CatalogItemSummary>(
+                          resetScrollOnLoad: true,
+                          preserveFocusedItemOnLayoutChange: true,
+                          collection: collection,
+                          emptyMessage:
+                              controller.catalogView.favoriteGroupSelected
+                              ? 'No favourites in this section yet.'
+                              : controller.catalogView.awaitingGroupSelection
+                              ? 'No automatically selected group. Choose a group to browse.'
+                              : emptyText,
+                          gridDelegate: _viewGrid(
+                            context,
+                            isLive ? _cardGrid : _posterGrid(context),
+                            listView: listView,
+                            extraListExtent: isLive ? 8 : 0,
+                          ),
+                          itemBuilder: (context, item, autofocus) => MediaTile(
+                            listView: listView,
+                            presentation: isLive
+                                ? MediaTilePresentation.standard
+                                : MediaTilePresentation.poster,
+                            showListArtwork: isLive,
+                            keepAliveWhileFocused: true,
+                            onFocusChanged: (focused) {
+                              if (focused) {
+                                showContext(
+                                  CatalogContextSummary(
+                                    id: item.id,
+                                    title: item.title,
+                                    group: item.group,
+                                    icon: item.kind.icon,
+                                    artworkUrl: item.artworkUrl ?? item.logoUrl,
+                                  ),
+                                );
+                              }
+                            },
+                            key: ValueKey<String>(item.id),
+                            autofocus: autofocus,
+                            title: item.title,
+                            subtitle: item.group,
+                            icon: item.kind.icon,
+                            imageUrl: item.artworkUrl ?? item.logoUrl,
+                            onActivate: () =>
+                                AppScope.activateItemById(context, item.id),
+                          ),
+                        ),
                   ),
                 ),
               ),
@@ -184,27 +235,51 @@ class _SeriesGrid extends StatelessWidget {
                   kind: groupKind,
                   collection: null,
                   seriesCollection: collection,
-                  child: PagedGridView<SeriesSummary>(
-                    resetScrollOnLoad: true,
+                  child: CatalogFocusContext<SeriesSummary>(
                     collection: collection,
-                    emptyMessage: controller.catalogView.favoriteGroupSelected
-                        ? 'No favourites in this section yet.'
-                        : controller.catalogView.awaitingGroupSelection
-                        ? 'No automatically selected group. Choose a group to browse.'
-                        : 'No series episodes recognized yet.',
-                    gridDelegate: _viewGrid(context, _cardGrid),
-                    itemBuilder: (context, item, autofocus) => MediaTile(
-                      listView: AppScope.preferencesControllerOf(
-                        context,
-                      ).useListView,
-                      key: ValueKey<String>(item.id),
-                      autofocus: autofocus,
-                      title: item.title,
-                      subtitle:
-                          '${item.seasonCount} seasons · ${item.episodeCount} episodes',
-                      icon: Icons.tv,
-                      imageUrl: item.artworkUrl,
-                      onActivate: () => controller.openSeriesSeasons(item),
+                    idOf: (item) => item.id,
+                    builder: (context, showContext) => PagedGridView<SeriesSummary>(
+                      resetScrollOnLoad: true,
+                      preserveFocusedItemOnLayoutChange: true,
+                      collection: collection,
+                      emptyMessage: controller.catalogView.favoriteGroupSelected
+                          ? 'No favourites in this section yet.'
+                          : controller.catalogView.awaitingGroupSelection
+                          ? 'No automatically selected group. Choose a group to browse.'
+                          : 'No series episodes recognized yet.',
+                      gridDelegate: _viewGrid(context, _posterGrid(context)),
+                      itemBuilder: (context, item, autofocus) => MediaTile(
+                        listView: AppScope.preferencesControllerOf(
+                          context,
+                        ).useListView,
+                        presentation: MediaTilePresentation.poster,
+                        keepAliveWhileFocused: true,
+                        onFocusChanged: (focused) {
+                          if (focused) {
+                            showContext(
+                              CatalogContextSummary(
+                                id: item.id,
+                                title: item.title,
+                                group: _seriesGroup(
+                                  controller.catalogView,
+                                  item,
+                                ),
+                                counts:
+                                    '${item.seasonCount} seasons · ${item.episodeCount} episodes',
+                                icon: Icons.tv,
+                                artworkUrl: item.artworkUrl,
+                              ),
+                            );
+                          }
+                        },
+                        key: ValueKey<String>(item.id),
+                        autofocus: autofocus,
+                        title: item.title,
+                        subtitle: _seriesSubtitle(controller.catalogView, item),
+                        icon: Icons.tv,
+                        imageUrl: item.artworkUrl,
+                        onActivate: () => controller.openSeriesSeasons(item),
+                      ),
                     ),
                   ),
                 ),
@@ -298,32 +373,37 @@ class _EpisodeGrid extends StatelessWidget {
       child: _GridFrame(
         child: selectedSeason == null
             ? const EmptyView(message: 'Pick a season to browse episodes.')
-            : PagedGridView<CatalogItemSummary>(
-                collection: collection,
-                emptyMessage: 'No episodes found.',
-                gridDelegate: _viewGrid(
-                  context,
-                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: AppTokens.episodeTileWidth,
-                    mainAxisExtent: AppTokens.episodeTileHeight,
-                    crossAxisSpacing: AppTokens.gridGap,
-                    mainAxisSpacing: AppTokens.gridGap,
-                  ),
-                ),
-                itemBuilder: (context, episode, autofocus) => MediaTile(
-                  listView: AppScope.preferencesControllerOf(
-                    context,
-                  ).useListView,
-                  key: ValueKey<String>(episode.id),
-                  autofocus: autofocus,
-                  title: episode.title,
-                  subtitle:
-                      'Episode ${episode.episodeNumber ?? '-'}${episode.group == null || episode.group!.isEmpty ? '' : ' · ${episode.group}'}',
-                  icon: Icons.play_circle_outline,
-                  imageUrl: episode.artworkUrl ?? episode.logoUrl,
-                  onActivate: () =>
-                      AppScope.activateItemById(context, episode.id),
-                ),
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final layout = EpisodeLayout(
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
+                    listPreference: AppScope.preferencesControllerOf(
+                      context,
+                    ).useListView,
+                    textScaler: MediaQuery.textScalerOf(context),
+                  );
+                  return PagedGridView<CatalogItemSummary>(
+                    collection: collection,
+                    emptyMessage: 'No episodes found.',
+                    preserveFocusedItemOnLayoutChange: true,
+                    gridDelegate: layout.gridDelegate,
+                    itemBuilder: (context, episode, autofocus) => MediaTile(
+                      listView: layout.isRow,
+                      episodeRow: layout.isRow,
+                      keepAliveWhileFocused: true,
+                      key: ValueKey<String>(episode.id),
+                      autofocus: autofocus,
+                      title: episode.title,
+                      subtitle:
+                          'Episode ${episode.episodeNumber ?? '-'}${episode.group == null || episode.group!.isEmpty ? '' : ' · ${episode.group}'}',
+                      icon: Icons.play_circle_outline,
+                      imageUrl: episode.artworkUrl ?? episode.logoUrl,
+                      onActivate: () =>
+                          AppScope.activateItemById(context, episode.id),
+                    ),
+                  );
+                },
               ),
       ),
     );

@@ -31,8 +31,9 @@ Settings-focus failures before stalling in the known telemetry test; the
 analyzer retains two baseline infos. Physical-device checks remain pending.
 2026-11-27 validation: Settings modal focus restoration and the telemetry test
 scheduling blockers were fixed; the complete suite passes 989 tests. The
-analyzer still exits with two pre-existing `unawaited_futures` infos, and
-physical-device review remains pending.
+analyzer is clean after awaiting the dialog result and scoping an
+`unawaited_futures` exception to generated webOS files. The SDK-generated
+entrypoint itself is unchanged; physical-device review remains pending.
 
 ### Preserve
 
@@ -92,24 +93,24 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 
 | ID | Step | Depends On | Status | Suggested Commit |
 |----|------|------------|--------|------------------|
-| DE-01 | Deterministic visual baseline | None | PARTIAL: WP-design-visual-baseline records current compact/wide screens and selected accessibility/error states; full suite passes, but analyzer baseline and device review remain pending. | `test(ui): capture design evolution baseline` |
-| DE-02 | Reusable bounded artwork | DE-01 | PARTIAL (2026-11-25): WP-XM-movie extracted MediaArtwork for tiles/Details; bounded decode/failure regressions pass. DE-01 visual comparisons and complete artwork-fit checks remain pending. | `refactor(ui): share bounded media artwork rendering` |
-| DE-03 | Adaptive visual Details | DE-02 | PARTIAL (2026-11-25): WP-XM-movie adds scrollable adaptive Details/Play with local fallback and 1x/2x viewport coverage. Deterministic artwork comparisons remain pending. | `feat(details): add adaptive artwork and content hierarchy` |
-| DE-04 | Channel row component | DE-02 | PARTIAL: Live uses shared focusable MediaTile rows with bounded logos; visual baseline and hardware checks remain pending. | `feat(live): add accessible channel row presentation` |
-| DE-05 | Paged Live TV list | DE-04 | PARTIAL: Live defaults to a lazy single-column paged grid, with its own saved card/row toggle; full-suite baseline and hardware checks remain pending. | `feat(live): use paged channel browsing layouts` |
-| DE-06 | Poster-oriented catalog tiles | DE-02 | READY | `feat(catalog): add poster presentation for movies and series` |
-| DE-07 | Adaptive episode presentation | DE-02 | READY | `feat(series): adapt episode presentation to available space` |
-| DE-08 | Focus-following catalog context | DE-05, DE-06 | READY | `feat(catalog): show lightweight focused item context` |
-| DE-09 | Presentation checkpoint | DE-03, DE-05, DE-06, DE-07, DE-08 | READY | `test(ui): verify evolved cross-device browsing` |
-| DE-10 | Continuity policy decision | DE-09 | GATED | `docs(ux): define viewing continuity policy` |
-| DE-11 | Stable playback library identity | DE-10 | GATED | `feat(library): resolve stable playback identity` |
-| DE-12 | Session-safe progress/history recording | DE-11 | GATED | `feat(player): persist viewing progress safely` |
-| DE-13 | Explicit resume execution | DE-12 | GATED | `feat(player): support explicit session-safe resume` |
-| DE-14 | Resume actions in Details | DE-13 | GATED | `feat(details): offer resume and start over actions` |
-| DE-15 | Bounded continuity query | DE-12 | GATED | `feat(library): query bounded continue watching items` |
-| DE-16 | Continue Watching on Home | DE-14, DE-15 | GATED | `feat(home): add continue watching without replacing previews` |
-| DE-17 | Episode progress states | DE-07, DE-12 | GATED | `feat(series): show persisted episode viewing states` |
-| DE-18 | Continuity checkpoint | DE-16, DE-17 | GATED | `test(library): verify cross-device viewing continuity` |
+| DE-01 | Deterministic visual baseline | None | DONE for the software baseline: compact/wide snapshots, full-suite checks and partial Windows review completed. Physical phone/TV and playback checks are explicitly deferred, not passed. | `test(ui): capture design evolution baseline` |
+| DE-02 | Reusable bounded artwork | DE-01 | DONE (2026-11-27): Artwork checks and baseline goldens pass; analyzer clean and full suite passes 995 tests. Physical-device checks deferred. | `refactor(ui): share bounded media artwork rendering` |
+| DE-03 | Adaptive visual Details | DE-02 | DONE (2026-11-27): Adaptive Details, Play focus visibility, fallback and portrait artwork snapshots verified; analyzer clean and all 1001 tests pass. Physical-device checks deferred. | `feat(details): add adaptive artwork and content hierarchy` |
+| DE-04 | Channel row component | DE-02 | DONE (2026-11-27): Shared MediaTile rows, remote/touch activation, focus, semantics and compact/wide visual baselines verified; hardware checks deferred. | `feat(live): add accessible channel row presentation` |
+| DE-05 | Paged Live TV list | DE-04 | DONE (2026-11-27): Lazy bounded rows, direct playback, sorting and responsive resize preservation verified; hardware checks deferred. | `feat(live): use paged channel browsing layouts` |
+| DE-06 | Poster-oriented catalog tiles | DE-02 | DONE (2026-11-27): Responsive movie/series posters, bounded aspect-preserving artwork, focus and paging verified; analyzer clean and all 1022 tests pass. Hardware checks deferred. | `feat(catalog): add poster presentation for movies and series` |
+| DE-07 | Adaptive episode presentation | DE-02 | DONE (2026-11-27): Inline and compatibility episode layouts, resize focus, paging and remote navigation verified; analyzer clean and all 1032 tests pass. Hardware checks deferred. | `feat(series): adapt episode presentation to available space` |
+| DE-08 | Focus-following catalog context | DE-05, DE-06 | DONE (2026-11-27): Responsive focused-summary context, paging and resize focus verified; analyzer clean and all 1038 tests pass. Hardware checks deferred. | `feat(catalog): show lightweight focused item context` |
+| DE-09 | Presentation checkpoint | DE-03, DE-05, DE-06, DE-07, DE-08 | DONE for the software checkpoint (2026-11-27): 1047 tests pass; native validation and remaining matrix checks pending. | `test(ui): verify evolved cross-device browsing` |
+| DE-10 | Continuity policy decision | DE-09 | DONE (2026-11-27): Policy and scenarios approved; no application code changed. | `docs(ux): define viewing continuity policy` |
+| DE-11 | Stable playback library identity | DE-10 | READY | `feat(library): resolve stable playback identity` |
+| DE-12 | Session-safe progress/history recording | DE-11 | READY | `feat(player): persist viewing progress safely` |
+| DE-13 | Explicit resume execution | DE-12 | READY | `feat(player): support explicit session-safe resume` |
+| DE-14 | Resume actions in Details | DE-13 | READY | `feat(details): offer resume and start over actions` |
+| DE-15 | Bounded continuity query | DE-12 | READY | `feat(library): query bounded continue watching items` |
+| DE-16 | Continue Watching on Home | DE-14, DE-15 | READY | `feat(home): add continue watching without replacing previews` |
+| DE-17 | Episode progress states | DE-07, DE-12 | READY | `feat(series): show persisted episode viewing states` |
+| DE-18 | Continuity checkpoint | DE-16, DE-17 | READY | `test(library): verify cross-device viewing continuity` |
 
 Suggested execution: DE-01 through DE-09 first. Pause for visual review, then decide whether to start DE-10. Do not wait for EPG or a new palette to deliver the presentation milestone.
 
@@ -140,9 +141,20 @@ also present. Review those details in a running app rather than treating the
 images as production screenshots.
 
 Verification: 14 focused tests passed, including repeated golden comparisons.
-The full run reached 963 passes with two known Settings-focus failures before
-stalling in the known telemetry test. The analyzer reports the two baseline
-infos. Do not mark the work package complete until the full suite is clean.
+The full suite now passes 989 tests and the analyzer is clean with the
+generated webOS lint exception described above. Device review remains pending.
+On 2026-11-27, a current Windows debug build was reviewed with a populated
+catalog at a desktop-sized window and a manually resized portrait-like window.
+Home and Live showed the first playlist-ordered group and Live channel rows;
+the compact view showed the group strip and bottom navigation. Desktop Movies
+and Series used the current generic cards, and compact Series showed two
+columns with truncated long titles and counts. At the desktop window's
+effective content width, groups appeared in the picker rather than a sidebar;
+at a larger width the sidebar appeared. A movie Details view displayed its
+poster and available metadata, and a Series overview displayed its inline
+episode grid. This is a partial visual review, not verification of every
+route, physical phone touch, TV remote input, or playback/native video. The
+user agreed to defer physical-device review while implementation continues.
 
 Run `flutter test test/visual/design_baseline_test.dart` to compare. For an
 intentional UI change, use `flutter test --update-goldens
@@ -160,6 +172,21 @@ Android TV, LG remote and native video-plane hardware checks.
 
 **Done:** MediaTile consumes the shared renderer with no unrelated geometry/theme changes. No second image cache implementation or domain dependency is introduced.
 
+**Verification (2026-11-27):** [Artwork widget tests](../test/ui/widgets/media_artwork_test.dart)
+exercise portrait, landscape and logo constraints, loading and missing/failed
+fallbacks, decorative semantics, stable geometry and a 1280x720 source decoded
+to 320x180. Existing compact/wide baseline goldens still match; no renderer or
+appearance changes were needed. `flutter analyze --no-pub` is clean. A full
+suite passed 995 tests before the final failed-image assertion was strengthened;
+afterward the isolated artwork tests passed, while the full suite had an
+unrelated series-metadata concurrency failure (passing in isolation). A rerun
+stalled after 992 passes and was stopped. A subsequent bounded full-suite run
+again failed that same concurrency test (994 passed, one failed). The test now
+waits for both readers to attach to the same shared operation before cancelling
+one, rather than assuming a fixed delay is sufficient. The final full suite
+passes all 995 tests, including the strengthened artwork assertion; analyzer
+is clean. Hardware checks remain deferred.
+
 ### DE-03 - Adaptive Visual Details
 
 **Scope:** Use ContentItem poster/logo, title, group, and description. At sufficient width/height, place bounded artwork beside content; stack and scroll on compact/short layouts. Prefer a compact title hierarchy over a marketing hero. Retain the existing Play command and initial focus.
@@ -169,6 +196,19 @@ Android TV, LG remote and native video-plane hardware checks.
 **Checks:** Empty description/group, missing artwork, long title/description, 2.0 text scale, short landscape, Play activation exactly once, Back restores the originating tile. No rating/year/runtime parsing from arbitrary strings.
 
 **Done:** Real available content is more legible and visual on compact and expanded layouts; no new action, route, or playback behavior exists.
+
+**Verification (2026-11-27):** Details uses side-by-side artwork only when
+both available width and height permit it; short windows stack and scroll.
+The focused Play control is scrolled into view on initial focus and when
+returning to it. Widget tests cover compact, wide and short layouts with long
+titles and descriptions at 2x text, missing local data, Play activation,
+metadata fallback and Back/focus restoration. New compact and wide snapshots
+use offline portrait artwork and were inspected alongside the existing
+baseline. As in the previous goldens, some button labels render with test-font
+blocks, so those images verify geometry and artwork rather than typography.
+`flutter analyze --no-pub` is clean and the complete
+`flutter test --no-pub --timeout 120s --reporter expanded` run passes 1001
+tests. Phone, TV remote, playback and native-plane validation remain deferred.
 
 ### DE-04 - Channel Row Component
 
@@ -180,6 +220,13 @@ Android TV, LG remote and native video-plane hardware checks.
 
 **Done:** A tested component exists without changing catalog routes. Do not show a playing indicator, channel number, quality badge, or program progress unless the caller supplies verified data.
 
+**Verification (2026-11-27):** Live rows reuse MediaTile, including the
+bounded logo, focus ring and selection semantics. Touch, Enter and Select,
+long names, fallback artwork and 1x/2x text are covered by widget tests;
+the existing compact and wide Live screenshots were inspected. The focused
+row's selected and focused semantic states are distinct, including with
+reduced motion. Hardware input remains deferred.
+
 ### DE-05 - Paged Live TV List
 
 **Scope:** Replace only Live catalog grid presentation with a lazy paged channel list. Reuse group selection, All default, query ordering, errors, and retry. Use existing narrow group controls and wide sidebar rules. Do not add video preview, EPG, zapping, favorites, or direct playback.
@@ -189,6 +236,15 @@ Android TV, LG remote and native video-plane hardware checks.
 **Checks:** Initial/next-page load, underfilled viewport, retry after load-more failure, retained rows on failure, group changes during requests, hidden groups, resize preservation, directional navigation and Back restoration. Activation still opens Details.
 
 **Done:** A large fixture is browsable through bounded queries on phone, desktop, and remote-first layouts, without loading the whole catalog.
+
+**Verification (2026-11-27):** The current direct-Live playback and
+playlist-first group decisions supersede the historical scope above. Tests
+exercise a 1,000-channel bounded list, sorting and direct playback with
+keyboard navigation and the player's two-stage Back. A stable browsing
+subtree retains the focused row and scroll position when switching between
+compact and wide group layouts. Fifty focused tests pass, analyzer is clean,
+and the full suite passes 1006 tests. Phone and TV hardware checks remain
+deferred.
 
 ### DE-06 - Poster-Oriented Catalog Tiles
 
@@ -200,15 +256,33 @@ Android TV, LG remote and native video-plane hardware checks.
 
 **Done:** Movies/series have intentional artwork-led presentation with no rating sorting, catalog query changes, or global radius/palette rewrite.
 
+**Evidence (2026-11-27):** Movie and series card grids use bounded,
+aspect-preserving portrait and landscape artwork with aligned tracks and titles
+below images; Home, Live and list presentations remain unchanged. Tests cover
+missing artwork, 2x text, focus, keyboard/touch activation, responsive widths
+and bounded paging for 1000-item catalogs. The compact and wide movie and series
+snapshots were reviewed. Flutter analysis is clean and all 1022 tests pass.
+Physical phone, TV remote, playback and native video-plane checks remain deferred.
+
 ### DE-07 - Adaptive Episode Presentation
 
-**Scope:** Present compact/short episode browsing as readable thumbnail/title/episode-number rows; retain a landscape-tile grid when constraints permit. Keep the existing Series -> Seasons -> Episodes route model and paging. Integrated season tabs are a later navigation decision, not part of this commit.
+**Scope:** Present compact/short episode browsing as readable thumbnail/title/episode-number rows; retain a landscape-tile grid when constraints permit. Preserve the current inline season selection and the compatibility Seasons/Episodes routes, along with paging. Do not change navigation in this step.
 
-**Owners:** Episode branch of CatalogScreen, shared artwork/interaction, episode tests.
+**Owners:** SeriesDetailsScreen, episode branch of CatalogScreen, shared artwork/interaction, episode tests.
 
 **Checks:** Missing episode number, long provider titles, no artwork, resize with current page/focus/scroll preserved, sequential keyboard navigation, activation to Details, empty/error/retry states.
 
 **Done:** Episode layouts adapt without invented duration, watched labels, progress, or new navigation.
+
+**Evidence (2026-11-27):** Inline and compatibility episode views switch to
+thumbnail rows in compact or short content areas and retain grids when space
+permits. The existing list preference, episode activation and paged loading
+remain in place. Tests cover 2x text with remote-sized typography, long titles,
+missing artwork and episode numbers, retry, keyboard navigation and focused
+items deep in a paged season across resize in both directions. The compact
+episode snapshot was reviewed. Flutter analysis is clean and all 1032 tests
+pass; physical phone, TV remote, playback and native video-plane checks remain
+deferred.
 
 ### DE-08 - Focus-Following Catalog Context
 
@@ -220,6 +294,16 @@ Android TV, LG remote and native video-plane hardware checks.
 
 **Done:** Context changes without grid movement, excessive announcements, data reloads, or expensive requests. Hide the panel when space is insufficient. Avoid a constantly announced live region.
 
+**Evidence (2026-11-27):** Live, movie and series panels use the already-loaded
+summary and show title, group, artwork fallback and series counts where
+available. They appear only when the content area has sufficient width and
+height; tile semantics carry the corresponding information without a live
+region. Tests cover keyboard and pointer/touch behavior, group changes and
+removal, no item lookup on focus, and deep paged focus across resize in both
+directions. Wide catalog snapshots and compact series changes were reviewed.
+Flutter analysis is clean and all 1038 tests pass. Physical phone, TV remote,
+playback and native video-plane checks remain deferred.
+
 ### DE-09 - Presentation Checkpoint
 
 **Scope:** Review representative screenshots against DE-01, add missing cross-feature regression cases, and fix only defects in DE-02 through DE-08. Split unrelated defects into separate work. Record accepted visual changes and remaining device checks.
@@ -227,6 +311,41 @@ Android TV, LG remote and native video-plane hardware checks.
 **Checks:** Full verification matrix below; compare steps to find content, launch playback, and return to the same item. Check realistic messy provider titles and sparse artwork, not only ideal fixtures.
 
 **Done:** Full analyzer/tests pass, accepted screenshots are recorded, and each native target is marked verified or pending. The app remains independently useful without any continuity step.
+
+**Evidence (2026-11-27):** The
+[presentation journey tests](../test/features/presentation_journey_test.dart)
+use a controlled playback adapter and sparse artwork with long provider titles.
+Live opens Player directly at 390x844 and 1920x1080; Movies go through Details
+at 390x844, 800x360, 800x1000, 1440x900 and 1920x1080, with 1x and 2x text
+represented; a compact Series episode goes through inline season selection and
+Details. These tests check that focusing Live does not play, opening Details
+does not play before Play, one load, Back/stop and restoration of the
+originating focus, plus absence of fixture credential markers from displayed
+text on the checked screens. They request item focus explicitly
+before keyboard activation, so they do not establish end-to-end directional
+traversal. The compact Live case simulates top/bottom safe-area padding and
+reduced motion, and Search accepts text with a simulated keyboard inset.
+Existing activation, focus, paging, visual and artwork tests cover additional
+pointer/touch, keyboard, layout and error cases. The focused journey suite
+passes 9 tests; `flutter analyze --no-pub` is clean and
+`flutter test --no-pub --timeout 120s --reporter expanded` passes 1047 tests.
+
+Reviewed existing [goldens](../test/visual/goldens/) for compact and wide Home,
+Live, Movies, Series and Details, compact portrait Details and Episodes, and
+wide portrait Details and compatibility Episodes. These capture current
+geometry and artwork/fallback behavior, not a new native-device review.
+No screenshots were changed for this checkpoint. The test-font blocks and debug
+banner noted in DE-01 prevent treating these as proof of production typography.
+The tests do not exhaust the full cross-product of viewport, text scale, input,
+safe areas and reduced motion; native screen-reader, contrast and focus
+visibility checks also remain outstanding.
+
+| Native target | Status |
+|---|---|
+| Android phone | Pending: touch, safe areas, keyboard and playback on hardware. |
+| Android TV | Pending: remote mapping, focus, distant readability and playback. |
+| Windows | Partial: DE-01 debug visual review only, before later presentation changes; current native journeys and playback remain pending. |
+| LG webOS | Pending: remote/pointer input, focus, native playback and video-plane composition. |
 
 ## 6. Continuity Steps
 
@@ -237,12 +356,19 @@ Android TV, LG remote and native video-plane hardware checks.
 - What playback event counts as watched, and how often progress is checkpointed.
 - Minimum resumable position, completion rule, unknown-duration behavior, and treatment of seeking near the end.
 - Whether completed items remain in recent history but leave Continue Watching.
-- Resume versus Start Over presentation, retry semantics, and whether Home activation still opens Details. Resolve the relevant D-8 questions explicitly; retain All unless separately approved.
+- Resume versus Start Over presentation, retry semantics, and whether Home activation still opens Details. Resolve the relevant D-8 questions explicitly; retain first-visible-group defaults.
 - Initial focus on Home: retain current first-available behavior or approve history-backed behavior, including section visibility and fallback.
 - Episode policy: resume only an in-progress episode in this milestone; define series deduplication if desired. Do not infer next-episode autoplay approval.
 - Active playlist/profile scope, history retention, hidden-group exclusion, and explicit clear/remove behavior.
 
 **Done:** Policy values and representative scenarios are approved, affected guidelines updated, and DE-11 through DE-18 can be marked READY. D-7 remains unchanged. This commit contains no application code.
+
+**Evidence (2026-11-27):** The user approved the recommended policy and
+representative scenarios, recorded as D-11 in [decisions](decisions.md).
+The [design contract](design-guidelines.md) reflects the approved scope and
+existing first-visible-group behavior. READY removes the policy gate only;
+each step's implementation dependencies still apply. No application behavior
+or player lifecycle was changed.
 
 ### DE-11 - Stable Playback Library Identity
 
@@ -286,7 +412,7 @@ Android TV, LG remote and native video-plane hardware checks.
 
 ### DE-15 - Bounded Continuity Query
 
-**Scope:** Extend the library read API with a bounded summary query for resumable movies/episodes, including progress needed by the UI. Existing recent-history storage alone is not this query. Filter hidden groups, missing catalog items, completion, and playlist/profile in the data layer. Specify stable ordering/tie-breaks and enforce a limit.
+**Scope:** Extend the library read API with a bounded summary query for resumable movies/episodes, including progress needed by the UI. Existing recent-history storage alone is not this query. Filter hidden groups, missing catalog items, completion, and playlist/profile in the data layer. Deduplicate episodes to the most recently watched in-progress episode per series. Specify stable ordering/tie-breaks and enforce a limit.
 
 **Owners:** UserLibraryRepository, catalog safe-summary models as needed, SQLite and fake implementations, [Library Repository Tests](../test/services/catalog/user_library_repository_test.dart).
 
@@ -296,11 +422,11 @@ Android TV, LG remote and native video-plane hardware checks.
 
 ### DE-16 - Continue Watching On Home
 
-**Scope:** Add a bounded row above existing configurable previews. Use real progress and explicit continuation labels. Observe library changes/return-from-player through a narrow feature owner; generation-guard playlist changes. Keep existing sections and navigation, and avoid a generic recommendation hero.
+**Scope:** Add a bounded row above existing configurable previews. Use real progress and explicit continuation labels. Observe library changes/return-from-player through a narrow feature owner; generation-guard playlist changes. Provide per-item removal and a clear-history action that also clears associated progress in the active scope. Keep existing sections and navigation, and avoid a generic recommendation hero.
 
 **Owners:** HomeScreen, a proposed Home continuity state owner, library read boundary, shared media presentation, Home tests.
 
-**Checks:** Empty row disappears, first launch, completed/removed/hidden item, refresh failures, section preferences, focus restoration, latest item arriving late, rapid playlist switching, activation follows DE-10, title/progress semantics and resize.
+**Checks:** Empty row disappears, first launch, completed/removed/hidden item, per-item removal, clear-history scope and progress removal, refresh failures, section preferences, focus restoration, latest item arriving late, rapid playlist switching, activation follows DE-10, title/progress semantics and resize.
 
 **Done:** A genuine prior viewing session appears on Home after restart, with no fabricated progress, duplicate unbounded history list, or unexpected autoplay.
 

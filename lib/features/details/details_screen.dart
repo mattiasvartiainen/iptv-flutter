@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app/navigation/app_route.dart';
@@ -116,6 +118,20 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
   }
 
+  Future<void> _ensurePlayVisible() async {
+    final playContext = _playFocus.context;
+    if (!mounted || !_playFocus.hasFocus || playContext == null) return;
+    await Scrollable.ensureVisible(
+      playContext,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+    if (!mounted || !playContext.mounted || !_playFocus.hasFocus) return;
+    await Scrollable.ensureVisible(
+      playContext,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+    );
+  }
+
   @override
   void dispose() {
     _catalog?.removeListener(_routeChanged);
@@ -138,7 +154,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
           ),
   );
 
-  Widget _content(BuildContext context) {
+  Widget _content(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _contentForHeight(context, constraints.maxHeight),
+  );
+
+  Widget _contentForHeight(BuildContext context, double availableHeight) {
     final item = widget.item;
     final metadata = _controller?.metadata;
     final poster =
@@ -165,7 +186,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
           constraints: const BoxConstraints(maxWidth: 1200),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 700;
+              final wide =
+                  constraints.maxWidth >= 700 && availableHeight >= 400;
               final artwork = SizedBox(
                 width: wide ? 220 : 160,
                 height: wide ? 330 : 240,
@@ -187,13 +209,23 @@ class _DetailsScreenState extends State<DetailsScreen> {
                   ],
                   const SizedBox(height: 16),
                   FocusTraversalGroup(
-                    child: ElevatedButton.icon(
-                      focusNode: _playFocus,
-                      autofocus: true,
-                      onPressed: () =>
-                          AppScope.playerControllerOf(context).openPlayer(item),
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Play selected stream'),
+                    child: Focus(
+                      canRequestFocus: false,
+                      onFocusChange: (focused) {
+                        if (!focused) return;
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          unawaited(_ensurePlayVisible());
+                        });
+                      },
+                      child: ElevatedButton.icon(
+                        focusNode: _playFocus,
+                        autofocus: true,
+                        onPressed: () => AppScope.playerControllerOf(
+                          context,
+                        ).openPlayer(item),
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Play selected stream'),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
