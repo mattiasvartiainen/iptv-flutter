@@ -88,7 +88,7 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 
 | ID | Step | Depends On | Status | Suggested Commit |
 |----|------|------------|--------|------------------|
-| DE-01 | Deterministic visual baseline | None | READY | `test(ui): capture design evolution baseline` |
+| DE-01 | Deterministic visual baseline | None | PARTIAL: WP-design-visual-baseline records current compact/wide screens and selected accessibility/error states; clean full suite and device review remain pending. | `test(ui): capture design evolution baseline` |
 | DE-02 | Reusable bounded artwork | DE-01 | PARTIAL (2026-11-25): WP-XM-movie extracted MediaArtwork for tiles/Details; bounded decode/failure regressions pass. DE-01 visual comparisons and complete artwork-fit checks remain pending. | `refactor(ui): share bounded media artwork rendering` |
 | DE-03 | Adaptive visual Details | DE-02 | PARTIAL (2026-11-25): WP-XM-movie adds scrollable adaptive Details/Play with local fallback and 1x/2x viewport coverage. Deterministic artwork comparisons remain pending. | `feat(details): add adaptive artwork and content hierarchy` |
 | DE-04 | Channel row component | DE-02 | PARTIAL: Live uses shared focusable MediaTile rows with bounded logos; visual baseline and hardware checks remain pending. | `feat(live): add accessible channel row presentation` |
@@ -120,6 +120,31 @@ Suggested execution: DE-01 through DE-09 first. Pause for visual review, then de
 **Checks:** Local deterministic artwork, missing/failed artwork, long titles, large text, empty/error states. No network-dependent goldens, real playlists, or credentials. Record baseline screenshots before redesign.
 
 **Done:** Fixtures reproduce the current layouts, focused checks pass, and screenshot generation/review instructions are recorded here. This is a test-only commit.
+
+**Current baseline:** [visual baseline tests](../test/visual/design_baseline_test.dart)
+compare 15 images in [goldens](../test/visual/goldens/) for Home, Live, Movies,
+Details, Series and Episodes at 390x844 and 1440x900 logical pixels, plus
+compact 2x text, empty and failed-page states. Synthetic local image responses
+cover successful, failed and absent artwork without network access; all
+playlists and URLs are fixtures. The screenshots record the existing UI after
+the compact group row and Live row slices, not the earlier pre-redesign state.
+The tests load Roboto and Material Icons from the Flutter SDK; use the same
+Flutter SDK version and rendering environment when comparing pixels. These
+references were generated on Windows with Flutter 3.38.5. Some controls use
+Flutter's default test font and appear as solid blocks; the debug banner is
+also present. Review those details in a running app rather than treating the
+images as production screenshots.
+
+Verification: 14 focused tests passed, including repeated golden comparisons.
+The full run reached 963 passes with two known Settings-focus failures before
+stalling in the known telemetry test. The analyzer reports the two baseline
+infos. Do not mark the work package complete until the full suite is clean.
+
+Run `flutter test test/visual/design_baseline_test.dart` to compare. For an
+intentional UI change, use `flutter test --update-goldens
+test/visual/design_baseline_test.dart`, inspect every changed image and review
+the diff before accepting it. Goldens are not a substitute for phone touch,
+Android TV, LG remote and native video-plane hardware checks.
 
 ### DE-02 - Reusable Bounded Artwork
 
