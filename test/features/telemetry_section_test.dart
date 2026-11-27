@@ -170,11 +170,11 @@ void main() {
         activated.complete();
       }
     });
-    await tester.runAsync(() async {
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pump(const Duration(milliseconds: 450));
-      await activated.future;
-    });
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.runAsync(
+      () => activated.future.timeout(const Duration(seconds: 10)),
+    );
     await tester.pump();
     expect(telemetry.enabled, isTrue);
     expect(controller.config.endpoint, 'http://127.0.0.1:4318');

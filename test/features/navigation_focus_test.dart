@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -257,6 +259,121 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
   }
+
+  testWidgets('nested root dialogs keep focus until the last dialog closes', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    harness.app.openSettings();
+    await tester.pumpAndSettle();
+    final addFocus = Focus.of(tester.element(find.text('Add playlist')));
+    addFocus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    unawaited(
+      navigator.push(
+        DialogRoute<void>(
+          context: tester.element(find.byType(AlertDialog)),
+          builder: (_) => const AlertDialog(
+            title: Text('Nested dialog'),
+            content: TextField(autofocus: true),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final nestedFocus = tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(AlertDialog, 'Nested dialog'),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .focusNode;
+    expect(nestedFocus.hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Nested dialog'), findsNothing);
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(addFocus.hasPrimaryFocus, isFalse);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(addFocus.hasPrimaryFocus, isTrue);
+  });
+
+  testWidgets('reopened root dialog prevents stale focus restoration', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    harness.app.openSettings();
+    await tester.pumpAndSettle();
+    final add = find.text('Add playlist');
+    final addContext = tester.element(add);
+    final addFocus = Focus.of(addContext);
+    addFocus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    navigator.pop();
+    unawaited(
+      navigator.push(
+        DialogRoute<void>(
+          context: addContext,
+          builder: (_) => const AlertDialog(
+            title: Text('Reopened dialog'),
+            content: TextField(autofocus: true),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final reopenedFocus = tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(AlertDialog, 'Reopened dialog'),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .focusNode;
+    expect(reopenedFocus.hasPrimaryFocus, isTrue);
+    expect(addFocus.hasPrimaryFocus, isFalse);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(addFocus.hasPrimaryFocus, isTrue);
+  });
+
+  testWidgets('closing a dialog does not restore focus to a covered page', (
+    tester,
+  ) async {
+    final harness = await _pumpRemoteFirstApp(tester);
+    harness.app.openSettings();
+    await tester.pumpAndSettle();
+    final addFocus = Focus.of(tester.element(find.text('Add playlist')));
+    addFocus.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    navigator.pop();
+    harness.app.openMovies();
+    await tester.pumpAndSettle();
+    expect(harness.navigation.currentRoute, isA<CatalogRoute>());
+    expect(addFocus.hasPrimaryFocus, isFalse);
+    expect(_focusedTile(), isNotNull);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Tab can leave content and Shift+Tab reverses the boundary', (
     tester,

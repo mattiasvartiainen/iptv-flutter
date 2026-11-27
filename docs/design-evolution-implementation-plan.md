@@ -29,6 +29,10 @@ sorting, group selection, 1x/2x responsive layouts, artwork fallback, remote
 activation and Back. The full suite reached 960 passes and the two known
 Settings-focus failures before stalling in the known telemetry test; the
 analyzer retains two baseline infos. Physical-device checks remain pending.
+2026-11-27 validation: Settings modal focus restoration and the telemetry test
+scheduling blockers were fixed; the complete suite passes 989 tests. The
+analyzer still exits with two pre-existing `unawaited_futures` infos, and
+physical-device review remains pending.
 
 ### Preserve
 
@@ -88,7 +92,7 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 
 | ID | Step | Depends On | Status | Suggested Commit |
 |----|------|------------|--------|------------------|
-| DE-01 | Deterministic visual baseline | None | PARTIAL: WP-design-visual-baseline records current compact/wide screens and selected accessibility/error states; clean full suite and device review remain pending. | `test(ui): capture design evolution baseline` |
+| DE-01 | Deterministic visual baseline | None | PARTIAL: WP-design-visual-baseline records current compact/wide screens and selected accessibility/error states; full suite passes, but analyzer baseline and device review remain pending. | `test(ui): capture design evolution baseline` |
 | DE-02 | Reusable bounded artwork | DE-01 | PARTIAL (2026-11-25): WP-XM-movie extracted MediaArtwork for tiles/Details; bounded decode/failure regressions pass. DE-01 visual comparisons and complete artwork-fit checks remain pending. | `refactor(ui): share bounded media artwork rendering` |
 | DE-03 | Adaptive visual Details | DE-02 | PARTIAL (2026-11-25): WP-XM-movie adds scrollable adaptive Details/Play with local fallback and 1x/2x viewport coverage. Deterministic artwork comparisons remain pending. | `feat(details): add adaptive artwork and content hierarchy` |
 | DE-04 | Channel row component | DE-02 | PARTIAL: Live uses shared focusable MediaTile rows with bounded logos; visual baseline and hardware checks remain pending. | `feat(live): add accessible channel row presentation` |

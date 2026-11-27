@@ -38,6 +38,15 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-test-baseline-blockers addresses the user-approved full-suite blockers
+holding up the design baseline. Dependencies: none. Touches: Settings dialog
+focus ownership and keyboard tests, telemetry widget test scheduling and
+related documentation; extend the scope only if diagnosis identifies a
+directly coupled cause. Skills: dart-add-unit-test,
+dart-run-static-analysis, flutter-build-responsive-layout. Preserve keyboard
+and remote behavior, real telemetry configuration coverage, and explicit
+failure reporting. Do not skip tests or weaken assertions.
+
 WP-design-visual-baseline records the current Home, Live, Movies, Series,
 Episodes and Details screens before further design work. Dependencies: none.
 Touches: visual golden tests, synthetic image fixture helper, golden images
@@ -330,7 +339,8 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
-| WP-design-visual-baseline | Current responsive visual baseline | Design | None | S | IN PROGRESS (2026-11-26): Offline golden fixtures and 15 current-screen snapshots implemented; 14 focused tests pass. Full run reached 963 passes and the two known Settings-focus failures, then stalled in the known telemetry test. Analyzer retains two baseline infos; clean full suite and device review remain pending. |
+| WP-test-baseline-blockers | Resolve full-suite blockers | Testing | None | M | BLOCKED (2026-11-27): Settings focus and telemetry scheduling regressions fixed; full suite passes 989 tests. Analyzer exits 1 on the two pre-existing `unawaited_futures` infos in `test/app/navigation_focus_test.dart:179` and `webos/flutter/main.dart:11`; no new diagnostics. A green analyzer remains required for completion. |
+| WP-design-visual-baseline | Current responsive visual baseline | Design | None | S | IN PROGRESS (2026-11-27): Offline golden fixtures and 15 current-screen snapshots implemented; full suite now passes 989 tests. Analyzer retains two pre-existing infos and exits 1; device review remains pending. |
 | WP-live-channel-rows | Paged Live channel rows | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Live-specific saved preference and lazy logo/name/group rows implemented. Focused paging, activation, responsive and architecture tests pass. Full run reached 960 passes and two known Settings-focus failures, then stalled in the known telemetry test. Analyzer retains two baseline infos; clean full suite and device checks remain pending. |
 | WP-compact-group-strip | Responsive compact group row | Catalog | WP-first-playlist-group, WP-safe-automatic-catalog | S | IN PROGRESS (2026-11-26): Compact group row implemented; 50 focused tests passed. Broad run has 955 passes and two known Settings focus failures; full suite stalled in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |
 | WP-favourite-group | Favourite group in catalog browsing | Catalog | WP-safe-automatic-catalog | M | IN PROGRESS (2026-11-26): Implemented and 65 focused tests pass. Broad run has 952 passes and two known Settings focus failures; full suite stalls in the known telemetry test. Analyzer retains two baseline infos. Awaiting a clean full-suite baseline. |

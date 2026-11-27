@@ -173,29 +173,45 @@ class _RootModalFocusObserver extends NavigatorObserver {
 
   final ValueNotifier<bool> modalActive;
   FocusNode? _invokingFocus;
+  bool _restorationPending = false;
+  int _topRevision = 0;
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute?.isFirst == true) {
+    if (previousRoute?.isFirst == true && !_restorationPending) {
       _invokingFocus = FocusManager.instance.primaryFocus;
     }
+    _restorationPending = false;
   }
 
   @override
   void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
+    final revision = ++_topRevision;
     final active = !topRoute.isFirst;
     final wasActive = modalActive.value;
     modalActive.value = active;
     if (wasActive && !active) {
       final invokingFocus = _invokingFocus;
-      _invokingFocus = null;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!modalActive.value &&
-            invokingFocus?.context?.mounted == true &&
-            invokingFocus!.canRequestFocus) {
-          invokingFocus.requestFocus();
-        }
-      });
+      _restorationPending = true;
+      void restore() {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (navigator?.mounted != true || revision != _topRevision) return;
+          _restorationPending = false;
+          _invokingFocus = null;
+          if (!modalActive.value &&
+              invokingFocus?.context?.mounted == true &&
+              invokingFocus!.canRequestFocus) {
+            invokingFocus.requestFocus();
+          }
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+      }
+
+      if (previousTopRoute is TransitionRoute<dynamic>) {
+        unawaited(previousTopRoute.completed.then((_) => restore()));
+      } else {
+        restore();
+      }
     }
   }
 }
