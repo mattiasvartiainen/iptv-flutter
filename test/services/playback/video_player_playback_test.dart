@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
 import 'package:iptv_flutter/services/playback/playback_http_headers.dart';
+import 'package:iptv_flutter/services/playback/playback_session.dart';
 import 'package:iptv_flutter/services/playback/playback_video_surface.dart';
 import 'package:iptv_flutter/services/playback/video_player_playback.dart';
 import 'package:video_player/video_player.dart' as vp;
@@ -74,6 +75,139 @@ void main() {
       await platform.closeEvents();
       await platform.created.close();
       VideoPlayerPlatform.instance = original;
+    });
+
+    test('controller completion flag does not identify a native end', () async {
+      platform.autoInitialize = true;
+      await adapter.load(item);
+      final view =
+          adapter.buildVideoView() as PlaybackVideoSurface<vp.VideoPlayerValue>;
+      final controller = view.values as vp.VideoPlayerController;
+      final id = platform.nextId;
+      var rawEvents = 0;
+      final events = controller.nativeCompletionEvents.listen((_) {
+        rawEvents++;
+      });
+      addTearDown(events.cancel);
+
+      expect(controller.value.isCompleted, isFalse);
+      await adapter.seek(controller.value.duration);
+      expect(controller.value.isCompleted, isTrue);
+      expect(rawEvents, 0);
+
+      await adapter.seek(Duration.zero);
+      expect(controller.value.isCompleted, isFalse);
+      platform.events[id]!.add(VideoEvent(eventType: VideoEventType.completed));
+      expect(controller.value.isCompleted, isTrue);
+      expect(rawEvents, 1);
+      platform.events[id]!.add(VideoEvent(eventType: VideoEventType.completed));
+      expect(rawEvents, 2);
+    });
+
+    test('raw events pass through session without classifying seeks', () async {
+      platform.autoInitialize = true;
+      final session = PlaybackSession(adapter);
+      addTearDown(session.dispose);
+      final events = <ContentItem>[];
+      final subscription = session.rawEndEvents.listen(events.add);
+      addTearDown(subscription.cancel);
+      await session.load(item);
+      final old = platform.nextId;
+      await session.seek(const Duration(minutes: 1));
+      expect(events, isEmpty);
+      platform.events[old]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(events, [item]);
+      await session.stop();
+      platform.events[old]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(events, [item]);
+      await session.play();
+      platform.events[old]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(events, [item, item]);
+      await session.load(item);
+      platform.events[old]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(events, [item, item]);
+      platform.events[platform.nextId]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(events, [item, item, item]);
+    });
+
+    test('zero duration can set the completion flag at startup', () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      platform.initialize(await created, duration: Duration.zero);
+      await loading;
+      final view =
+          adapter.buildVideoView() as PlaybackVideoSurface<vp.VideoPlayerValue>;
+      final controller = view.values as vp.VideoPlayerController;
+
+      expect(adapter.state.duration, isNull);
+      expect(adapter.state.status, PlaybackStatus.playing);
+      expect(controller.value.isCompleted, isTrue);
+      var rawEvents = 0;
+      final events = controller.nativeCompletionEvents.listen((_) {
+        rawEvents++;
+      });
+      addTearDown(events.cancel);
+      await adapter.seek(Duration.zero);
+      expect(controller.value.isCompleted, isTrue);
+      expect(rawEvents, 0);
+      platform.events[platform.nextId]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(rawEvents, 1);
+    });
+
+    test('raw event stream closes when its controller is replaced', () async {
+      platform.autoInitialize = true;
+      await adapter.load(item);
+      final view =
+          adapter.buildVideoView() as PlaybackVideoSurface<vp.VideoPlayerValue>;
+      final controller = view.values as vp.VideoPlayerController;
+      final oldId = platform.nextId;
+      var rawEvents = 0;
+      final closed = Completer<void>();
+      final events = controller.nativeCompletionEvents.listen(
+        (_) => rawEvents++,
+        onDone: closed.complete,
+      );
+      addTearDown(events.cancel);
+
+      await adapter.stop();
+      expect(rawEvents, 0);
+      await adapter.load(item);
+      await closed.future;
+      platform.events[oldId]!.add(
+        VideoEvent(eventType: VideoEventType.completed),
+      );
+      expect(rawEvents, 0);
+    });
+
+    test('raw stream closes even if native disposal fails', () async {
+      platform.autoInitialize = true;
+      await adapter.load(item);
+      final view =
+          adapter.buildVideoView() as PlaybackVideoSurface<vp.VideoPlayerValue>;
+      final controller = view.values as vp.VideoPlayerController;
+      final closed = Completer<void>();
+      final events = controller.nativeCompletionEvents.listen(
+        (_) {},
+        onDone: closed.complete,
+      );
+      addTearDown(events.cancel);
+      platform.disposalError = StateError('Native disposal failed');
+      disposalFailureExpected = true;
+
+      await expectLater(adapter.dispose(), throwsStateError);
+      await closed.future;
     });
 
     test(
@@ -263,13 +397,14 @@ class _RecordingVideoPlayerPlatform extends VideoPlayerPlatform {
     return events[playerId]!.stream;
   }
 
-  void initialize(int id) => events[id]!.add(
-    VideoEvent(
-      eventType: VideoEventType.initialized,
-      duration: const Duration(minutes: 1),
-      size: const Size(1280, 720),
-    ),
-  );
+  void initialize(int id, {Duration duration = const Duration(minutes: 1)}) =>
+      events[id]!.add(
+        VideoEvent(
+          eventType: VideoEventType.initialized,
+          duration: duration,
+          size: const Size(1280, 720),
+        ),
+      );
 
   @override
   Future<void> play(int playerId) async {

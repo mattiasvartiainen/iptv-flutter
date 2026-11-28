@@ -38,6 +38,58 @@ Known toolchain gotchas (from repo memory, keep in mind):
 
 ## 1. Work package status
 
+WP-progress-foundation prepares an inert DE-12 checkpointing foundation.
+Dependency: WP-playback-library-identity. Touches: a playback progress policy
+and serialized coordinator, an atomic SQLite checkpoint store, focused tests,
+and design documentation. Skills: dart-add-unit-test,
+dart-run-static-analysis, dart-write-documentation. Do not connect it to the
+player or infer natural end; DE-12 and device validation remain blocked.
+
+WP-completion-device-trace prepares opt-in, credential-free playback event
+diagnostics and a repeatable LG TV seek/end test procedure. Dependency:
+WP-raw-end-session. Touches: playback session, webOS and MediaKit adapters,
+build flags, diagnostics, focused tests, and design documentation. Skills: dart-add-unit-test,
+dart-run-static-analysis, dart-write-documentation. Preserve playback behavior,
+the webOS logging safeguard, and the distinction between raw and confirmed end.
+
+WP-raw-end-session carries unclassified end notifications from the standard and
+webOS controller facades through their adapters and PlaybackSession. Dependencies:
+WP-standard-raw-completion and WP-webos-raw-completion. Touches: playback
+contract, session, both video-player adapters, focused tests and design docs.
+Skills: dart-add-unit-test, dart-run-static-analysis, dart-write-documentation.
+Preserve current player behavior and do not infer natural completion or write
+progress. MediaKit resource attribution and physical native validation remain
+separate prerequisites.
+
+WP-webos-raw-completion adds a pinned local webOS Dart controller facade and
+raw event tests while retaining the existing verified isolated native plugin.
+Dependency: WP-standard-raw-completion. Touches: local controller package,
+dependency manifests, webOS playback adapter and tests, and design documentation.
+Skills: dart-add-unit-test, dart-run-static-analysis, dart-write-documentation.
+Do not treat raw events as natural completion or modify native logging guards.
+
+WP-standard-raw-completion adds a pinned local standard video-player controller
+patch exposing raw platform completion events without classifying their cause.
+Dependency: WP-completion-evidence. Touches: vendored video_player package,
+dependency manifests, standard playback tests, and design documentation.
+Skills: dart-add-unit-test, dart-run-static-analysis,
+dart-write-documentation. Preserve playback behavior and do not infer natural
+completion, write progress, or change the webOS logging safeguard.
+
+WP-completion-evidence characterizes the existing video-player completion
+signals before the DE-12 prerequisite. Dependency: WP-playback-library-identity.
+Touches: standard and webOS playback tests and design documentation. Skills:
+dart-add-unit-test, dart-run-static-analysis,
+flutter-apply-architecture-best-practices. Exercise the real plugin controllers
+through fake platform events; do not infer native-device seek behavior.
+
+WP-session-progress covers DE-12. Dependency: WP-playback-library-identity.
+Touches: player session and playback completion contract/adapters, user-library
+persistence, focused player/storage tests, and design documentation. Skills:
+dart-add-unit-test, dart-run-static-analysis,
+flutter-apply-architecture-best-practices. Preserve D-7 and apply D-11 without
+inferring completion from a seek or a manual stop.
+
 WP-playback-library-identity completes DE-11. Dependency: WP-continuity-policy.
 Touches: catalog item identity and lookup, activation, player session,
 dependency composition, focused catalog/player tests, and design documentation.
@@ -415,6 +467,13 @@ rules, flutter analyze and flutter test; update completion evidence here.
 
 | WP | Title | Batch | Depends on | Size | Status |
 |----|-------|-------|-----------|------|--------|
+| WP-completion-device-trace | Prepare completion device validation | Design | WP-raw-end-session | M | BLOCKED (2026-11-28): Opt-in traces and test cases are prepared; the installed-IPK Dart log capture workflow still needs verification on a TV. Analyzer clean; all 1069 Flutter tests and native logging patch test pass. |
+| WP-raw-end-session | Carry raw end notifications through session | Design | WP-standard-raw-completion, WP-webos-raw-completion | M | DONE (2026-11-28): Standard and webOS raw notifications are session-guarded; MediaKit reports unsupported. Analyzer clean; all 1067 Flutter tests pass. Natural completion remains unresolved. |
+| WP-webos-raw-completion | Expose webOS raw completion events | Design | WP-standard-raw-completion | M | DONE (2026-11-28): Local controller facade preserves pinned native plugin and logging verification; focused tests, analyzer and all 1063 Flutter tests pass. Native device behavior remains unverified. |
+| WP-standard-raw-completion | Expose standard raw completion events | Design | WP-completion-evidence | S | DONE (2026-11-27): Pinned standard controller exposes raw events; tests cover seek, unknown duration, replacement and disposal failure. Analyzer clean and all 1061 Flutter tests pass. No natural-completion inference or progress writes. |
+| WP-completion-evidence | Characterize completion signals | Testing | WP-playback-library-identity | S | DONE (2026-11-27): Both controller flags can indicate completion after a seek or unknown-duration startup; focused tests, analyzer and all 1059 Flutter tests pass. No completion signal was implemented. |
+| WP-progress-foundation | Prepare inert progress checkpointing | Design | WP-playback-library-identity | M | DONE (2026-11-28): Inert sampled-playback policy, serialized sessions and atomic checkpoint store; analyzer clean and all 1079 Flutter tests pass. Player integration and natural completion remain blocked. |
+| WP-session-progress | Session-safe progress and history | Design | WP-playback-library-identity | L | BLOCKED (2026-11-27): Playback contract does not distinguish natural completion from stop; webOS plugin completion state is also set by seeking to duration. Resolve reliable completion signaling before recording under D-11. |
 | WP-playback-library-identity | Stable playback library identity | Design | WP-continuity-policy | M | DONE (2026-11-27): Scoped stable catalog lookup and player identity; analyzer clean, all 1055 tests pass. No progress writes. |
 | WP-continuity-policy | Approve viewing continuity policy | Design | WP-presentation-checkpoint | S | DONE (2026-11-27): User approved continuity policy and scenarios; implementation remains in DE-11 through DE-18. |
 | WP-presentation-checkpoint | Cross-device presentation checkpoint | Design | WP-adaptive-details, WP-adaptive-episodes, WP-catalog-context | M | DONE (2026-11-27): 1047 tests pass; analyzer clean. Native validation and remaining matrix checks are recorded in DE-09. |

@@ -124,6 +124,36 @@ void main() {
     expect(() => PlaybackSession(invalid), throwsArgumentError);
   });
 
+  test('raw ends follow session generations and remain unclassified', () async {
+    final events = <ContentItem>[];
+    final subscription = session.rawEndEvents.listen(events.add);
+    addTearDown(subscription.cancel);
+    await session.load(first);
+    backend.emitRawEnd(first);
+    backend.emitRawEnd(first);
+    expect(events, [first, first]);
+
+    final replacing = session.load(second);
+    backend.emitRawEnd(first);
+    await replacing;
+    backend.emitRawEnd(first);
+    backend.emitRawEnd(second);
+    expect(events, [first, first, second]);
+
+    final stopping = session.stop();
+    backend.emitRawEnd(second);
+    await stopping;
+    backend.emitRawEnd(second);
+    expect(events, [first, first, second]);
+    await session.play();
+    backend.emitRawEnd(second);
+    expect(events, [first, first, second, second]);
+    final disposing = session.dispose();
+    backend.emitRawEnd(second);
+    await disposing;
+    expect(events, [first, first, second, second]);
+  });
+
   test(
     'surface lookup observes replacement and invalidation within the same item',
     () async {

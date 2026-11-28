@@ -107,6 +107,23 @@ abstract interface class PlaybackTrackAdapter {
   Future<void> selectSubtitleTrack(String id);
 }
 
+/// Optional unclassified native end notifications for the current resource.
+///
+/// Notifications may be caused by a seek and may be duplicated or delayed;
+/// they are not evidence of natural completion. The item identifies the
+/// resource associated with the notification, not its native cause. A backend
+/// that cannot associate events with its current resource must not implement
+/// this interface. A retained resource restarted after stop can still receive
+/// a delayed notification from its earlier playback; callers cannot use this
+/// stream to distinguish that notification from a new one.
+abstract interface class PlaybackRawEndEvents {
+  /// Whether this backend can associate end notifications with a resource.
+  bool get supportsRawEndEvents;
+
+  /// The broadcast stream of unclassified native end notifications.
+  Stream<ContentItem> get rawEndEvents;
+}
+
 class PlaybackState {
   const PlaybackState({
     required this.status,

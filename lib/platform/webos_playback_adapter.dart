@@ -1,29 +1,39 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:video_player_drm/video_player.dart' as lg;
+import 'package:webos_video_player/video_player.dart' as lg;
 
 import '../models/content_item.dart';
 import '../services/playback/playback_contract.dart';
+import '../services/playback/playback_end_diagnostics.dart';
 import '../services/playback/playback_labels.dart';
 import '../services/playback/playback_load.dart';
 import '../services/playback/playback_video_surface.dart';
 
-class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
+class WebOsPlaybackAdapter
+    implements PlaybackAdapter, PlaybackTrackAdapter, PlaybackRawEndEvents {
   WebOsPlaybackAdapter()
-    : _blockUnsafePlugin = !const bool.fromEnvironment(
+    : _diagnostics = PlaybackEndDiagnostics.instance,
+      _blockUnsafePlugin = !const bool.fromEnvironment(
         'IPTV_WEBOS_SAFE_NATIVE_LOGS',
       );
 
   @visibleForTesting
-  WebOsPlaybackAdapter.forTesting() : _blockUnsafePlugin = false;
+  WebOsPlaybackAdapter.forTesting({PlaybackEndDiagnostics? diagnostics})
+    : _diagnostics = diagnostics,
+      _blockUnsafePlugin = false;
 
   final bool _blockUnsafePlugin;
+  final PlaybackEndDiagnostics? _diagnostics;
+  late final int? _traceOwner = _diagnostics?.newOwner();
   final _states = StreamController<PlaybackState>.broadcast();
+  final _rawEnds = StreamController<ContentItem>.broadcast(sync: true);
   PlaybackState _state = const PlaybackState.idle();
   lg.VideoPlayerController? _controller;
   Widget? _videoView;
   bool _disposed = false;
+  bool _acceptRawEnds = false;
+  StreamSubscription<void>? _rawEndSubscription;
   int _loadGeneration = 0;
   PlaybackLoad? _load;
   Future<void>? _disposeFuture;
@@ -53,6 +63,11 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   Stream<PlaybackState> get states => _states.stream;
 
   @override
+  bool get supportsRawEndEvents => true;
+  @override
+  Stream<ContentItem> get rawEndEvents => _rawEnds.stream;
+
+  @override
   Widget? buildVideoView() {
     final controller = _controller;
     if (_disposed || controller == null || !controller.value.isInitialized) {
@@ -69,6 +84,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
   @override
   Future<void> load(ContentItem item) async {
     if (_disposed) return;
+    _acceptRawEnds = false;
     final generation = ++_loadGeneration;
     _load?.cancel();
     final load = _load = PlaybackLoad();
@@ -103,6 +119,25 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
             .map((part) => part.toLowerCase())
             .toList();
     _controller = controller;
+    _acceptRawEnds = true;
+    _rawEndSubscription = controller.nativeCompletionEvents.listen((_) {
+      final accepted = _isCurrent(controller) && _acceptRawEnds;
+      final diagnostics = _diagnostics;
+      final owner = _traceOwner;
+      if (diagnostics != null && owner != null) {
+        diagnostics.record(
+          PlaybackEndTraceEvent.webosRawEnd,
+          owner: owner,
+          generation: generation,
+          position: controller.value.position,
+          duration: controller.value.duration,
+          accepted: accepted,
+        );
+      }
+      if (accepted) {
+        _rawEnds.add(item);
+      }
+    });
     controller.addListener(_handleUpdate);
     try {
       await load.waitFor(controller.initialize());
@@ -113,6 +148,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
       }
     } catch (error, stack) {
       if (!_isCurrent(controller) || generation != _loadGeneration) return;
+      _acceptRawEnds = false;
       _publish(
         _state.copyWith(
           status: PlaybackStatus.error,
@@ -134,6 +170,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
       }
     }
     final controller = _requireController();
+    _acceptRawEnds = true;
     await controller.play();
     if (_isCurrent(controller)) _handleUpdate();
   }
@@ -147,6 +184,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
 
   @override
   Future<void> stop() async {
+    _acceptRawEnds = false;
     ++_loadGeneration;
     _load?.cancel();
     final controller = _controller;
@@ -342,6 +380,8 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
 
   Future<void> _disposeController() {
     final controller = _controller;
+    final rawEndCancellation = _rawEndSubscription?.cancel();
+    _rawEndSubscription = null;
     _controller = null;
     _videoView = null;
     _metadataValue = null;
@@ -355,7 +395,11 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
         try {
           await previous;
         } finally {
-          await controller.dispose();
+          try {
+            await rawEndCancellation;
+          } finally {
+            await controller.dispose();
+          }
         }
       }();
     }
@@ -375,6 +419,7 @@ class WebOsPlaybackAdapter implements PlaybackAdapter, PlaybackTrackAdapter {
     try {
       await _disposeController();
     } finally {
+      unawaited(_rawEnds.close());
       await _states.close();
     }
   }

@@ -9,12 +9,16 @@ import 'playback_http_headers.dart';
 import 'playback_load.dart';
 import 'playback_video_surface.dart';
 
-class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
+class VideoPlayerPlaybackAdapter
+    implements PlaybackAdapter, PlaybackRawEndEvents {
   final _stateController = StreamController<PlaybackState>.broadcast();
+  final _rawEnds = StreamController<ContentItem>.broadcast(sync: true);
   PlaybackState _state = const PlaybackState.idle();
   VideoPlayerController? _controller;
   Widget? _videoView;
   bool _disposed = false;
+  bool _acceptRawEnds = false;
+  StreamSubscription<void>? _rawEndSubscription;
   PlaybackLoad? _load;
   Future<void>? _disposeFuture;
   Future<void> _controllerDisposal = Future<void>.value();
@@ -35,6 +39,11 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   Stream<PlaybackState> get states => _stateController.stream;
 
   @override
+  bool get supportsRawEndEvents => true;
+  @override
+  Stream<ContentItem> get rawEndEvents => _rawEnds.stream;
+
+  @override
   Widget? buildVideoView() {
     final controller = _controller;
     if (_disposed || controller == null || !controller.value.isInitialized) {
@@ -51,6 +60,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
   @override
   Future<void> load(ContentItem item) async {
     if (_disposed) return;
+    _acceptRawEnds = false;
     _load?.cancel();
     final load = _load = PlaybackLoad();
     await _disposeController();
@@ -69,6 +79,12 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
       httpHeaders: playbackHttpHeaders,
     );
     _controller = controller;
+    _acceptRawEnds = true;
+    _rawEndSubscription = controller.nativeCompletionEvents.listen((_) {
+      if (!_disposed && _acceptRawEnds && identical(_controller, controller)) {
+        _rawEnds.add(item);
+      }
+    });
     controller.addListener(_handleControllerUpdate);
 
     try {
@@ -91,6 +107,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
           !identical(_controller, controller)) {
         return;
       }
+      _acceptRawEnds = false;
       if (identical(_controller, controller)) {
         _publish(
           _state.copyWith(
@@ -114,6 +131,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
       }
     }
     final controller = _requireController();
+    _acceptRawEnds = true;
     await controller.play();
     _handleControllerUpdate();
   }
@@ -127,6 +145,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
 
   @override
   Future<void> stop() async {
+    _acceptRawEnds = false;
     final load = _load;
     load?.cancel();
     final controller = _controller;
@@ -226,6 +245,8 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
 
   Future<void> _disposeController() {
     final controller = _controller;
+    final rawEndCancellation = _rawEndSubscription?.cancel();
+    _rawEndSubscription = null;
     _controller = null;
     _videoView = null;
     controller?.removeListener(_handleControllerUpdate);
@@ -235,7 +256,11 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
         try {
           await previous;
         } finally {
-          await controller.dispose();
+          try {
+            await rawEndCancellation;
+          } finally {
+            await controller.dispose();
+          }
         }
       }();
     }
@@ -254,6 +279,7 @@ class VideoPlayerPlaybackAdapter implements PlaybackAdapter {
     try {
       await _disposeController();
     } finally {
+      unawaited(_rawEnds.close());
       await _stateController.close();
     }
   }

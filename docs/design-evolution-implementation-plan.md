@@ -104,7 +104,7 @@ READY means no unresolved product gate, not that prerequisites can be skipped. G
 | DE-09 | Presentation checkpoint | DE-03, DE-05, DE-06, DE-07, DE-08 | DONE for the software checkpoint (2026-11-27): 1047 tests pass; native validation and remaining matrix checks pending. | `test(ui): verify evolved cross-device browsing` |
 | DE-10 | Continuity policy decision | DE-09 | DONE (2026-11-27): Policy and scenarios approved; no application code changed. | `docs(ux): define viewing continuity policy` |
 | DE-11 | Stable playback library identity | DE-10 | DONE (2026-11-27): Stable scoped lookup and session identity; analyzer clean, 1055 tests pass. | `feat(library): resolve stable playback identity` |
-| DE-12 | Session-safe progress/history recording | DE-11 | READY | `feat(player): persist viewing progress safely` |
+| DE-12 | Session-safe progress/history recording | DE-11 | BLOCKED (2026-11-27): reliable natural-completion signaling is missing; see DE-12 evidence. | `feat(player): persist viewing progress safely` |
 | DE-13 | Explicit resume execution | DE-12 | READY | `feat(player): support explicit session-safe resume` |
 | DE-14 | Resume actions in Details | DE-13 | READY | `feat(details): offer resume and start over actions` |
 | DE-15 | Bounded continuity query | DE-12 | READY | `feat(library): query bounded continue watching items` |
@@ -405,6 +405,195 @@ device validation remains pending; DE-12 has not been implemented.
 **Checks:** VOD versus live, unknown duration, failed startup, rapid replacement, Start Over resetting old progress, pause/background, exit before load completes, storage failure, database closing, duplicate events, disposal and write ordering. Use FakeAsync pumping for widget timers.
 
 **Done:** Restarting preserves genuine progress/history, stale sessions cannot corrupt it, live has no false resume progress, and D-7 behavior still passes. Failures are logged safely without raw UI exceptions.
+
+**Progress foundation (2026-11-28):** An isolated, unconnected coordinator
+accepts explicitly ordered monotonic samples and seek boundaries, credits
+only bounded advancing VOD playback, and schedules checkpoints after 30 seconds
+and each subsequent 15 seconds of credited playback. Explicit checkpoint and
+finish calls support later pause, background and exit integration. The
+known-duration 90% rule requires an advancing playback sample, not a seek;
+unknown-duration completion remains unsupported. A shared coordinator
+serializes writes across sessions, invalidates late old-session calls, and
+returns errors to the caller. A separate SQLite store atomically updates
+progress and one history row per session, rolling back if either write fails.
+No application composition creates the coordinator, so these changes do not
+enable progress recording or alter playback. Flutter analysis is clean and
+all 1079 Flutter tests pass, including the policy and SQLite rollback tests.
+
+Before enabling it, integrate and test lifecycle and seek ordering in the
+player, provide a monotonic clock and sufficiently frequent trustworthy
+position/buffering samples, handle write failures safely, and ensure the
+coordinator is shared for all sessions. The sampling policy is conservative,
+not proof that an unreported native seek or stale sample was playback. Design
+clear-history and Start Over coordination, and add confirmed natural-end
+attribution including unknown-duration and MediaKit cases. Test real backends
+and LG TV behavior before claiming DE-12 complete.
+
+**Blocker (2026-11-27):** `PlaybackStatus` has no natural-completion event.
+The desktop adapter maps the native completion event to the same `stopped`
+status used for explicit stop, while the video-player adapters expose playing
+and paused states only. The pinned webOS plugin's `isCompleted` cannot safely
+be treated as a natural-end event: its position update also sets that flag
+when seeking to the duration. Thus a direct mapping would violate D-11's
+requirement that seeking near the end alone must not mark completion; it also
+cannot establish the approved end-event rule for unknown-duration streams.
+The current separate progress and history writes also need a session-safe
+ordering and failure strategy before enabling persistence.
+
+Resolve this with a reliable natural-completion signal through the adapter and
+session boundary, including the supported webOS plugin path, and tests for
+end versus seek/stop, unknown duration, and stale sessions. Do not mark the
+checkpoint complete or persist guessed completion while that contract remains
+unresolved. No runtime changes or tests were made in this investigation.
+
+**Prerequisite approach approved (2026-11-27):** Maintain pinned local patches
+of the standard and webOS video-player plugins to expose their raw native
+completion events, rather than installing a global platform-interface
+interceptor. The pinned webOS native implementation receives an `endOfStream`
+event and emits `completed`; both Dart controllers currently also derive
+`isCompleted` from position, so that flag alone remains unsuitable. The local
+webOS package must preserve the supported build wrapper's fail-closed native
+logging verification; the existing wrapper currently requires an isolated,
+unmodified pinned Git checkout and cannot simply be pointed at a local path.
+Plugin patches, build verification, adapter/session wiring, and tests remain
+incomplete. Native event behavior on hardware also remains unverified.
+
+**Controller characterization (2026-11-27):** Focused tests exercise both real
+plugin controllers through fake platform events. Seeking to the duration sets
+`isCompleted`, as does a native completed event. With a zero duration the flag
+can already be true while startup reports playing: `play()` seeks to zero when
+position equals duration. Neither case proves a natural end. On webOS, the
+native plugin forwards `endOfStream` as `completed` without a cause or seek
+identifier. Consequently exposing the raw event is necessary but does not by
+itself establish that an end event was not caused by a seek. The patch and
+session design must account for native event ordering and validate seek/end
+behavior on the target rather than asserting that raw means natural.
+
+The existing isolated logging-patch and wrapper tests pass unchanged. The
+supported `flutter-webos` SDK is not available in the checked WSL Ubuntu
+environment, so no webOS package or native-device result was verified here.
+Progress recording remains blocked.
+
+**Standard plugin patch (2026-11-27):** A pinned local copy of `video_player`
+2.11.1 exposes `nativeCompletionEvents` separately from its position-derived
+flag. Tests exercise native events, seeking, unknown duration, replacement,
+duplicate events and disposal failure. The analyzer is clean and all 1061
+Flutter tests pass. The event is deliberately raw: no adapter or session
+classifies it as natural completion and no progress is written. The webOS
+plugin still uses its existing pinned Git dependency and fail-closed wrapper;
+the work below retains that native dependency and its isolated verification.
+Target testing and a safe cross-backend completion contract remain necessary
+before DE-12 can be unblocked.
+
+**webOS Dart facade (2026-11-28):** A pinned local controller facade exposes
+the raw completion stream using the existing `video_player_drm` platform
+interface. The pinned native plugin and its fail-closed isolated logging patch
+remain unchanged. Focused controller tests exercise seek, unknown duration,
+duplicate events, stop, replacement, and failed disposal. Analyzer and all 1063 Flutter tests
+pass; native logging verification and wrapper tests also pass. No webOS SDK or
+device was available, so neither a native build nor seek-versus-end behavior
+on hardware was validated. These raw events are not evidence of natural end.
+
+**Raw event session wiring (2026-11-28):** Standard and webOS adapters expose
+unclassified end notifications associated with their current controller, and
+the session filters them during replacement, stop and disposal. Tests cover
+seek, duplicates, replacement with the same item, stop and restart. Events
+are not deduplicated and can still be delayed across a stop and restart of
+the same retained controller; they carry no native cause. MediaKit reports raw
+notifications unsupported because its reused player does not identify which
+resource emitted an event. Analyzer is clean and all 1067 Flutter tests pass.
+No progress is recorded and DE-12 remains blocked on a trustworthy
+natural-end contract, including MediaKit attribution and native seek/end
+validation. The user intends to test on an LG TV later; device validation
+must not be claimed in advance.
+
+**Opt-in device diagnostics:** A non-release build with
+`IPTV_PLAYBACK_END_TRACE=true` emits `[playback-end-trace]` records for session
+commands and state changes, webOS raw-end callbacks, and MediaKit completion
+stream observations. The default and all release builds disable these records.
+The recorder accepts only enum values, numeric fields and booleans; it does not
+include content identity, URLs, track labels or native error text. This does
+not guarantee that other application or device logs are credential-free.
+The existing verified native logging patch and build gate remain mandatory.
+MediaKit still cannot attribute its completion stream to a resource, and no
+backend currently establishes natural completion from these records.
+The analyzer is clean, all 1069 Flutter tests pass, and the isolated native
+logging patch test passes. The device-trace work package remains blocked on a
+verified way to capture Dart output from the installed IPK.
+
+#### LG TV seek versus end procedure
+
+1. Use the supported Linux devcontainer or equivalent Linux/WSL setup with the
+   webOS Flutter SDK, Node.js 20+, and webOS CLI. Register a Developer Mode TV
+   as `tv` and ensure it is reachable. See the repository README for setup.
+   Prepare short, seekable, non-sensitive VOD fixtures: one with a known
+   duration and, if available, one genuinely reporting an unknown duration.
+   Confirm the actual ending and seek behavior independently. Avoid live TV,
+   private playlists and credential-bearing URLs for this diagnostic run.
+2. From the repository root in that environment, build and deploy:
+
+   ```bash
+   bash tool/build-webos.sh --debug --dart-define=IPTV_PLAYBACK_END_TRACE=true
+   bash tool/deploy-webos.sh --device tv
+   ```
+
+   If other IPKs already exist, explicitly pass `--package <debug-ipk>` to the
+   deploy script: its default chooses the last sorted IPK, not necessarily
+   this build. Do not set `IPTV_WEBOS_SAFE_NATIVE_LOGS` manually or bypass the
+   build wrapper. The flags and the wrapper's forwarding are documented in
+   this repository, but this particular package has not been built or tested
+   on the TV.
+3. Capture the app's Dart `debugPrint` output with the logging/attached-debugger
+   workflow supported by the installed webOS SDK and device. The repository
+   does not yet have a verified capture command for an installed Flutter webOS
+   IPK; verify the workflow on the target rather than assuming web-inspector
+   console output includes native Flutter stdout. First check that a
+   `[playback-end-trace]` `loadRequested` record appears. If it does not, stop
+   and resolve capture before testing. Keep full device logs private, filter
+   locally to the trace prefix, and inspect/redact any other output before
+   sharing. `debugPrint` can throttle or lose output during shutdown; missing
+   records are inconclusive.
+4. For each case start a fresh run and note the case number locally without
+   inserting names or URLs into the log. Capture through several seconds after
+   the operation, including the subsequent restart where relevant:
+
+   | Case | Action |
+   | --- | --- |
+   | A | Play the known-duration fixture uninterrupted through its natural end. |
+   | B | Pause, seek exactly to the end, and wait without resuming. |
+   | C | While playing, seek exactly to the end and wait. |
+   | D | Seek close to the end, resume, and let it play out. |
+   | E | Perform repeated forward and backward seeks, including an end seek, then wait. |
+   | F | Stop during playback and restart the same item; watch for late events. |
+   | G | Replace playback with another fixture, then repeat replacing with the same item; watch for delayed events. |
+   | H | If the unknown-duration fixture is available, repeat natural end and an available end/near-end seek; otherwise record it as unavailable. |
+
+5. Record TV model and webOS version, build mode, fixture duration/seekability,
+   steps and actual observations, including duplicate or delayed callbacks.
+   Keep only sanitized trace records. `seq` and `ms` describe recorder
+   observation order and elapsed time, not native causal order. `owner` is an
+   anonymous instance identifier: session and webOS adapter use different
+   owners and their `generation` counters are independent; do not compare the
+   counters across owners. Associate records by the surrounding commands and
+   timing. `seekRequested`, `seekStarted` and `seekFinished` locate the Dart
+   operation; they do not prove that native events were delivered in that
+   order. `webosRawEnd` is observed before the adapter gate;
+   `sessionRawEnd` is observed at the session gate. `accepted=true` means only
+   that the relevant gate accepted the event, not that it was natural. A
+   detached controller may no longer be subscribed, so missing stale events do
+   not establish that the native side emitted none.
+6. Compare A through H and report whether end callbacks occur for each seek,
+   their timing relative to commands, and whether callbacks arrive after
+   stop, restart or replacement. Do not infer proof of causation from a single
+   run, position alone, or the absence of an observed callback. Repeat
+   suspicious cases. Native event identifiers/cause and resource attribution
+   still require a separately designed and tested solution before DE-12.
+
+For desktop follow-up, the same opt-in flag enables `mediaKitCompletion`
+records; `completed` is the stream's boolean value, not a gate decision or
+proof of natural completion. The MediaKit player is reused, so an observation
+cannot identify its originating resource. Device and native-backend results
+remain pending.
 
 ### DE-13 - Explicit Resume Execution
 

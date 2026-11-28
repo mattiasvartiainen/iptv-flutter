@@ -1,0 +1,14 @@
+name: webos_video_player
+description: Local webOS video player controller facade.
+publish_to: none
+version: 1.0.0
+environment:
+  sdk: '>=3.10.4 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  video_player_drm:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/video_player_drm
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3

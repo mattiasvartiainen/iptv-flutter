@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/playback/desktop_media_kit_playback.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
+import 'package:iptv_flutter/services/playback/playback_end_diagnostics.dart';
+import 'package:iptv_flutter/services/playback/playback_session.dart';
 import 'package:media_kit/media_kit.dart';
 
 const item = ContentItem(
@@ -32,6 +34,39 @@ void main() {
       await adapter.dispose();
     }
   });
+
+  test('session reports raw end events unavailable for MediaKit', () async {
+    final session = PlaybackSession(adapter);
+    addTearDown(session.dispose);
+    expect(session.supportsRawEndEvents, isFalse);
+  });
+
+  test(
+    'opt-in MediaKit trace observes completion without content data',
+    () async {
+      final lines = <String>[];
+      final diagnostics = PlaybackEndDiagnostics.forTesting(lines.add);
+      final player = _ControlledPlatformPlayer();
+      final traced = DesktopMediaKitPlaybackAdapter.forTesting(
+        Player(platformPlayer: player),
+        diagnostics: diagnostics,
+      );
+      addTearDown(traced.dispose);
+      await traced.load(item);
+      player.emitCompletion();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        lines.where(
+          (line) =>
+              line.contains('event=mediaKitCompletion') &&
+              line.contains('completed=true'),
+        ),
+        isNotEmpty,
+      );
+      expect(lines.join('\n'), isNot(contains('example.com')));
+      expect(lines.join('\n'), isNot(contains('Desktop video')));
+    },
+  );
 
   test(
     'initialization cannot autoplay after stop even when native open completes late',
@@ -146,6 +181,8 @@ class _ControlledPlatformPlayer extends PlatformPlayer {
     playingController.add(true);
     errorController.add('Detached error');
   }
+
+  void emitCompletion() => completedController.add(true);
 
   @override
   Future<void> open(Playable playable, {bool play = true}) async {

@@ -10,9 +10,11 @@ import 'package:iptv_flutter/platform/app_platform.dart';
 import 'package:iptv_flutter/platform/platform_profile.dart';
 import 'package:iptv_flutter/platform/webos_playback_adapter.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
+import 'package:iptv_flutter/services/playback/playback_end_diagnostics.dart';
+import 'package:iptv_flutter/services/playback/playback_session.dart';
 import 'package:iptv_flutter/services/playback/playback_video_surface.dart';
-import 'package:video_player_drm/video_player.dart' as video;
 import 'package:video_player_drm/video_player_platform_interface.dart' as lg;
+import 'package:webos_video_player/video_player.dart' as video;
 
 const item = ContentItem(
   id: '1',
@@ -81,11 +83,11 @@ class FakeLgPlatform extends lg.VideoPlayerPlatform {
   @override
   Widget buildView(int playerId) => const SizedBox();
 
-  void initialize(int id) {
+  void initialize(int id, {Duration duration = const Duration(minutes: 5)}) {
     events[id]!.add(
       lg.VideoEvent(
         eventType: lg.VideoEventType.initialized,
-        duration: const Duration(minutes: 5),
+        duration: duration,
         size: const Size(1920, 1080),
         audioTracks: [
           {'language': 'en'},
@@ -146,6 +148,205 @@ void main() {
     expect(selected.capabilities.supportsVolume, isFalse);
     expect(selected.capabilities.supportsDrm, isFalse);
     addTearDown(selected.dispose);
+  });
+
+  test(
+    'LG controller completion flag does not identify a native end',
+    () async {
+      final created = platform.created.stream.first;
+      final loading = adapter.load(item);
+      final id = await created;
+      platform.initialize(id);
+      await loading;
+      final view =
+          adapter.buildVideoView()
+              as PlaybackVideoSurface<video.VideoPlayerValue>;
+      final controller = view.values as video.VideoPlayerController;
+      var rawEvents = 0;
+      final events = controller.nativeCompletionEvents.listen((_) {
+        rawEvents++;
+      });
+      addTearDown(events.cancel);
+
+      expect(controller.value.isCompleted, isFalse);
+      await adapter.seek(controller.value.duration);
+      expect(controller.value.isCompleted, isTrue);
+      expect(rawEvents, 0);
+
+      await adapter.seek(Duration.zero);
+      expect(controller.value.isCompleted, isFalse);
+      platform.events[id]!.add(
+        lg.VideoEvent(eventType: lg.VideoEventType.completed),
+      );
+      expect(controller.value.isCompleted, isTrue);
+      expect(rawEvents, 1);
+      platform.events[id]!.add(
+        lg.VideoEvent(eventType: lg.VideoEventType.completed),
+      );
+      expect(rawEvents, 2);
+    },
+  );
+
+  test('LG raw ends traverse session without classifying seek', () async {
+    final session = PlaybackSession(adapter);
+    addTearDown(session.dispose);
+    final events = <ContentItem>[];
+    final subscription = session.rawEndEvents.listen(events.add);
+    addTearDown(subscription.cancel);
+    final created = platform.created.stream.first;
+    final loading = session.load(item);
+    final old = await created;
+    platform.initialize(old);
+    await loading;
+    await session.seek(const Duration(minutes: 5));
+    expect(events, isEmpty);
+    platform.events[old]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(events, [item]);
+    await session.stop();
+    platform.events[old]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(events, [item]);
+    await session.play();
+    platform.events[old]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(events, [item, item]);
+    final next = platform.created.stream.first;
+    final replacing = session.load(item);
+    platform.initialize(await next);
+    await replacing;
+    platform.events[old]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(events, [item, item]);
+    platform.events[platform.nextId]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(events, [item, item, item]);
+  });
+
+  test(
+    'opt-in end trace records seek and late end without credentials',
+    () async {
+      final lines = <String>[];
+      final diagnostics = PlaybackEndDiagnostics.forTesting(lines.add);
+      final tracedAdapter = WebOsPlaybackAdapter.forTesting(
+        diagnostics: diagnostics,
+      );
+      final session = PlaybackSession(tracedAdapter, diagnostics: diagnostics);
+      addTearDown(session.dispose);
+      final created = platform.created.stream.first;
+      final loading = session.load(item);
+      final id = await created;
+      platform.initialize(id, duration: Duration.zero);
+      await loading;
+      await session.seek(const Duration(seconds: 10));
+      platform.events[id]!.add(
+        lg.VideoEvent(eventType: lg.VideoEventType.completed),
+      );
+      await session.stop();
+      platform.events[id]!.add(
+        lg.VideoEvent(eventType: lg.VideoEventType.completed),
+      );
+      expect(lines.any((line) => line.contains('event=seekRequested')), isTrue);
+      expect(lines.any((line) => line.contains('event=seekStarted')), isTrue);
+      expect(lines.any((line) => line.contains('event=seekFinished')), isTrue);
+      expect(lines.any((line) => line.contains('target_ms=10000')), isTrue);
+      final ends = lines.where((line) => line.contains('event=webosRawEnd'));
+      expect(ends, hasLength(2));
+      expect(ends.first, contains('accepted=true'));
+      expect(ends.last, contains('accepted=false'));
+      expect(
+        lines.where((line) => line.contains('event=sessionRawEnd')),
+        hasLength(1),
+      );
+      expect(lines.join('\n'), isNot(contains('example.com')));
+      expect(lines.join('\n'), isNot(contains('token')));
+      expect(lines.join('\n'), isNot(contains('pass')));
+    },
+  );
+
+  test('LG zero duration can set the completion flag at startup', () async {
+    final created = platform.created.stream.first;
+    final loading = adapter.load(item);
+    final id = await created;
+    platform.initialize(id, duration: Duration.zero);
+    await loading;
+    final view =
+        adapter.buildVideoView()
+            as PlaybackVideoSurface<video.VideoPlayerValue>;
+    final controller = view.values as video.VideoPlayerController;
+
+    expect(adapter.state.duration, isNull);
+    expect(adapter.state.status, PlaybackStatus.playing);
+    expect(controller.value.isCompleted, isTrue);
+    var rawEvents = 0;
+    final events = controller.nativeCompletionEvents.listen((_) {
+      rawEvents++;
+    });
+    addTearDown(events.cancel);
+    await adapter.seek(Duration.zero);
+    expect(controller.value.isCompleted, isTrue);
+    expect(rawEvents, 0);
+    platform.events[id]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(rawEvents, 1);
+  });
+
+  test('LG raw event stream closes on controller replacement', () async {
+    final created = platform.created.stream.first;
+    final loading = adapter.load(item);
+    final oldId = await created;
+    platform.initialize(oldId);
+    await loading;
+    final view =
+        adapter.buildVideoView()
+            as PlaybackVideoSurface<video.VideoPlayerValue>;
+    final controller = view.values as video.VideoPlayerController;
+    final closed = Completer<void>();
+    var rawEvents = 0;
+    final events = controller.nativeCompletionEvents.listen(
+      (_) => rawEvents++,
+      onDone: closed.complete,
+    );
+    addTearDown(events.cancel);
+    await adapter.stop();
+    expect(rawEvents, 0);
+    final replacement = platform.created.stream.first;
+    final replacing = adapter.load(item);
+    platform.initialize(await replacement);
+    await replacing;
+    await closed.future;
+    platform.events[oldId]!.add(
+      lg.VideoEvent(eventType: lg.VideoEventType.completed),
+    );
+    expect(rawEvents, 0);
+  });
+
+  test('LG raw event stream closes when native disposal fails', () async {
+    final created = platform.created.stream.first;
+    final loading = adapter.load(item);
+    platform.initialize(await created);
+    await loading;
+    final view =
+        adapter.buildVideoView()
+            as PlaybackVideoSurface<video.VideoPlayerValue>;
+    final controller = view.values as video.VideoPlayerController;
+    final closed = Completer<void>();
+    final events = controller.nativeCompletionEvents.listen(
+      (_) {},
+      onDone: closed.complete,
+    );
+    addTearDown(events.cancel);
+    platform.disposalError = StateError('Native disposal failed');
+    disposalFailureExpected = true;
+
+    await expectLater(adapter.dispose(), throwsStateError);
+    await closed.future;
   });
 
   test('production adapter requires the verified build marker', () async {

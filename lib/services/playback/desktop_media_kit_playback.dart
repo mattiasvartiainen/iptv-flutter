@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../models/content_item.dart';
 import '../logging/app_logger.dart';
 import 'playback_contract.dart';
+import 'playback_end_diagnostics.dart';
 import 'playback_http_headers.dart';
 import 'playback_labels.dart';
 import 'playback_load.dart';
@@ -23,25 +24,31 @@ class DesktopMediaKitPlaybackAdapter
          disableVideoOutput: disableVideoOutput,
          enableHardwareAcceleration: enableHardwareAcceleration,
          logger: logger,
+         diagnostics: PlaybackEndDiagnostics.instance,
        );
 
   @visibleForTesting
-  DesktopMediaKitPlaybackAdapter.forTesting(Player player)
-    : this._(
-        player,
-        disableVideoOutput: true,
-        enableHardwareAcceleration: false,
-        logger: const DebugAppLogger(),
-      );
+  DesktopMediaKitPlaybackAdapter.forTesting(
+    Player player, {
+    PlaybackEndDiagnostics? diagnostics,
+  }) : this._(
+         player,
+         disableVideoOutput: true,
+         enableHardwareAcceleration: false,
+         logger: const DebugAppLogger(),
+         diagnostics: diagnostics,
+       );
 
   DesktopMediaKitPlaybackAdapter._(
     this._player, {
     required bool disableVideoOutput,
     required bool enableHardwareAcceleration,
     required AppLogger logger,
+    required PlaybackEndDiagnostics? diagnostics,
   }) : _disableVideoOutput = disableVideoOutput,
        _enableHardwareAcceleration = enableHardwareAcceleration,
-       _logger = logger {
+       _logger = logger,
+       _diagnostics = diagnostics {
     _playingSubscription = _player.stream.playing.listen((isPlaying) {
       if (_state.item == null) return;
       if (isPlaying) {
@@ -62,6 +69,18 @@ class DesktopMediaKitPlaybackAdapter
     });
 
     _completedSubscription = _player.stream.completed.listen((isCompleted) {
+      final diagnostics = _diagnostics;
+      final owner = _traceOwner;
+      if (diagnostics != null && owner != null) {
+        diagnostics.record(
+          PlaybackEndTraceEvent.mediaKitCompletion,
+          owner: owner,
+          position: _state.position,
+          duration: _state.duration,
+          status: _state.status,
+          completed: isCompleted,
+        );
+      }
       if (!isCompleted) return;
       _publish(_state.copyWith(status: PlaybackStatus.stopped));
     });
@@ -96,6 +115,8 @@ class DesktopMediaKitPlaybackAdapter
   final bool _disableVideoOutput;
   final bool _enableHardwareAcceleration;
   final AppLogger _logger;
+  final PlaybackEndDiagnostics? _diagnostics;
+  late final int? _traceOwner = _diagnostics?.newOwner();
 
   final Player _player;
   final _stateController = StreamController<PlaybackState>.broadcast();

@@ -5,7 +5,8 @@ import 'package:iptv_flutter/models/content_item.dart';
 import 'package:iptv_flutter/services/playback/playback_contract.dart';
 import 'package:iptv_flutter/services/playback/playback_load.dart';
 
-class ControlledPlayback implements PlaybackAdapter, PlaybackTrackAdapter {
+class ControlledPlayback
+    implements PlaybackAdapter, PlaybackTrackAdapter, PlaybackRawEndEvents {
   ControlledPlayback({
     this.capabilities = const PlaybackCapabilities(
       supportsPause: true,
@@ -19,6 +20,7 @@ class ControlledPlayback implements PlaybackAdapter, PlaybackTrackAdapter {
   });
   final calls = <String>[];
   final _states = StreamController<PlaybackState>.broadcast(sync: true);
+  final _rawEnds = StreamController<ContentItem>.broadcast(sync: true);
   PlaybackState _state = const PlaybackState.idle();
   PlaybackLoad? _load;
   Future<void>? _disposal;
@@ -39,12 +41,20 @@ class ControlledPlayback implements PlaybackAdapter, PlaybackTrackAdapter {
   @override
   Stream<PlaybackState> get states => _states.stream;
   @override
+  bool get supportsRawEndEvents => true;
+  @override
+  Stream<ContentItem> get rawEndEvents => _rawEnds.stream;
+  @override
   Widget? buildVideoView() => view;
 
   void emit(PlaybackState state) {
     if (_disposed) return;
     _state = state;
     _states.add(state);
+  }
+
+  void emitRawEnd(ContentItem item) {
+    if (!_disposed) _rawEnds.add(item);
   }
 
   @override
@@ -125,6 +135,7 @@ class ControlledPlayback implements PlaybackAdapter, PlaybackTrackAdapter {
       final error = disposalError;
       if (error != null) throw error;
     } finally {
+      await _rawEnds.close();
       await _states.close();
     }
   }

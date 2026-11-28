@@ -22,3 +22,8 @@ const bool autoRunPlaybackSpike = bool.fromEnvironment(
   'PLAYBACK_SPIKE_AUTORUN',
   defaultValue: false,
 );
+
+const bool playbackEndTraceEnabled = bool.fromEnvironment(
+  'IPTV_PLAYBACK_END_TRACE',
+  defaultValue: false,
+);
